@@ -1,6 +1,8 @@
 ## Objetivo
 
-<!-- Qué problema resuelve. Historia(s): HU-xxx -->
+<!-- Qué problema resuelve. -->
+
+HU: HU-xxx (responsable según docs/requirements/USER_STORIES.md)
 
 ## Cambios
 

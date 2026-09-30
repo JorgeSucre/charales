@@ -2,12 +2,21 @@
 
 ## 1. Rama
 
-Nunca trabajes en `main`. Crea la rama desde `main` actualizado:
+`main` está protegida: nadie trabaja ni hace push directo ahí. **Una rama por HU**, creada desde `main` actualizado:
 
 ```bash
 git switch main && git pull
-git switch -c <persona>/<tema>        # ej. borrayo/database, joss/jugadores
+git switch -c <integrante>/<tipo>/<hu-descripcion>
+# ej. borrayo/feature/hu-043-charge-concepts · joss/feature/hu-008-player-registration · dani/fix/hu-045-receipt-number
 ```
+
+- `<integrante>`: `borrayo`, `joss`, `armando` o `dani`.
+- `<tipo>`: `feature`, `fix`, `docs`, `refactor`, `test` o `chore`.
+- `<hu-descripcion>`: el número de la HU que te asigna la
+  [tabla oficial](docs/requirements/USER_STORIES.md) más dos o tres palabras.
+
+Las ramas iniciales `borrayo/base-arquitectura` y `borrayo/database` son anteriores a esta convención y se integran
+tal cual.
 
 ## 2. Commits
 
@@ -67,5 +76,9 @@ Revisa [`OWNERSHIP.md`](docs/database/OWNERSHIP.md) antes de escribir en una tab
 
 ## 7. Pull Request
 
-Llena la plantilla (`.github/pull_request_template.md`): objetivo, cambios, pruebas, impacto en BD y contratos,
-capturas si hay UI, y pendientes. Un PR = un objetivo. Pide revisión al owner de lo que tocas.
+Llena la plantilla (`.github/pull_request_template.md`): **HU vinculada(s)**, objetivo, cambios, pruebas, impacto en
+BD y contratos, capturas si hay UI, y pendientes.
+
+- Un PR = una HU (o un objetivo claro).
+- Al menos **una revisión aprobada** antes del merge; si tocas una tabla o contrato de otro owner, la revisión es suya.
+- El merge a `main` sólo ocurre por PR, con las pruebas en verde.

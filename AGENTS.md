@@ -5,8 +5,9 @@
 1. Lee [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md): qué es, estado, quién hace qué.
 2. Lee el contrato de lo que vas a tocar: datos → [`DATA_CONTRACT.md`](docs/database/DATA_CONTRACT.md); integración →
    [`INTEGRATION_MAP.md`](docs/INTEGRATION_MAP.md); frontend existente → [`docs/PLAN.md`](docs/PLAN.md).
-3. Identifica al **owner** de la historia o tabla ([`OWNERSHIP.md`](docs/database/OWNERSHIP.md)). Trabaja sólo en lo que
-   te pidieron; para lo ajeno, usa o crea únicamente contratos compartidos.
+3. Identifica al **responsable de la HU** ([`USER_STORIES.md`](docs/requirements/USER_STORIES.md), la tabla oficial) y
+   al **owner de cada tabla** ([`OWNERSHIP.md`](docs/database/OWNERSHIP.md)). Trabaja sólo en lo que te pidieron; no
+   reasignes historias; para lo ajeno, usa los contratos del owner.
 4. Revisa `git status`, `git log` y la rama actual. No pises trabajo existente.
 5. **No inventes** tablas, modelos, requisitos ni historias. Si falta información, pregunta o documenta la ambigüedad.
 6. **No modifiques migraciones ya aplicadas**; crea una nueva (`db/migrations/NNN_*.sql`) con su prueba.
