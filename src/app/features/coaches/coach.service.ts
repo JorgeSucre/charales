@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { MockDb } from '../../core/data/mock-db';
-import { Coach, CoachAssignment, Competition } from '../../core/models';
+import { Coach, CoachAssignment } from '../../core/models';
 
 export interface AssignmentView extends CoachAssignment {
   coachName: string;
@@ -8,7 +8,7 @@ export interface AssignmentView extends CoachAssignment {
   categoryName: string;
 }
 
-/** HU-022 (coaches) and HU-026 (coach ↔ competition ↔ category). Competition CRUD is out of scope. */
+/** HU-022 (coaches) and HU-026 (coach ↔ competition ↔ category). Competition CRUD belongs to another member. */
 @Injectable({ providedIn: 'root' })
 export class CoachService {
   private db = inject(MockDb);
@@ -23,10 +23,6 @@ export class CoachService {
       ? this.db.coaches.map((c) => (c.id === coach.id ? coach : c))
       : [...this.db.coaches, coach];
     return this.db.respond(coach);
-  }
-
-  competitions(): Promise<Competition[]> {
-    return this.db.respond(this.db.competitions);
   }
 
   assignments(): Promise<AssignmentView[]> {

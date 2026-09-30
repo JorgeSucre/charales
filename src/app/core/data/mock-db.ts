@@ -11,6 +11,7 @@ import {
   Payment,
   PaymentApplication,
   Player,
+  PlayerCategory,
   Season,
   TrainingSession,
   Tutor,
@@ -118,7 +119,6 @@ export class MockDb {
       id: 'e1',
       playerId: 'p1',
       seasonId: 's1',
-      categoryId: 'cat1',
       enrolledAt: '2026-08-05',
       status: 'active',
     },
@@ -126,7 +126,6 @@ export class MockDb {
       id: 'e2',
       playerId: 'p2',
       seasonId: 's1',
-      categoryId: 'cat2',
       enrolledAt: '2026-08-05',
       status: 'active',
     },
@@ -134,10 +133,14 @@ export class MockDb {
       id: 'e3',
       playerId: 'p3',
       seasonId: 's1',
-      categoryId: 'cat1',
       enrolledAt: '2026-08-10',
       status: 'active',
     },
+  ];
+  playerCategories: PlayerCategory[] = [
+    { id: 'pc1', playerId: 'p1', categoryId: 'cat1', startDate: '2026-08-05' },
+    { id: 'pc2', playerId: 'p2', categoryId: 'cat2', startDate: '2026-08-05' },
+    { id: 'pc3', playerId: 'p3', categoryId: 'cat1', startDate: '2026-08-10' },
   ];
   competitions: Competition[] = [
     { id: 'comp1', seasonId: 's1', name: 'Liga Municipal', kind: 'league' },

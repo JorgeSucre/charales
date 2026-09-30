@@ -6,7 +6,7 @@ import { Shell } from './layout/shell';
 const auth = () => import('./features/auth/password.pages');
 const billing = () => import('./features/billing/billing.pages');
 const uniforms = () => import('./features/uniforms/uniforms.pages');
-const coaches = () => import('./features/coaches/coaches.page');
+const coaches = () => import('./features/coaches/coaches.pages');
 const reports = () => import('./features/reports/reports.pages');
 
 /**

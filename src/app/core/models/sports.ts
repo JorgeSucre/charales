@@ -17,17 +17,29 @@ export interface Category {
 }
 
 /**
- * Administrative enrollment of a player in a category for a season (HU-020).
- * It is also the player↔category link, so there is no separate PlayerCategory entity.
+ * Administrative/annual enrollment (HU-020): the player is registered with the school for a season.
+ * It says nothing about the category — see PlayerCategory.
  */
 export interface Enrollment {
   id: string;
   playerId: string;
   seasonId: string;
-  categoryId: string;
   enrolledAt: string;
   status: 'active' | 'cancelled';
   notes?: string;
+}
+
+/**
+ * Sporting membership (spec: jugador_categoria): which category the player belongs to.
+ * The season comes from the category. Open-ended while `endDate` is unset; a category change
+ * closes the current row and opens a new one, so history is kept.
+ */
+export interface PlayerCategory {
+  id: string;
+  playerId: string;
+  categoryId: string;
+  startDate: string;
+  endDate?: string;
 }
 
 export interface Competition {

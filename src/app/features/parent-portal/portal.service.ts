@@ -36,22 +36,23 @@ export class PortalService {
     return this.uniforms.orders(this.childIds());
   }
 
-  // HU-063: child → active enrollment category → competitions that category is assigned to.
+  // HU-063: child → current category (PlayerCategory) → competitions that category is assigned to.
   competitions(): Promise<ChildCompetition[]> {
     const { db } = this;
-    const rows = db.enrollments
-      .filter((e) => e.status === 'active' && this.childIds().includes(e.playerId))
-      .flatMap((e) => {
+    const children = this.childIds();
+    const rows = db.playerCategories
+      .filter((pc) => !pc.endDate && children.includes(pc.playerId))
+      .flatMap((pc) => {
         const competitionIds = new Set(
           db.coachAssignments
-            .filter((a) => a.categoryId === e.categoryId)
+            .filter((a) => a.categoryId === pc.categoryId)
             .map((a) => a.competitionId),
         );
         return db.competitions
           .filter((c) => competitionIds.has(c.id))
           .map((c) => ({
-            playerName: db.players.find((p) => p.id === e.playerId)?.fullName ?? '—',
-            categoryName: db.categories.find((cat) => cat.id === e.categoryId)?.name ?? '—',
+            playerName: db.players.find((p) => p.id === pc.playerId)?.fullName ?? '—',
+            categoryName: db.categories.find((cat) => cat.id === pc.categoryId)?.name ?? '—',
             competitionName: c.name,
             kind: c.kind,
           }));

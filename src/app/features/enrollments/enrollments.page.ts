@@ -4,10 +4,10 @@ import { PlayerService } from '../../core/services/player.service';
 import { FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
 import { Submission } from '../../shared/submission';
-import { CategoryService } from '../categories/category.service';
+import { SeasonService } from '../seasons/season.service';
 import { EnrollmentService } from './enrollment.service';
 
-/** HU-020 */
+/** HU-020: administrative enrollment per season. Assigning the category is a separate concept (PlayerCategory). */
 @Component({
   selector: 'app-enrollments-page',
   imports: [ReactiveFormsModule, FieldError, LoadState],
@@ -26,15 +26,15 @@ import { EnrollmentService } from './enrollment.service';
       </label>
       <app-field-error [control]="form.controls.playerId" />
       <label
-        >Categoría
-        <select formControlName="categoryId">
+        >Temporada
+        <select formControlName="seasonId">
           <option value="" disabled>Selecciona…</option>
-          @for (c of categories.value() ?? []; track c.id) {
-            <option [value]="c.id">{{ c.name }}</option>
+          @for (s of seasons.value() ?? []; track s.id) {
+            <option [value]="s.id">{{ s.name }}</option>
           }
         </select>
       </label>
-      <app-field-error [control]="form.controls.categoryId" />
+      <app-field-error [control]="form.controls.seasonId" />
       <label>Notas <textarea formControlName="notes" rows="2"></textarea></label>
       @if (submission.result(); as r) {
         <p class="alert" [class.ok]="r.ok" [class.error]="!r.ok" role="status">{{ r.text }}</p>
@@ -47,7 +47,6 @@ import { EnrollmentService } from './enrollment.service';
           <thead>
             <tr>
               <th>Jugador</th>
-              <th>Categoría</th>
               <th>Temporada</th>
               <th>Fecha</th>
               <th>Estado</th>
@@ -57,7 +56,6 @@ import { EnrollmentService } from './enrollment.service';
             @for (e of enrollments.value() ?? []; track e.id) {
               <tr>
                 <td>{{ e.playerName }}</td>
-                <td>{{ e.categoryName }}</td>
                 <td>{{ e.seasonName }}</td>
                 <td>{{ e.enrolledAt }}</td>
                 <td>
@@ -77,13 +75,13 @@ export class EnrollmentsPage {
   private service = inject(EnrollmentService);
   private playerService = inject(PlayerService);
   protected players = resource({ loader: () => this.playerService.list() });
-  private categoryService = inject(CategoryService);
-  protected categories = resource({ loader: () => this.categoryService.list() });
+  private seasonService = inject(SeasonService);
+  protected seasons = resource({ loader: () => this.seasonService.list() });
   protected enrollments = resource({ loader: () => this.service.list() });
   protected submission = new Submission();
   protected form = inject(FormBuilder).nonNullable.group({
     playerId: ['', Validators.required],
-    categoryId: ['', Validators.required],
+    seasonId: ['', Validators.required],
     notes: [''],
   });
 

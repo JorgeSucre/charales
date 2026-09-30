@@ -3,7 +3,8 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
 import { Submission } from '../../shared/submission';
-import { CategoryService } from '../categories/category.service';
+import { CategoryService } from '../../core/services/category.service';
+import { CompetitionService } from '../../core/services/competition.service';
 import { CoachService } from './coach.service';
 
 /** HU-022 */
@@ -152,7 +153,8 @@ export class CoachesPage {
 export class AssignmentsPage {
   private service = inject(CoachService);
   protected coaches = resource({ loader: () => this.service.list() });
-  protected competitions = resource({ loader: () => this.service.competitions() });
+  private competitionService = inject(CompetitionService);
+  protected competitions = resource({ loader: () => this.competitionService.list() });
   private categoryService = inject(CategoryService);
   protected categories = resource({ loader: () => this.categoryService.list() });
   protected assignments = resource({ loader: () => this.service.assignments() });

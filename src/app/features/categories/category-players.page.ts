@@ -1,6 +1,6 @@
 import { Component, inject, resource, signal } from '@angular/core';
 import { LoadState } from '../../shared/load-state';
-import { CategoryService } from './category.service';
+import { CategoryService } from '../../core/services/category.service';
 
 /** HU-018 */
 @Component({
@@ -58,6 +58,6 @@ export class CategoryPlayersPage {
   protected categoryId = signal('');
   protected players = resource({
     params: () => this.categoryId() || undefined,
-    loader: ({ params }) => this.service.playersByCategory(params),
+    loader: ({ params }) => this.service.players(params),
   });
 }
