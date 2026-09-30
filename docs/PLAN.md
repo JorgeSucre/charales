@@ -8,7 +8,8 @@
 
 ## Fuera de alcance (deliberado)
 
-- Backend, BD, autenticación real, JWT, correo, hashing de contraseñas (HU-072 se cumple en el backend).
+- Backend, autenticación real, JWT, correo, hashing de contraseñas (HU-072 se cumple en el backend).
+- La BD (PostgreSQL) se diseñó en la fase 3: ver `docs/database/`. El frontend todavía no se conecta a ella.
 - Historias de Joss, Armando y Dani (ver «Límites con otros integrantes»).
 - `environments/`: se agregan cuando exista una URL de API. E2E, CI/CD, Docker.
 
@@ -115,11 +116,12 @@ Estables para acordar: `Player`, `Tutor`, `Category`, `PlayerCategory`, `Enrollm
 `Competition`, `Season`, `Match`, `TrainingSession`, `Venue`, `ChargeConcept`, `Charge`, `Payment`, `PaymentDraft`,
 `PaymentApplication`, `UniformProduct`, `UniformVariant`, `UniformOrder`, `UniformOrderLine`.
 
-Puntos por acordar antes del backend:
+Puntos por acordar antes del backend. La fase 3 los resolvió de forma **provisional**; ver
+`docs/database/decisions.md` y `docs/database/api-contract.md`:
 
-- Formato de IDs (hoy `string`) y fechas (`YYYY-MM-DD` / ISO local).
-- Montos en centavos.
-- `Tutor.playerIds` embebido vs. tabla intermedia (con parentesco por jugador).
+- IDs → UUID. Fechas → `date` local vs. `timestamptz`, con `business_date()` en hora de México.
+- Montos → `integer` en centavos, igual que el frontend.
+- `Tutor.playerIds` → tabla `tutor_players` con parentesco y tutor principal.
 - `Player` es mínimo a propósito: su dueño debe completarlo.
 
 ## MockDb

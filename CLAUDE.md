@@ -1,12 +1,15 @@
 # CLAUDE.md
 
-Angular 22 WebApp for a football school. Frontend only, mock data. Read `README.md` and `docs/PLAN.md` first.
+Angular 22 WebApp for a football school. Frontend uses mock data; the PostgreSQL schema lives in `db/` (not wired to
+the frontend yet). Read `README.md`, `docs/PLAN.md` and, for data work, `docs/database/README.md` first.
 
 ## Commands
 
 - `npx ng test --watch=false` — all tests (Vitest). Must pass before committing.
 - `npm run build` — must compile without warnings.
 - `npx prettier --check .` — must pass (`--write .` to fix).
+- `npm run db:test` — rebuilds `charales_test` from migrations + seed and runs DB integrity tests (needs local PostgreSQL 16).
+- DB changes = a NEW file `db/migrations/NNN_*.sql`; never edit an applied migration. Add a test in `db/tests/integrity.sql`.
 
 ## Rules
 

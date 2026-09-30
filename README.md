@@ -4,7 +4,8 @@ Proyecto escolar integrador: WebApp para administrar una escuela de fútbol (usu
 entrenadores, cobranza, uniformes, portal de padres, reportes). Las historias de usuario están organizadas por
 **épicas** (EP01–EP12) y cada una tiene un **responsable** (Borrayo, Joss, Armando, Dani).
 
-> Estado: **frontend con datos simulados**. No hay backend ni autenticación real todavía.
+> Estado: **frontend con datos simulados** + **esquema de BD PostgreSQL** (`db/`, sin conectar todavía).
+> No hay backend ni autenticación real.
 
 ## Stack
 
@@ -18,6 +19,10 @@ npm start            # http://localhost:4200
 npm run build
 npm test             # ng test (Vitest, modo watch)
 npx ng test --watch=false   # una sola corrida (CI)
+
+# Base de datos (PostgreSQL 16 local) — ver docs/database/README.md
+npm run db:reset     # crea charales_dev con migraciones + seed ficticio
+npm run db:test      # pruebas de integridad + consultas críticas
 ```
 
 Usuarios demo (la contraseña **no se verifica**, cualquier valor sirve):
