@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 Angular 22 WebApp for a football school. Frontend uses mock data; the PostgreSQL schema lives in `db/` (not wired to
-the frontend yet). Read `README.md`, `docs/PLAN.md` and, for data work, `docs/database/DATA_CONTRACT.md` (frozen rules) and
-`docs/database/OWNERSHIP.md` (who writes each table) first.
+the frontend yet). Read `README.md`, `docs/PLAN.md` and, for data work, `docs/database/DATA_CONTRACT.md` (frozen rules),
+`docs/database/OWNERSHIP.md` (who writes each table) and `docs/INTEGRATION_MAP.md` (module owners, dependencies) first.
 
 ## Commands
 
