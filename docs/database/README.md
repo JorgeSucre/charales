@@ -10,7 +10,7 @@ Base común para todos los módulos. **PostgreSQL 16.**
 | [`relationships.md`](relationships.md) | Las relaciones explicadas en lenguaje sencillo + diagrama ER |
 | [`schema.md`](schema.md)               | Cada tabla: propósito, PK, FK, campos y restricciones        |
 | [`api-contract.md`](api-contract.md)   | Modelo Angular → API → tabla                                 |
-| [`queries.md`](queries.md)             | Las 20 consultas críticas y lo que responden                 |
+| [`queries.md`](queries.md)             | Las 21 consultas críticas y lo que responden                 |
 | [`decisions.md`](decisions.md)         | Por qué está así y qué falta acordar                         |
 
 ## Levantar la BD (local)
@@ -31,14 +31,14 @@ Para otra base: `DATABASE_URL=postgresql://usuario@host:5432/nombre npm run db:m
 
 ```text
 db/
-  migrations/  001_…007_*.sql   se aplican en orden; cada una en su transacción; registro en schema_migrations
+  migrations/  001_…008_*.sql   se aplican en orden; cada una en su transacción; registro en schema_migrations
   seed/        dev_seed.sql      datos ficticios · sid.sql (UUIDs legibles)
-  tests/       integrity.sql     50 pruebas (transacción revertida)
-  queries/     critical.sql      20 consultas del sistema
+  tests/       integrity.sql     55 pruebas (transacción revertida)
+  queries/     critical.sql      21 consultas del sistema
   scripts/     migrate.sh · reset.sh · test.sh
 ```
 
-**Nueva migración:** crear `db/migrations/008_descripcion.sql` (siguiente número; proceso completo en `DATA_CONTRACT.md`). Nunca editar una migración ya aplicada en una BD
+**Nueva migración:** crear `db/migrations/009_descripcion.sql` (siguiente número; proceso completo en `DATA_CONTRACT.md`). Nunca editar una migración ya aplicada en una BD
 compartida.
 
 ## Convenciones

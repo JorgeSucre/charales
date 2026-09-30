@@ -53,10 +53,14 @@ PlayerCategory { id, playerId, categoryId, startDate, endDate? }   ↔  POST /pl
 
 Cambiar de categoría = una transacción: `UPDATE … SET end_date` en la fila abierta + `INSERT` de la nueva.
 
-### CoachAssignment
+### CompetitionCategory y CoachAssignment (C2)
+
+`CompetitionCategory { id, competitionId, categoryId }` ↔ `competition_categories` (owner Armando, HU-035). El backend
+deduce `season_id` y la BD rechaza temporadas distintas.
 
 `CoachAssignment { coachId, competitionId, categoryId }` ↔ `POST /coach-assignments` ↔ `coach_assignments`.
-El backend obtiene `season_id` de la competencia; si la categoría es de otra temporada, la FK lo rechaza.
+El backend obtiene `season_id` de la competencia. Si la categoría es de otra temporada, o si no hay participación
+registrada, la FK lo rechaza.
 
 ### Cobranza: Charge, Payment, PaymentApplication
 
@@ -65,7 +69,7 @@ Charge { id, playerId, conceptId, amountCents, description, dueDate, period?, so
   ↔ charges (+ season_id obligatorio, issued_on; source = { type: 'uniform-order', id: uniform_order_id })
 
 PaymentDraft { playerId, amountCents, method, chargeIds? }
-  ↓ POST /payments   (BillingService.registerPayment)
+  ↓ POST /payments   (BillingService.registerPayment; lo implementa Dani, HU-045)
   1 transacción:
     INSERT payments (received_by = usuario del token)            → receipt_number generado
     INSERT payment_applications (1 fila por cargo, más antiguo primero, player_id = playerId)
@@ -73,7 +77,7 @@ PaymentDraft { playerId, amountCents, method, chargeIds? }
   ↑ Payment { id, receiptNumber: 'R-' + receipt_number con ceros a la izquierda hasta 4 dígitos, sin truncar (R-0001, R-12345),
               playerId, amountCents, method, paidAt, cancelledAt? }
 
-POST /payments/:id/cancel { reason }  →  UPDATE payments SET cancelled_at, cancelled_by, cancellation_reason
+POST /payments/:id/cancel { reason }  →  cancelPayment (Joss, HU-049; sólo administrador) → UPDATE payments SET cancelled_at, cancelled_by, cancellation_reason
 GET /players/:id/open-charges         →  charge_balances WHERE balance_cents > 0 ORDER BY due_date   (OpenCharge[])
 GET /billing/debts                    →  consulta Q20                                               (DebtView[])
 GET /payments/:id/receipt             →  consulta Q10                                               (ReceiptView)
@@ -102,11 +106,11 @@ POST /uniforms/orders/:id/deliver { deliveredTo }  → UPDATE uniform_order_line
 
 ## Portal del tutor
 
-| Angular (`PortalService`) | API                          | Consulta                                                                 |
-| ------------------------- | ---------------------------- | ------------------------------------------------------------------------ |
-| `children()`              | `GET /portal/children`       | Q5 (por `user_id` del token)                                             |
-| `competitions()`          | `GET /portal/competitions`   | Q5 → `player_categories` abiertas → `coach_assignments` → `competitions` |
-| `uniformOrders()`         | `GET /portal/uniform-orders` | Q14 filtrado por los hijos de Q5                                         |
+| Angular (`PortalService`) | API                          | Consulta                                                                                          |
+| ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------- |
+| `children()`              | `GET /portal/children`       | Q5 (por `user_id` del token)                                                                      |
+| `competitions()`          | `GET /portal/competitions`   | Q21 (hijos del token → categoría actual → `competition_categories`; más adelante, plantel HU-036) |
+| `uniformOrders()`         | `GET /portal/uniform-orders` | Q14 filtrado por los hijos de Q5                                                                  |
 
 Ninguna ruta del portal recibe `playerId` ni `tutorId` del cliente.
 

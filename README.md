@@ -53,7 +53,7 @@ Todos están definidos en `package.json`.
 | `npm run ng -- <args>`                 | Angular CLI                                                                                |
 | `npm run db:migrate`                   | Aplica las migraciones pendientes a `$DATABASE_URL`                                        |
 | `npm run db:reset`                     | **Borra** y recrea `charales_dev` con migraciones + seed (sólo local)                      |
-| `npm run db:test`                      | Recrea `charales_test` y corre las 50 pruebas de integridad y las 20 consultas críticas    |
+| `npm run db:test`                      | Recrea `charales_test` y corre las 55 pruebas de integridad y las 21 consultas críticas    |
 | `npx prettier --check .` / `--write .` | Revisar / aplicar formato (no hay script `format`)                                         |
 
 No existen `db:seed` ni `lint`: el seed se carga con `db:reset` y no hay ESLint configurado.

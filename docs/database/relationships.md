@@ -23,8 +23,11 @@
 ## Competencias y agenda
 
 - Una **competencia** (torneo o liga) pertenece a una temporada.
-- Una **asignación** dice «Carlos lleva a Sub-10 a la Liga Municipal». La BD impide mezclar una categoría y una
-  competencia de temporadas distintas.
+- Una **participación** (`competition_categories`) dice «Sub-10 juega la Liga Municipal». Eso es lo que decide en qué
+  torneos está una categoría, tenga o no entrenador asignado.
+- Una **asignación** (`coach_assignments`) dice «Carlos es el responsable de Sub-10 en la Liga Municipal». Sólo se
+  puede asignar entrenador a una participación ya registrada. La BD impide mezclar temporadas distintas.
+- Un **partido** también exige que la categoría participe en esa competencia.
 - La **agenda** son los **partidos** (de una competencia y categoría, en una sede) más los **entrenamientos** (de una
   categoría, con entrenador y sede). No hay tabla de agenda: se consulta uniendo ambas.
 
@@ -60,7 +63,7 @@ Producto ──< Variante (talla, precio actual) ──< Línea de pedido >─�
 ## Portal del tutor (consulta segura)
 
 ```text
-usuario autenticado → tutors.user_id → tutor_players → players → (categorías, competencias, cargos, uniformes)
+usuario autenticado → tutors.user_id → tutor_players → players → (categoría actual → participaciones, cargos, uniformes)
 ```
 
 El backend **siempre** parte del usuario del token. Nunca confía en un `playerId` enviado por el navegador: si llega
@@ -81,11 +84,11 @@ erDiagram
   players ||--o{ player_categories : ""
   categories ||--o{ player_categories : ""
   seasons ||--o{ competitions : ""
+  competitions ||--o{ competition_categories : "participa"
+  categories ||--o{ competition_categories : ""
+  competition_categories ||--o{ coach_assignments : "responsable"
+  competition_categories ||--o{ matches : ""
   coaches ||--o{ coach_assignments : ""
-  competitions ||--o{ coach_assignments : ""
-  categories ||--o{ coach_assignments : ""
-  competitions ||--o{ matches : ""
-  categories ||--o{ matches : ""
   venues ||--o{ matches : ""
   categories ||--o{ training_sessions : ""
   coaches ||--o{ training_sessions : ""

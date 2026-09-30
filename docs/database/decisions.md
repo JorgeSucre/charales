@@ -1,7 +1,8 @@
 # Decisiones de base de datos (fase 3, revisadas en la fase 3.5)
 
 Fuente: modelos de `src/app/core/models`, servicios, `core/auth/permissions.ts`, `docs/PLAN.md` y las historias de
-Borrayo. El Markdown de historias **no está en el repo**, así que ninguna tabla se deriva sólo de su nombre.
+Borrayo. En esta fase el Markdown de historias no estaba en el repo. Hoy la tabla oficial está en
+`docs/requirements/USER_STORIES.md`, y los owners vigentes en `OWNERSHIP.md`.
 
 Este documento guarda el **porqué**. Las reglas vigentes están en [`DATA_CONTRACT.md`](DATA_CONTRACT.md).
 
@@ -196,6 +197,8 @@ Se mantiene la separación de la fase 2:
 - `competitions` agrega `start_date` y `end_date` opcionales (lo pidió el encargo para portal y agenda). No tiene
   columna de estado: se deriva de las fechas.
 - La agenda sale de `matches` + `training_sessions`. No hay tabla de agenda ni se duplican competencias.
+- **Fase 6 (C2):** migración 008 agrega `competition_categories`, que es la participación explícita (HU-035). La
+  participación ya no se deduce de `coach_assignments`, y tanto asignaciones como partidos la exigen por FK.
 
 ## 12. Fuera de alcance
 

@@ -30,21 +30,21 @@ Las historias de usuario se organizan por épicas (EP01–EP12) y cada una tiene
 
 ## Estado del proyecto
 
-| Área                  | Estado          | Detalle                                                                                                           |
-| --------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Arquitectura frontend | **COMPLETADO**  | Angular standalone por dominio, RBAC por permisos, capa de servicios                                              |
-| Frontend              | **EN PROGRESO** | Pantallas de las historias de Borrayo, con datos simulados (`MockDb`). Faltan los módulos de los demás            |
-| Base de datos         | **COMPLETADO**  | PostgreSQL 16: 7 migraciones, seed ficticio, 50 pruebas, contrato congelado. Dos decisiones abiertas (C2, C3)     |
-| Backend               | **NO INICIADO** | —                                                                                                                 |
-| API                   | **PENDIENTE**   | Sólo existe el contrato propuesto ([`api-contract.md`](docs/database/api-contract.md))                            |
-| Autenticación         | **PENDIENTE**   | Hay un login **simulado**, sin verificación de contraseña, más guards y permisos. La autenticación real no existe |
-| Cobranza              | **EN PROGRESO** | UI + reglas probadas + esquema de BD. Sin backend. La captura de pagos es de otro integrante                      |
-| Uniformes             | **EN PROGRESO** | UI + esquema de BD. Sin backend                                                                                   |
-| Portal del tutor      | **EN PROGRESO** | UI filtrada por tutor + consultas en BD. Sin backend (la seguridad real depende del backend)                      |
-| Reportes              | **EN PROGRESO** | Ingresos y agenda en UI + consultas SQL. Sin backend                                                              |
-| Agenda                | **EN PROGRESO** | Consulta lista. Los datos de partidos y entrenamientos los escribe otro integrante (no iniciado)                  |
-| Pruebas               | **EN PROGRESO** | 32 pruebas unitarias/de integración Angular + 50 de integridad de BD. Sin E2E                                     |
-| Deployment            | **NO INICIADO** | —                                                                                                                 |
+| Área                  | Estado          | Detalle                                                                                                                     |
+| --------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Arquitectura frontend | **COMPLETADO**  | Angular standalone por dominio, RBAC por permisos, capa de servicios                                                        |
+| Frontend              | **EN PROGRESO** | Pantallas de las historias de Borrayo, con datos simulados (`MockDb`). Faltan los módulos de los demás                      |
+| Base de datos         | **COMPLETADO**  | PostgreSQL 16: 8 migraciones, 24 tablas, seed ficticio, 55 pruebas de integridad, 21 consultas críticas, contrato congelado |
+| Backend               | **NO INICIADO** | —                                                                                                                           |
+| API                   | **PENDIENTE**   | Sólo existe el contrato propuesto ([`api-contract.md`](docs/database/api-contract.md))                                      |
+| Autenticación         | **PENDIENTE**   | Hay un login **simulado**, sin verificación de contraseña, más guards y permisos. La autenticación real no existe           |
+| Cobranza              | **EN PROGRESO** | UI + reglas probadas + esquema de BD. Sin backend. Registro de pagos: Dani (HU-045); cancelación: Joss (HU-049)             |
+| Uniformes             | **EN PROGRESO** | UI + esquema de BD. Sin backend                                                                                             |
+| Portal del tutor      | **EN PROGRESO** | UI filtrada por tutor + consultas en BD. Sin backend (la seguridad real depende del backend)                                |
+| Reportes              | **EN PROGRESO** | Ingresos y agenda en UI + consultas SQL. Sin backend                                                                        |
+| Agenda                | **EN PROGRESO** | Consulta lista (HU-068). Partidos y sesiones los escribe Joss (HU-037, HU-028), sin iniciar                                 |
+| Pruebas               | **EN PROGRESO** | 32 pruebas unitarias/de integración Angular + 50 de integridad de BD. Sin E2E                                               |
+| Deployment            | **NO INICIADO** | —                                                                                                                           |
 
 ### Terminado
 
@@ -56,23 +56,26 @@ Las historias de usuario se organizan por épicas (EP01–EP12) y cada una tiene
 
 Preparado y a la espera de backend o de otros módulos:
 
-- conexión frontend ↔ API: cambios de TS listados en [`INTEGRATION_MAP.md` § 4](docs/INTEGRATION_MAP.md);
-- contrato de pagos (`registerPayment`) para quien capture pagos;
+- conexión frontend ↔ API: cambios de TS listados en [`INTEGRATION_MAP.md` § 2](docs/INTEGRATION_MAP.md);
+- contrato de pagos (`registerPayment`) para Dani (HU-045) y `cancelPayment` para Joss (HU-049);
 - lecturas compartidas (`PlayerService`, `CategoryService`, `CompetitionService`).
 
 ### Pendiente
 
 - Backend y API.
 - Autenticación real (hash de contraseñas, sesión o token, correo de recuperación).
-- Módulos de los demás integrantes.
+- Historias de Joss, Armando y Dani (ninguna iniciada) y las tablas que el backlog pide y aún no existen
+  ([`OWNERSHIP.md`](docs/database/OWNERSHIP.md#tablas-y-columnas-que-pide-el-backlog-y-todavía-no-existen)).
 - Pruebas E2E.
 - Deployment.
 - Merge de las ramas de Borrayo a `main`.
 
 ### Decisiones pendientes
 
-Son las que bloquean la integración: **C1–C6** (detalle y recomendación en [`INTEGRATION_MAP.md` § 1](docs/INTEGRATION_MAP.md)).
-Las no bloqueantes y la licencia están en [`ROADMAP.md`](docs/ROADMAP.md).
+Las fronteras **C1–C6 quedaron resueltas** con la tabla oficial
+([`DATA_CONTRACT.md` § 7](docs/database/DATA_CONTRACT.md)). Para publicar faltan decisiones humanas: la **licencia**
+(los 4 integrantes) y la **limpieza de identidad del historial Git**. Ver [`ROADMAP.md`](docs/ROADMAP.md).
+Otras decisiones técnicas abiertas: [`INTEGRATION_MAP.md` § 1](docs/INTEGRATION_MAP.md).
 
 ### Fuera de alcance actual
 
@@ -80,50 +83,62 @@ Backend, API, JWT/sesiones, correo real, pagos en línea, almacenamiento de arch
 
 ## Historias de usuario
 
-> **Limitación:** el documento completo de historias **no está en el repositorio**. Sólo se conocen las asignadas a
-> Borrayo, así que las de Joss, Armando y Dani no se listan aquí para no inventarlas.
+**Fuente oficial:** [`docs/requirements/USER_STORIES.md`](docs/requirements/USER_STORIES.md). Son **76 historias**
+en 12 épicas (EP01–EP12), con responsable, módulo, dependencias, entidades sugeridas, release (MVP, Versión 1,
+Versión 2) y sprint.
 
-En todas las historias de Borrayo el backend está **pendiente**. «EN PROGRESO» significa que existen la UI (con datos
-simulados) y el soporte en BD.
+| Responsable                      | HU  | Estado                                                               |
+| -------------------------------- | --- | -------------------------------------------------------------------- |
+| Borrayo                          | 22  | EN PROGRESO (tabla de abajo)                                         |
+| Joss                             | 19  | NO INICIADO                                                          |
+| Armando                          | 19  | NO INICIADO                                                          |
+| Dani (en HU-003 aparece «Dany»)  | 15  | NO INICIADO                                                          |
+| Todos (HU-073, integridad de BD) | 1   | EN PROGRESO: la BD ya tiene PK/FK, unicidad y transacciones en pagos |
 
-| HU  | Descripción                                       | Owner   | Estado                                                                             |
-| --- | ------------------------------------------------- | ------- | ---------------------------------------------------------------------------------- |
-| 004 | Admin crea, edita, activa y desactiva usuarios    | Borrayo | EN PROGRESO. Falta ligar tutor o entrenador al crear                               |
-| 005 | Usuario recupera o cambia su contraseña           | Borrayo | EN PROGRESO. Sólo la UI; el envío real va en el backend                            |
-| 072 | Contraseñas seguras y accesos protegidos          | Borrayo | EN PROGRESO. Guards, permisos y `CHECK` de hash en BD; el hashing va en el backend |
-| 011 | Secretaría registra uno o más tutores por jugador | Borrayo | EN PROGRESO. Falta la edición                                                      |
-| 018 | Lista de jugadores por categoría                  | Borrayo | EN PROGRESO. Lectura (escritura: C3)                                               |
-| 020 | Inscripción administrativa anual                  | Borrayo | EN PROGRESO. Falta la cancelación                                                  |
-| 022 | Registrar entrenadores                            | Borrayo | EN PROGRESO. Falta la edición                                                      |
-| 026 | Entrenador por torneo/liga y categoría            | Borrayo | EN PROGRESO (C2)                                                                   |
-| 043 | Configurar conceptos de cobro                     | Borrayo | EN PROGRESO                                                                        |
-| 044 | Generar mensualidades para jugadores activos      | Borrayo | EN PROGRESO                                                                        |
-| 048 | Consultar o reimprimir recibos                    | Borrayo | EN PROGRESO                                                                        |
-| 050 | Listado de adeudos                                | Borrayo | EN PROGRESO                                                                        |
-| 052 | Catálogo de uniformes y tallas                    | Borrayo | EN PROGRESO. Falta la edición                                                      |
-| 053 | Pedido de uniforme por jugador                    | Borrayo | EN PROGRESO                                                                        |
-| 054 | Vincular el cobro del uniforme con pagos          | Borrayo | EN PROGRESO                                                                        |
-| 055 | Registrar la entrega de uniforme                  | Borrayo | EN PROGRESO                                                                        |
-| 056 | Tutor consulta los uniformes de sus hijos         | Borrayo | EN PROGRESO                                                                        |
-| 063 | Tutor consulta los torneos de cada hijo           | Borrayo | EN PROGRESO (C2)                                                                   |
-| 067 | Reporte de ingresos por periodo y concepto        | Borrayo | EN PROGRESO                                                                        |
-| 068 | Agenda global de entrenamientos y partidos        | Borrayo | EN PROGRESO                                                                        |
-| 070 | Configurar temporadas                             | Borrayo | EN PROGRESO                                                                        |
-| 074 | Pruebas de flujos críticos                        | Borrayo | EN PROGRESO. Unitarias y BD listas; falta E2E                                      |
+**Historias de Borrayo.** En todas el backend está **pendiente**. «EN PROGRESO» = existen la UI (con datos simulados)
+y el soporte en BD.
+
+| HU  | Descripción                                       | Owner   | Estado                                                                                           |
+| --- | ------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------ |
+| 004 | Admin crea, edita, activa y desactiva usuarios    | Borrayo | EN PROGRESO. Falta ligar tutor o entrenador al crear                                             |
+| 005 | Usuario recupera o cambia su contraseña           | Borrayo | EN PROGRESO. Sólo la UI; el envío real va en el backend                                          |
+| 072 | Contraseñas seguras y accesos protegidos          | Borrayo | EN PROGRESO. Guards, permisos y `CHECK` de hash en BD; el hashing va en el backend               |
+| 011 | Secretaría registra uno o más tutores por jugador | Borrayo | EN PROGRESO. Falta la edición                                                                    |
+| 018 | Lista de jugadores por categoría                  | Borrayo | EN PROGRESO. Lectura (escritura: C3)                                                             |
+| 020 | Inscripción administrativa anual                  | Borrayo | EN PROGRESO. Falta la cancelación                                                                |
+| 022 | Registrar entrenadores                            | Borrayo | EN PROGRESO. Falta la edición                                                                    |
+| 026 | Entrenador por torneo/liga y categoría            | Borrayo | EN PROGRESO. Exige participación (C2); falta «sólo asignaciones vigentes» (HU-023, Armando)      |
+| 043 | Configurar conceptos de cobro                     | Borrayo | EN PROGRESO                                                                                      |
+| 044 | Generar mensualidades para jugadores activos      | Borrayo | EN PROGRESO                                                                                      |
+| 048 | Consultar o reimprimir recibos                    | Borrayo | EN PROGRESO                                                                                      |
+| 050 | Listado de adeudos                                | Borrayo | EN PROGRESO                                                                                      |
+| 052 | Catálogo de uniformes y tallas                    | Borrayo | EN PROGRESO. Falta la edición                                                                    |
+| 053 | Pedido de uniforme por jugador                    | Borrayo | EN PROGRESO. Falta el estado «cancelado» del backlog                                             |
+| 054 | Vincular el cobro del uniforme con pagos          | Borrayo | EN PROGRESO                                                                                      |
+| 055 | Registrar la entrega de uniforme                  | Borrayo | EN PROGRESO                                                                                      |
+| 056 | Tutor consulta los uniformes de sus hijos         | Borrayo | EN PROGRESO                                                                                      |
+| 063 | Tutor consulta los torneos de cada hijo           | Borrayo | EN PROGRESO. Usa la participación de la categoría (C2); falta filtrar por plantel (HU-036, Joss) |
+| 067 | Reporte de ingresos por periodo y concepto        | Borrayo | EN PROGRESO                                                                                      |
+| 068 | Agenda global de entrenamientos y partidos        | Borrayo | EN PROGRESO                                                                                      |
+| 070 | Configurar temporadas                             | Borrayo | EN PROGRESO                                                                                      |
+| 074 | Pruebas de flujos críticos                        | Borrayo | EN PROGRESO. Unitarias y BD listas; falta E2E                                                    |
 
 La cobertura de datos por historia está en [`OWNERSHIP.md`](docs/database/OWNERSHIP.md). Las pantallas están en
 `src/app/features/<dominio>/`.
 
 ## Equipo y ownership
 
-Integrantes: **Borrayo, Joss, Armando y Dani**. Sólo el reparto de Borrayo está documentado en el repo; el resto
-aparece como «otro integrante» hasta que el equipo lo asigne.
+Integrantes: **Borrayo, Joss, Armando y Dani**. Cada quien conserva las HU que la tabla oficial le asigna.
 
-| Owner           | Módulos / servicios de backend                                                                                                            | Tablas que escribe                                                                                                                                                          |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Borrayo         | Usuarios, Tutores, Temporadas, Inscripciones, Entrenadores y asignaciones, Cobranza (modelo), Uniformes, Reportes y Portal (sólo lectura) | `users`, `tutors`, `tutor_players`, `coaches`, `seasons`, `enrollments`, `coach_assignments`, `charge_concepts`, `charges`, `payments`, `payment_applications`, `uniform_*` |
-| Otro integrante | Jugadores, Categorías, Competencias, Agenda (partidos, entrenamientos, sedes), captura de pagos                                           | `players`, `categories`, `competitions`, `venues`, `matches`, `training_sessions`                                                                                           |
-| Por definir     | Autenticación (C5), `player_categories` (C3), cancelación de pagos (C4)                                                                   | —                                                                                                                                                                           |
+| Integrante | Dominios (por sus HU)                                                                                                                                                                                                                                      | Tablas que escribe (existentes)                                                                                                                                                                              | Servicios owner                                                                                                         |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| Borrayo    | Usuarios, contraseñas y seguridad, tutores, grupos, inscripción anual, entrenadores, asignación a torneos, cobranza (modelo), uniformes, portal (torneos, uniformes), reportes financieros, agenda global, temporadas, pruebas                             | `users`, `password_reset_tokens`, `tutors`, `tutor_players`, `coaches`, `seasons`, `enrollments`, `coach_assignments`, `charge_concepts`, `charges`, `payments`/`payment_applications` (modelo), `uniform_*` | `UserService`, `TutorService`, `SeasonService`, `EnrollmentService`, `CoachService`, `BillingService`, `UniformService` |
+| Joss       | Login (HU-001), permisos por rol, auditoría, alta y edición de jugadores, horarios y sesiones de entrenamiento, inscripción a categoría, cupos, asistencia, plantel, partidos, cancelación de pagos, descuentos, dashboard                                 | `players`, `player_categories`, `matches`, `training_sessions`                                                                                                                                               | `AuthService`, `AuditService`, `PlayerService`, `PlayerCategoryService`, `ScheduleService`, `RosterService`             |
+| Armando    | Login de entrenador, vinculación de cuenta de tutor, categorías, entrenador ↔ categoría, consultas del entrenador, inscripción de categorías a torneos, estado de cuenta, portal (partidos, resultados, perfil), reportes de asistencia y jugadores, sedes | `categories`, `competition_categories`, `venues`                                                                                                                                                             | `CategoryService`, `CompetitionCategoryService`, `CoachCategoryService`, `VenueService`                                 |
+| Dani       | Login de tutor, estatus de jugador, expediente, búsqueda, cambio de categoría, competencias, resultados, registro de pagos, avisos, portal (inicio, datos deportivos), responsive, rendimiento, respaldos                                                  | `competitions`                                                                                                                                                                                               | `CompetitionService`, `NoticeService`                                                                                   |
+
+Cuando la HU de un integrante escribe una tabla de otro (por ejemplo, Dani con HU-045 → `payments`), la implementa
+como operación del servicio owner, en un PR que revisa el owner.
 
 **Regla:** una entidad = un owner de escritura. Los demás leen o llaman al servicio del owner.
 
@@ -188,21 +203,22 @@ La BD no usa paquetes npm: los scripts llaman a `psql`.
 
 ## Documentación importante
 
-| Documento                                                          | Propósito                                                                  | Cuándo leerlo                                |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------- | -------------------------------------------- |
-| [`README.md`](README.md)                                           | Instalar, ejecutar, comandos, herramientas                                 | Al clonar                                    |
-| `PROJECT_CONTEXT.md`                                               | Este documento: qué es, estado, quién hace qué                             | Antes de cualquier tarea                     |
-| [`AGENTS.md`](AGENTS.md)                                           | Reglas de trabajo para cualquier IA                                        | Si eres una IA, antes de tocar nada          |
-| [`CLAUDE.md`](CLAUDE.md)                                           | Notas específicas de Claude Code                                           | Si usas Claude Code                          |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md)                               | Branches, commits, PRs, migraciones                                        | Antes del primer commit                      |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md)                               | Fases y lo que sigue (**fuente de verdad del roadmap**)                    | Al planear                                   |
-| [`docs/INTEGRATION_MAP.md`](docs/INTEGRATION_MAP.md)               | Servicios de backend, owners, dependencias, decisiones C1–C7, cambios TS   | Antes de trabajar en backend o integración   |
-| [`docs/PLAN.md`](docs/PLAN.md)                                     | Decisiones del frontend de las fases 1–2 (Enrollment, pagos, portal, RBAC) | Al tocar el frontend existente               |
-| [`docs/database/README.md`](docs/database/README.md)               | Levantar la BD, estructura de `db/`, seed                                  | Al trabajar con la BD                        |
-| [`docs/database/DATA_CONTRACT.md`](docs/database/DATA_CONTRACT.md) | **Reglas de datos congeladas** y proceso de cambios                        | Antes de tocar datos, modelos o SQL          |
-| [`docs/database/OWNERSHIP.md`](docs/database/OWNERSHIP.md)         | **Quién escribe cada tabla**; cobertura por historia; conflictos           | Antes de escribir en una tabla               |
-| [`docs/database/schema.md`](docs/database/schema.md)               | Cada tabla: PK, FK, restricciones                                          | Al diseñar consultas o endpoints             |
-| [`docs/database/relationships.md`](docs/database/relationships.md) | Relaciones en lenguaje sencillo + diagrama ER                              | Para entender el modelo                      |
-| [`docs/database/api-contract.md`](docs/database/api-contract.md)   | Mapeo Angular ↔ API ↔ tabla                                                | Al implementar la API o conectar el frontend |
-| [`docs/database/decisions.md`](docs/database/decisions.md)         | El porqué de cada decisión de BD                                           | Antes de proponer un cambio de diseño        |
-| [`docs/database/queries.md`](docs/database/queries.md)             | Las 20 consultas críticas                                                  | Al implementar reportes o el portal          |
+| Documento                                                                | Propósito                                                                  | Cuándo leerlo                                |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------- | -------------------------------------------- |
+| [`README.md`](README.md)                                                 | Instalar, ejecutar, comandos, herramientas                                 | Al clonar                                    |
+| `PROJECT_CONTEXT.md`                                                     | Este documento: qué es, estado, quién hace qué                             | Antes de cualquier tarea                     |
+| [`AGENTS.md`](AGENTS.md)                                                 | Reglas de trabajo para cualquier IA                                        | Si eres una IA, antes de tocar nada          |
+| [`CLAUDE.md`](CLAUDE.md)                                                 | Notas específicas de Claude Code                                           | Si usas Claude Code                          |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md)                                     | Branches, commits, PRs, migraciones                                        | Antes del primer commit                      |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md)                                     | Fases y lo que sigue (**fuente de verdad del roadmap**)                    | Al planear                                   |
+| [`docs/requirements/USER_STORIES.md`](docs/requirements/USER_STORIES.md) | **Tabla oficial de las 76 HU** (responsable, sprint, criterios)            | Antes de empezar cualquier HU                |
+| [`docs/INTEGRATION_MAP.md`](docs/INTEGRATION_MAP.md)                     | Servicios de backend, owners, dependencias, cambios TS pendientes          | Antes de trabajar en backend o integración   |
+| [`docs/PLAN.md`](docs/PLAN.md)                                           | Decisiones del frontend de las fases 1–2 (Enrollment, pagos, portal, RBAC) | Al tocar el frontend existente               |
+| [`docs/database/README.md`](docs/database/README.md)                     | Levantar la BD, estructura de `db/`, seed                                  | Al trabajar con la BD                        |
+| [`docs/database/DATA_CONTRACT.md`](docs/database/DATA_CONTRACT.md)       | **Reglas de datos congeladas** y proceso de cambios                        | Antes de tocar datos, modelos o SQL          |
+| [`docs/database/OWNERSHIP.md`](docs/database/OWNERSHIP.md)               | **Quién escribe cada tabla**; cobertura por historia; conflictos           | Antes de escribir en una tabla               |
+| [`docs/database/schema.md`](docs/database/schema.md)                     | Cada tabla: PK, FK, restricciones                                          | Al diseñar consultas o endpoints             |
+| [`docs/database/relationships.md`](docs/database/relationships.md)       | Relaciones en lenguaje sencillo + diagrama ER                              | Para entender el modelo                      |
+| [`docs/database/api-contract.md`](docs/database/api-contract.md)         | Mapeo Angular ↔ API ↔ tabla                                                | Al implementar la API o conectar el frontend |
+| [`docs/database/decisions.md`](docs/database/decisions.md)               | El porqué de cada decisión de BD                                           | Antes de proponer un cambio de diseño        |
+| [`docs/database/queries.md`](docs/database/queries.md)                   | Las 21 consultas críticas                                                  | Al implementar reportes o el portal          |

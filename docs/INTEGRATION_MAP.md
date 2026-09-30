@@ -1,109 +1,42 @@
-# Mapa de integración del equipo (fase 4)
+# Mapa de integración del equipo
 
-Preparación para repartir el backend. **No hay backend implementado.** Reglas de datos:
-[`database/DATA_CONTRACT.md`](database/DATA_CONTRACT.md). Owner de cada tabla: [`database/OWNERSHIP.md`](database/OWNERSHIP.md).
+Cómo se reparte el backend sin duplicar modelos, tablas ni reglas. **No hay backend implementado.**
+
+| Fuente                                                         | Manda sobre                       |
+| -------------------------------------------------------------- | --------------------------------- |
+| [`requirements/USER_STORIES.md`](requirements/USER_STORIES.md) | Quién hace cada HU                |
+| [`database/OWNERSHIP.md`](database/OWNERSHIP.md)               | Quién escribe cada tabla          |
+| [`database/DATA_CONTRACT.md`](database/DATA_CONTRACT.md)       | Reglas de datos y contratos C1–C6 |
 
 ## Regla fundamental
 
-- **Un solo owner de escritura por entidad.** Sólo el servicio owner hace `INSERT`, `UPDATE` o `DELETE` en sus tablas.
-- **Leer tablas ajenas sí se permite:** consultas de sólo lectura, vistas como `charge_balances`, joins para reportes.
-- **Escribir en una entidad ajena = llamar al servicio owner**, en la misma transacción cuando haga falta.
+- **Un solo owner de escritura por tabla.** Los demás leen o llaman al servicio del owner.
+- Si la HU de otro integrante escribe una tabla ajena, se implementa como operación del servicio owner, en un PR que
+  revisa el owner ([`OWNERSHIP.md` › Reglas](database/OWNERSHIP.md#reglas)).
 
 ```text
-PlayerService ─ necesita crear un tutor ─► TutorService.create() ─► tutors / tutor_players   ✔
-PlayerService ─ INSERT INTO tutors ────────────────────────────────────────────────────────   ✘
+PlayerService (Joss) ─ necesita vincular tutor ─► TutorService.linkPlayer() (Borrayo) ─► tutor_players   ✔
+PlayerService (Joss) ─ INSERT INTO tutor_players ────────────────────────────────────────────────────────   ✘
 ```
 
-El frontend actual ya cumple esta regla: el único servicio que escribe en una entidad ajena es `UniformService`, y lo
-hace a través de `BillingService.createCharge`.
+El frontend actual ya cumple la regla: la única escritura entre módulos es `UniformService → BillingService.createCharge`.
 
-## 1. Decisiones que requieren aprobación
+## 1. Decisiones
 
-### Bloquean la integración (decidir antes de repartir el backend)
+**C1–C6 están resueltas** con la tabla oficial (detalle en `DATA_CONTRACT.md` § 7; resumen en
+`OWNERSHIP.md` › Contratos de frontera). C2 ya está implementada: migración 008, portal (HU-063) y validación de
+HU-026.
 
-| #   | Decisión                                                   | Qué bloquea                                                                                        | Recomendación                                                                                  |
-| --- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| C3  | Owner de escritura de `player_categories`                  | HU-018, HU-063 y la agenda por categoría no tienen datos reales; nadie implementaría la asignación | **Owner de categorías** (§ 3)                                                                  |
-| C2  | ¿Se crea `competition_categories`?                         | El contrato de escritura de competencias, el flujo de HU-026 y la consulta de HU-063               | **Sí, antes del backend** (§ 2)                                                                |
-| C5  | Owner de autenticación (login, sesión) y sesiones vs. JWT  | Todo el backend: todos los endpoints dependen de la identidad del token                            | Decidir primero; `permissions.ts` sigue como única fuente de permisos                          |
-| C4  | Quién captura y quién **cancela** pagos, y con qué permiso | Backend de cobranza                                                                                | La captura usa `registerPayment`; cancelar con un permiso nuevo `payments.cancel` (sólo admin) |
-| C1  | ¿El alta de jugador captura tutores?                       | Backend de jugadores y tutores                                                                     | Si sí: `PlayerService` llama a `TutorService`, nunca escribe `tutor_players`                   |
-| C6  | Quién crea el cargo de inscripción                         | Backend de inscripción y cobranza                                                                  | `EnrollmentService.enroll()` llama a `BillingService.createCharge()` en la misma transacción   |
+Quedan abiertas, sin bloquear el trabajo en paralelo:
 
-### No bloquean la integración
+| Tema                                                                 | Quién decide                      |
+| -------------------------------------------------------------------- | --------------------------------- |
+| Licencia del repositorio                                             | Los 4 integrantes                 |
+| Folios con o sin huecos                                              | Owner de cobranza + Dani (HU-045) |
+| Diseño de descuentos (HU-051) sin romper el monto original del cargo | Joss con el owner de cobranza     |
+| HU-063 filtra por plantel cuando exista HU-036                       | Joss (tabla) → Borrayo (consulta) |
 
-| Decisión                                | Cuándo decidir                            |
-| --------------------------------------- | ----------------------------------------- |
-| Aplicar los cambios de TypeScript (§ 4) | En el mismo PR que conecte la API         |
-| Folios de recibo con o sin huecos       | Antes de imprimir recibos reales          |
-| Cancelación de **cargos**               | Cuando una historia la pida               |
-| C7: reglas de edad de categorías        | Con el owner de categorías, vía migración |
-
-## 2. Impacto de C2 — `competition_categories`
-
-**Problema:** hoy «la categoría X participa en la competencia Y» sólo existe si hay un entrenador asignado. Una
-categoría inscrita en un torneo sin entrenador no aparece en el portal (HU-063), y un partido puede registrarse para
-una categoría que no participa.
-
-**Diseño propuesto (migración aditiva 008, no aplicada):**
-
-```sql
-CREATE TABLE competition_categories (
-  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  competition_id uuid NOT NULL,
-  category_id    uuid NOT NULL,
-  season_id      uuid NOT NULL,
-  FOREIGN KEY (competition_id, season_id) REFERENCES competitions (id, season_id),
-  FOREIGN KEY (category_id, season_id)    REFERENCES categories (id, season_id),
-  UNIQUE (competition_id, category_id),
-  UNIQUE (competition_id, category_id, season_id)
-);
--- backfill: INSERT … SELECT DISTINCT competition_id, category_id, season_id FROM coach_assignments UNION matches
-ALTER TABLE coach_assignments ADD FOREIGN KEY (competition_id, category_id, season_id)
-  REFERENCES competition_categories (competition_id, category_id, season_id);
-ALTER TABLE matches ADD FOREIGN KEY (competition_id, category_id, season_id)
-  REFERENCES competition_categories (competition_id, category_id, season_id);
-```
-
-Se **conservan** las columnas actuales de `coach_assignments` y `matches` y sólo se agrega una FK. Así nada cambia de
-forma en el contrato de API ni en TS.
-
-| Área                           | Impacto exacto                                                                                                                                                                                                                   |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `coach_assignments`            | Ninguna columna cambia. Nueva regla: sólo se puede asignar entrenador a una participación ya registrada                                                                                                                          |
-| Portal (HU-063)                | `PortalService.competitions()` y su consulta pasan de `coach_assignments` a `competition_categories`, con `LEFT JOIN coach_assignments` para mostrar el entrenador si lo hay. Las categorías sin entrenador **empiezan a verse** |
-| Agenda (HU-068)                | Sin cambios de consulta: el entrenador del partido ya usa `LEFT JOIN coach_assignments`. `matches` gana la garantía de que la categoría participa                                                                                |
-| Competencias (otro integrante) | Nueva escritura: registrar y quitar categorías participantes. Es su tabla                                                                                                                                                        |
-| HU-026 (Borrayo)               | La UI elige entre **participaciones existentes** en vez de combinar competencia y categoría libremente. Dependencia de orden: competencias registra la participación, después se asigna entrenador                               |
-| SQL                            | Q16: `FROM competition_categories LEFT JOIN coach_assignments`. El portal igual. Q17 sin cambios. Pruebas nuevas: FK de asignación y de partido, y participación sin entrenador visible. El seed necesita el backfill            |
-| `api-contract.md`              | Nuevo recurso `CompetitionCategory { id, competitionId, categoryId }` (el backend deduce `seasonId`). `CoachAssignment` no cambia                                                                                                |
-| TS                             | Nuevo modelo `CompetitionCategory`; `MockDb.competitionCategories`; `PortalService.competitions()`; el selector de HU-026                                                                                                        |
-| Ownership                      | `competition_categories` → owner de competencias. `coach_assignments` sigue siendo de Borrayo y depende de ella                                                                                                                  |
-| Datos                          | Sin riesgo: aditivo con backfill y sin datos de producción                                                                                                                                                                       |
-
-**Recomendación:** aprobarlo **ahora**. Hoy cuesta una migración, 3 o 4 pruebas y un par de consultas. Después de que
-exista el backend de competencias y el de HU-026, costaría reescribir contratos ya implementados por dos personas.
-
-## 3. Impacto de C3 — owner de `player_categories`
-
-**Recomendación: el owner de categorías.**
-
-- Asignar un jugador a una categoría depende de las reglas de la categoría (rango de años, temporada). Esa lógica y su
-  validación viven con quien define las categorías (C7).
-- El owner de jugadores administra la identidad del jugador; si también asignara categoría, dos módulos tocarían las
-  reglas de edad.
-- Si jugadores y categorías resultan ser la misma persona, la pregunta desaparece.
-
-| Operación                                              | Quién                                                     |
-| ------------------------------------------------------ | --------------------------------------------------------- |
-| Asignar (insertar fila abierta)                        | `CategoryService` (owner de categorías)                   |
-| Cambiar de categoría (cerrar + abrir, una transacción) | `CategoryService`                                         |
-| Cerrar al fin de temporada o baja                      | `CategoryService`; otros módulos lo piden por su contrato |
-| Leer                                                   | Borrayo (HU-018, HU-063, agenda), reportes, portal        |
-
-Mientras no se decida, **nadie** implementa la escritura; el seed y el `MockDb` cubren las pruebas.
-
-## 4. Cambios pendientes en TypeScript
+## 2. Cambios pendientes en TypeScript
 
 En todos cambia TypeScript; la BD ya está así. Ninguno se aplicó.
 
@@ -121,76 +54,48 @@ En todos cambia TypeScript; la BD ya está así. Ninguno se aplicó.
 **Recomendación:** un solo PR, junto con la conexión a la API, porque todos cambian lo que llega del servidor. Los #2,
 #4 y #8 llevan pruebas nuevas.
 
-## 5. Mapa de integración
+## 3. Servicios de backend y owners
 
-### Frontend (existe, con `MockDb`)
+| Servicio                     | Owner                                        | Escribe                                                                              | HU que agregan operaciones al servicio                                               |
+| ---------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `AuthService`                | Joss (HU-001)                                | `sesiones` (futura), `users.password_hash` (vía HU-005), `roles`/`permisos` (HU-006) | Armando (HU-002), Dani (HU-003), Borrayo (HU-005, HU-072)                            |
+| `UserService`                | Borrayo (HU-004)                             | `users`                                                                              | —                                                                                    |
+| `AuditService`               | Joss (HU-007)                                | `auditoria` (futura)                                                                 | Lo llaman HU-009, HU-049 y HU-064                                                    |
+| `PlayerService`              | Joss (HU-008, HU-009)                        | `players`                                                                            | Dani (HU-010: estatus)                                                               |
+| `TutorService`               | Borrayo (HU-011)                             | `tutors`, `tutor_players`                                                            | Armando (HU-012, HU-064)                                                             |
+| `CategoryService`            | Armando (HU-015)                             | `categories`                                                                         | Joss (HU-021: cupo)                                                                  |
+| `PlayerCategoryService`      | Joss (HU-017)                                | `player_categories`                                                                  | Dani (HU-019: cambio)                                                                |
+| `SeasonService`              | Borrayo (HU-070)                             | `seasons`                                                                            | —                                                                                    |
+| `EnrollmentService`          | Borrayo (HU-020)                             | `enrollments` (+ cargo vía Billing, C6)                                              | —                                                                                    |
+| `CoachService`               | Borrayo (HU-022, HU-026)                     | `coaches`, `coach_assignments`                                                       | —                                                                                    |
+| `CoachCategoryService`       | Armando (HU-023)                             | `entrenador_categoria` (futura)                                                      | —                                                                                    |
+| `CompetitionService`         | Dani (HU-034)                                | `competitions`                                                                       | —                                                                                    |
+| `CompetitionCategoryService` | Armando (HU-035)                             | `competition_categories`                                                             | —                                                                                    |
+| `RosterService`              | Joss (HU-036)                                | `jugador_competencia_categoria` (futura)                                             | —                                                                                    |
+| `VenueService`               | Armando (HU-069)                             | `venues`                                                                             | —                                                                                    |
+| `ScheduleService`            | Joss (HU-016, HU-028, HU-037)                | `horarios_entrenamiento` (futura), `training_sessions`, `matches`                    | Dani (HU-040: resultado), Joss (HU-030/031: asistencia, bitácora)                    |
+| `BillingService`             | Borrayo (modelo: HU-043, 044, 048, 050, 054) | `charge_concepts`, `charges`, `payments`, `payment_applications`                     | Dani (HU-045: `registerPayment`), Joss (HU-049: `cancelPayment`; HU-051: descuentos) |
+| `UniformService`             | Borrayo (HU-052–055)                         | `uniform_*` (+ cargo vía Billing)                                                    | —                                                                                    |
+| `NoticeService`              | Dani (HU-057)                                | `avisos`, `aviso_destinatario` (futuras)                                             | Joss (HU-058)                                                                        |
+| `ReportService`              | Sólo lectura                                 | —                                                                                    | Borrayo (HU-067, HU-068), Joss (HU-065), Armando (HU-066), Armando (HU-032)          |
+| `PortalService`              | Sólo lectura, filtrado por el token          | —                                                                                    | Borrayo (HU-056, HU-063), Dani (HU-061, HU-062), Armando (HU-039, HU-042, HU-047)    |
 
-`features/`: `auth`, `users`, `tutors`, `seasons`, `categories` (sólo lectura, HU-018), `enrollments`, `coaches`
-(entrenadores + asignaciones), `billing`, `uniforms`, `reports` (ingresos + agenda), `parent-portal`.
+## 4. Dependencias de llamadas (una sola dirección)
 
-`core/services` (lecturas compartidas): `PlayerService`, `CategoryService`, `CompetitionService`.
+```text
+Enrollment ─► Billing ◄─ Uniform            Player ─► Tutor, PlayerCategory
+Billing(cancel) ─► Audit                    Coach(assign) ─► lee CompetitionCategory
+Schedule(match) ─► lee CompetitionCategory  Portal/Report ─► sólo lecturas
+todos ─► Auth (sesión, can)
+```
 
-### Base de datos (existe)
+- **Sin ciclos**, si se respeta que leer es directo y escribir va al owner.
+- **Ciclo a evitar:** Billing **lee** la tabla `enrollments` para las mensualidades y nunca llama a
+  `EnrollmentService` (C6).
 
-23 tablas en 7 migraciones + la vista `charge_balances`. Detalle en [`database/schema.md`](database/schema.md).
+## 5. Estado actual del frontend
 
-### Backend futuro: un servicio por área, un owner de escritura
-
-| Servicio             | Owner                                                | Escribe                                                          | Historias                    |
-| -------------------- | ---------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------- |
-| `AuthService`        | **Por definir (C5)**; HU-005/072 de Borrayo          | `password_reset_tokens`, `users.password_hash`                   | 005, 072, login              |
-| `UserService`        | Borrayo                                              | `users`                                                          | 004                          |
-| `PlayerService`      | Otro integrante                                      | `players`                                                        | Alta de jugadores            |
-| `TutorService`       | Borrayo                                              | `tutors`, `tutor_players`                                        | 011                          |
-| `CategoryService`    | Otro integrante                                      | `categories`, `player_categories` (si se aprueba C3)             | Categorías                   |
-| `SeasonService`      | Borrayo                                              | `seasons`                                                        | 070                          |
-| `EnrollmentService`  | Borrayo                                              | `enrollments`                                                    | 020                          |
-| `CoachService`       | Borrayo                                              | `coaches`, `coach_assignments`                                   | 022, 026                     |
-| `CompetitionService` | Otro integrante                                      | `competitions`, `competition_categories` (si se aprueba C2)      | Competencias                 |
-| `ScheduleService`    | Otro integrante (puede ser el mismo de competencias) | `venues`, `matches`, `training_sessions`                         | Agenda                       |
-| `BillingService`     | Borrayo (modelo); captura: otro integrante (C4)      | `charge_concepts`, `charges`, `payments`, `payment_applications` | 043, 044, 048, 050 + captura |
-| `UniformService`     | Borrayo                                              | `uniform_*`                                                      | 052–055                      |
-| `ReportService`      | Borrayo                                              | — (sólo lectura)                                                 | 067, 068                     |
-| `PortalService`      | Borrayo                                              | — (sólo lectura, filtrado por el token)                          | 056, 063                     |
-
-## 6. Dependencias entre módulos
-
-| Módulo       | Escribe                                    | Lee                                                                                                         | Llama a (necesita)                                       | Ofrece                                                            |
-| ------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------- |
-| Auth         | tokens, `password_hash`                    | `users`, `tutors`, `coaches`                                                                                | —                                                        | Identidad del token, `can(permiso)`                               |
-| Users        | `users`                                    | `tutors`, `coaches`                                                                                         | —                                                        | `create`, `setActive`, `linkTutor/linkCoach`                      |
-| Players      | `players`                                  | —                                                                                                           | `TutorService` (C1), `CategoryService.assign` (opcional) | `list`, `get`                                                     |
-| Tutors       | `tutors`, `tutor_players`                  | `players`, `users`                                                                                          | —                                                        | `create`, `linkPlayer`, `childrenOf(userId)`                      |
-| Categories   | `categories`, `player_categories`          | `players`, `seasons`                                                                                        | —                                                        | `assign`, `move`, `close`, `members`                              |
-| Seasons      | `seasons`                                  | —                                                                                                           | —                                                        | `active()`                                                        |
-| Enrollments  | `enrollments`                              | `players`, `seasons`                                                                                        | `BillingService.createCharge` (C6)                       | `enroll`, `cancel`                                                |
-| Coaches      | `coaches`, `coach_assignments`             | `competitions`, `categories`, (`competition_categories`)                                                    | —                                                        | `assign`, `unassign`                                              |
-| Competitions | `competitions`, (`competition_categories`) | `seasons`, `categories`                                                                                     | —                                                        | `list`, `registerCategory`                                        |
-| Schedule     | `venues`, `matches`, `training_sessions`   | `competitions`, `categories`, `coaches`                                                                     | —                                                        | Agenda                                                            |
-| Billing      | Cobranza                                   | `players`, `seasons`, `enrollments` (mensualidades), `tutor_players` (adeudos)                              | —                                                        | `createCharge`, `registerPayment`, `cancelPayment`, `openCharges` |
-| Uniforms     | `uniform_*`                                | `players`                                                                                                   | `BillingService.createCharge`                            | `createOrder`, `deliver`                                          |
-| Reports      | —                                          | Todo (sólo lectura)                                                                                         | —                                                        | Ingresos, agenda                                                  |
-| Portal       | —                                          | `tutor_players`, `player_categories`, `coach_assignments`/`competition_categories`, `uniform_*`, (cobranza) | `TutorService.childrenOf`                                | Vistas del tutor                                                  |
-
-Relaciones pedidas:
-
-- jugadores → tutores (C1)
-- jugadores → categorías (C3)
-- temporadas → inscripciones (lectura)
-- inscripciones → cobranza (C6, una dirección)
-- categorías → competencias (C2)
-- competencias → entrenadores (lectura, HU-026)
-- jugadores → cargos (lectura)
-- pagos → cargos (dentro de Billing)
-- uniformes → cargos (`createCharge`)
-- tutor → portal (`childrenOf`)
-
-### Ciclos y contratos ambiguos
-
-- **No hay dependencias circulares de llamadas**, siempre que se respete que leer es directo y escribir va al owner.
-  Todas las llamadas van en una dirección: Enrollments/Uniforms → Billing, Players → Tutors/Categories,
-  Portal → Tutors.
-- **Riesgo de ciclo a evitar:** si Billing llamara a `EnrollmentService` para generar mensualidades mientras Enrollments
-  llama a Billing para el cargo de inscripción, habría un ciclo. Billing **lee** la tabla `enrollments`; no llama a su
-  servicio.
-- **Contratos ambiguos:** C1, C4 y C5 (§ 1) y C6, que define la única llamada Enrollments → Billing. El resto está definido.
+- `src/app/features/` (todo de Borrayo, con `MockDb`): `auth` (mock), `users`, `tutors`, `seasons`, `categories`
+  (lectura, HU-018), `enrollments`, `coaches`, `billing`, `uniforms`, `reports`, `parent-portal`.
+- `src/app/core/services/`: lecturas compartidas (`PlayerService`, `CategoryService`, `CompetitionService`) que
+  reemplazarán los owners reales.
