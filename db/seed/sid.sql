@@ -8,5 +8,6 @@ CREATE FUNCTION pg_temp.sid(tbl text, n integer) RETURNS uuid LANGUAGE sql IMMUT
     WHEN 'category' THEN 6 WHEN 'enrollment' THEN 7 WHEN 'player_category' THEN 8 WHEN 'venue' THEN 9
     WHEN 'competition' THEN 10 WHEN 'assignment' THEN 11 WHEN 'match' THEN 12 WHEN 'training' THEN 13
     WHEN 'product' THEN 14 WHEN 'variant' THEN 15 WHEN 'order' THEN 16 WHEN 'order_line' THEN 17
-    WHEN 'concept' THEN 18 WHEN 'charge' THEN 19 WHEN 'payment' THEN 20 END AS code) t
+    WHEN 'concept' THEN 18 WHEN 'charge' THEN 19 WHEN 'payment' THEN 20
+    WHEN 'competition_category' THEN 21 END AS code) t
 $$;

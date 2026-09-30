@@ -65,6 +65,25 @@ SELECT pg_temp.expect_error('coach assignment: category and competition must sha
   format('INSERT INTO coach_assignments (coach_id, competition_id, category_id, season_id) VALUES (%L, %L, %L, %L)',
     pg_temp.sid('coach', 1), pg_temp.sid('competition', 1), pg_temp.sid('category', 3), pg_temp.sid('season', 2)), '23503');
 
+SELECT pg_temp.expect_error('a coach can only be assigned to a registered participation (C2)',
+  format('INSERT INTO coach_assignments (coach_id, competition_id, category_id, season_id) VALUES (%L, %L, %L, %L)',
+    pg_temp.sid('coach', 1), pg_temp.sid('competition', 2), pg_temp.sid('category', 1), pg_temp.sid('season', 2)), '23503');
+SELECT pg_temp.expect_error('a match needs a registered participation (C2)',
+  format($$INSERT INTO matches (competition_id, category_id, season_id, venue_id, starts_at, opponent)
+           VALUES (%L, %L, %L, %L, now(), 'X')$$,
+    pg_temp.sid('competition', 2), pg_temp.sid('category', 1), pg_temp.sid('season', 2), pg_temp.sid('venue', 1)), '23503');
+SELECT pg_temp.expect_error('a category participates once per competition',
+  format('INSERT INTO competition_categories (competition_id, category_id, season_id) VALUES (%L, %L, %L)',
+    pg_temp.sid('competition', 1), pg_temp.sid('category', 1), pg_temp.sid('season', 2)), '23505');
+SELECT pg_temp.expect_error('participation: category and competition must share the season',
+  format('INSERT INTO competition_categories (competition_id, category_id, season_id) VALUES (%L, %L, %L)',
+    pg_temp.sid('competition', 2), pg_temp.sid('category', 3), pg_temp.sid('season', 2)), '23503');
+SELECT pg_temp.check('participation does not depend on a coach assignment (C2)',
+  EXISTS (SELECT 1 FROM competition_categories cc
+          WHERE cc.competition_id = pg_temp.sid('competition', 1) AND cc.category_id = pg_temp.sid('category', 2)
+            AND NOT EXISTS (SELECT 1 FROM coach_assignments a
+                            WHERE a.competition_id = cc.competition_id AND a.category_id = cc.category_id)));
+
 -- ── Users / tutors / coaches ──
 SELECT pg_temp.expect_error('passwords must be stored as a hash, never plain text',
   format('UPDATE users SET password_hash = %L WHERE id = %L', 'hunter2', pg_temp.sid('user', 1)), '23514');

@@ -66,6 +66,12 @@ INSERT INTO competitions (id, season_id, name, kind, start_date, end_date) VALUE
   (pg_temp.sid('competition', 1), pg_temp.sid('season', 2), 'Liga Municipal', 'league', '2026-09-01', '2027-05-31'),
   (pg_temp.sid('competition', 2), pg_temp.sid('season', 2), 'Copa Otoño', 'tournament', '2026-10-01', '2026-11-30');
 
+-- Participations (HU-035). Sub-12 also plays the Liga Municipal but has no coach assigned there yet.
+INSERT INTO competition_categories (id, competition_id, category_id, season_id, registered_on) VALUES
+  (pg_temp.sid('competition_category', 1), pg_temp.sid('competition', 1), pg_temp.sid('category', 1), pg_temp.sid('season', 2), '2026-08-20'),
+  (pg_temp.sid('competition_category', 2), pg_temp.sid('competition', 2), pg_temp.sid('category', 2), pg_temp.sid('season', 2), '2026-09-15'),
+  (pg_temp.sid('competition_category', 3), pg_temp.sid('competition', 1), pg_temp.sid('category', 2), pg_temp.sid('season', 2), '2026-08-20');
+
 INSERT INTO coach_assignments (id, coach_id, competition_id, category_id, season_id) VALUES
   (pg_temp.sid('assignment', 1), pg_temp.sid('coach', 1), pg_temp.sid('competition', 1), pg_temp.sid('category', 1), pg_temp.sid('season', 2)),
   (pg_temp.sid('assignment', 2), pg_temp.sid('coach', 2), pg_temp.sid('competition', 2), pg_temp.sid('category', 2), pg_temp.sid('season', 2));

@@ -119,12 +119,13 @@ JOIN uniform_products up ON up.id = uv.product_id
 WHERE l.delivered_at IS NULL
 ORDER BY o.created_at;
 
-\echo 'Q16 · Competencias de una categoría (con entrenador)'
-SELECT comp.name, comp.kind, comp.start_date, comp.end_date, co.full_name AS coach
-FROM coach_assignments a
-JOIN competitions comp ON comp.id = a.competition_id
-JOIN coaches co ON co.id = a.coach_id
-WHERE a.category_id = :'category'
+\echo 'Q16 · Competencias en las que participa una categoría (C2), con entrenador si ya tiene'
+SELECT comp.name, comp.kind, comp.start_date, comp.end_date, cc.registered_on, co.full_name AS coach
+FROM competition_categories cc
+JOIN competitions comp ON comp.id = cc.competition_id
+LEFT JOIN coach_assignments a ON a.competition_id = cc.competition_id AND a.category_id = cc.category_id
+LEFT JOIN coaches co ON co.id = a.coach_id
+WHERE cc.category_id = '00000000-0000-4000-8000-006000000002'
 ORDER BY comp.start_date;
 
 \echo 'Q17 · Agenda de una categoría (entrenamientos + partidos, hora local)'
@@ -173,3 +174,16 @@ LEFT JOIN tutors t ON t.id = tp.tutor_id
 WHERE cb.balance_cents > 0
 GROUP BY p.id, t.id
 ORDER BY balance_cents DESC;
+
+\echo 'Q21 · Portal (HU-063): competencias de cada hijo del tutor autenticado, vía categoría actual → participación'
+\echo '      (cuando exista el plantel de HU-036, filtrar además por jugador_competencia_categoria)'
+SELECT p.full_name AS child, c.name AS category, comp.name AS competition, comp.kind, comp.start_date, comp.end_date
+FROM tutors t
+JOIN tutor_players tp ON tp.tutor_id = t.id
+JOIN players p ON p.id = tp.player_id
+JOIN player_categories pc ON pc.player_id = p.id AND pc.end_date IS NULL
+JOIN categories c ON c.id = pc.category_id
+JOIN competition_categories cc ON cc.category_id = pc.category_id
+JOIN competitions comp ON comp.id = cc.competition_id
+WHERE t.user_id = :'tutor_user'
+ORDER BY p.full_name, comp.start_date;
