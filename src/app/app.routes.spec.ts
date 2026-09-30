@@ -36,10 +36,10 @@ const EXPECTED: Record<string, Permission | null> = {
 };
 
 const USERS: Record<Role, string> = {
-  admin: 'admin@charales.mx',
-  secretary: 'secretaria@charales.mx',
-  coach: 'coach@charales.mx',
-  tutor: 'tutor@charales.mx',
+  admin: 'admin@example.com',
+  secretary: 'secretaria@example.com',
+  coach: 'coach@example.com',
+  tutor: 'tutor@example.com',
 };
 
 /** Leaf routes inside the authenticated shell (redirects and wildcards skipped). */

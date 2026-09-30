@@ -22,13 +22,13 @@ describe('critical flows', () => {
 
   it('users: create, reject duplicate email, deactivate', async () => {
     const users = get(UserService);
-    const user = await users.save({ fullName: 'Nuevo', email: 'Nuevo@charales.mx', role: 'coach' });
-    expect(user).toMatchObject({ email: 'nuevo@charales.mx', active: true });
+    const user = await users.save({ fullName: 'Nuevo', email: 'Nuevo@example.com', role: 'coach' });
+    expect(user).toMatchObject({ email: 'nuevo@example.com', active: true });
     await expect(
-      users.save({ fullName: 'Otro', email: 'nuevo@charales.mx', role: 'coach' }),
+      users.save({ fullName: 'Otro', email: 'nuevo@example.com', role: 'coach' }),
     ).rejects.toThrow();
     await users.setActive(user.id, false);
-    await expect(get(AuthService).login('nuevo@charales.mx', 'x')).rejects.toThrow();
+    await expect(get(AuthService).login('nuevo@example.com', 'x')).rejects.toThrow();
   });
 
   it('tutors: require at least one player', async () => {
@@ -36,7 +36,7 @@ describe('critical flows', () => {
     const draft = {
       fullName: 'Ana',
       relationship: 'Madre',
-      phone: '5550000000',
+      phone: '0000000000',
       playerIds: [] as string[],
     };
     await expect(tutors.save(draft)).rejects.toThrow();
@@ -142,7 +142,7 @@ describe('critical flows', () => {
   it('portal: a tutor account not linked to a tutor sees nothing', async () => {
     const db = get(MockDb);
     db.users = db.users.map((u) => (u.id === 'u4' ? { ...u, tutorId: undefined } : u));
-    await get(AuthService).login('tutor@charales.mx', 'x');
+    await get(AuthService).login('tutor@example.com', 'x');
     const portal = get(PortalService);
     expect(await portal.children()).toEqual([]);
     expect(await portal.uniformOrders()).toEqual([]);
@@ -152,7 +152,7 @@ describe('critical flows', () => {
   it('portal: tutor only sees their own children', async () => {
     await get(UniformService).createOrder('p3', [{ variantId: 'uv3', quantity: 1 }]); // someone else's child
     await get(UniformService).createOrder('p1', [{ variantId: 'uv3', quantity: 1 }]);
-    await get(AuthService).login('tutor@charales.mx', 'x');
+    await get(AuthService).login('tutor@example.com', 'x');
     const portal = get(PortalService);
 
     expect((await portal.children()).map((p) => p.id).sort()).toEqual(['p1', 'p2']);

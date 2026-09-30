@@ -26,8 +26,8 @@ npm install
 npm start                    # http://localhost:4200
 ```
 
-Usuarios de demostración (la contraseña **no se verifica**; escribe cualquiera): `admin@charales.mx`,
-`secretaria@charales.mx`, `coach@charales.mx`, `tutor@charales.mx`.
+Usuarios de demostración (la contraseña **no se verifica**; escribe cualquiera): `admin@example.com`,
+`secretaria@example.com`, `coach@example.com`, `tutor@example.com`.
 
 Base de datos local (opcional para el frontend):
 

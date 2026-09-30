@@ -31,17 +31,17 @@ import {
 @Injectable({ providedIn: 'root' })
 export class MockDb {
   users: User[] = [
-    { id: 'u1', email: 'admin@charales.mx', fullName: 'Ana Admin', role: 'admin', active: true },
+    { id: 'u1', email: 'admin@example.com', fullName: 'Ana Admin', role: 'admin', active: true },
     {
       id: 'u2',
-      email: 'secretaria@charales.mx',
+      email: 'secretaria@example.com',
       fullName: 'Sofía Secretaria',
       role: 'secretary',
       active: true,
     },
     {
       id: 'u3',
-      email: 'coach@charales.mx',
+      email: 'coach@example.com',
       fullName: 'Carlos Coach',
       role: 'coach',
       active: true,
@@ -49,7 +49,7 @@ export class MockDb {
     },
     {
       id: 'u4',
-      email: 'tutor@charales.mx',
+      email: 'tutor@example.com',
       fullName: 'Teresa Tutor',
       role: 'tutor',
       active: true,
@@ -57,7 +57,7 @@ export class MockDb {
     },
     {
       id: 'u5',
-      email: 'baja@charales.mx',
+      email: 'baja@example.com',
       fullName: 'Usuario Inactivo',
       role: 'secretary',
       active: false,
@@ -74,15 +74,15 @@ export class MockDb {
       id: 't1',
       fullName: 'Teresa Tutor',
       relationship: 'Madre',
-      phone: '5550000001',
-      email: 'tutor@charales.mx',
+      phone: '0000000001',
+      email: 'tutor@example.com',
       playerIds: ['p1', 'p2'],
     },
     {
       id: 't2',
       fullName: 'Jorge Ruiz',
       relationship: 'Padre',
-      phone: '5550000002',
+      phone: '0000000002',
       playerIds: ['p3'],
     },
   ];
@@ -90,15 +90,15 @@ export class MockDb {
     {
       id: 'c1',
       fullName: 'Carlos Coach',
-      phone: '5551111111',
-      email: 'coach@charales.mx',
+      phone: '0000000011',
+      email: 'coach@example.com',
       active: true,
     },
     {
       id: 'c2',
       fullName: 'Marta Díaz',
-      phone: '5552222222',
-      email: 'marta@charales.mx',
+      phone: '0000000012',
+      email: 'marta@example.com',
       active: true,
     },
   ];

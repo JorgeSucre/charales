@@ -37,9 +37,9 @@ describe('auth & RBAC', () => {
   });
 
   it('logs in an active user and rejects unknown or inactive ones', async () => {
-    await expect(auth.login('nadie@charales.mx', 'x')).rejects.toThrow();
-    await expect(auth.login('baja@charales.mx', 'x')).rejects.toThrow();
-    await auth.login(' Secretaria@charales.mx ', 'x');
+    await expect(auth.login('nadie@example.com', 'x')).rejects.toThrow();
+    await expect(auth.login('baja@example.com', 'x')).rejects.toThrow();
+    await auth.login(' Secretaria@example.com ', 'x');
     expect(auth.user()?.role).toBe('secretary');
     auth.logout();
     expect(auth.isLoggedIn()).toBe(false);
@@ -51,7 +51,7 @@ describe('auth & RBAC', () => {
   });
 
   it('guard: tutor → /forbidden on office routes, allowed on portal', async () => {
-    await auth.login('tutor@charales.mx', 'x');
+    await auth.login('tutor@example.com', 'x');
     expect((runGuard('billing.manage') as UrlTree).toString()).toBe('/forbidden');
     expect(runGuard('portal.view')).toBe(true);
   });

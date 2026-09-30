@@ -90,7 +90,7 @@ SELECT pg_temp.expect_error('passwords must be stored as a hash, never plain tex
 UPDATE users SET password_hash = '$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA' WHERE id = pg_temp.sid('user', 1);
 SELECT pg_temp.check('an argon2id hash is accepted', true);
 SELECT pg_temp.expect_error('emails are unique case-insensitively (stored lowercase)',
-  $$INSERT INTO users (email, full_name, role) VALUES ('Admin@Charales.mx', 'X', 'admin')$$, '23514');
+  $$INSERT INTO users (email, full_name, role) VALUES ('Admin@Example.com', 'X', 'admin')$$, '23514');
 SELECT pg_temp.expect_error('a tutor can only be linked to a user with role tutor',
   format('UPDATE tutors SET user_id = %L WHERE id = %L', pg_temp.sid('user', 2), pg_temp.sid('tutor', 3)), '23503');
 SELECT pg_temp.expect_error('a linked tutor account cannot change role',

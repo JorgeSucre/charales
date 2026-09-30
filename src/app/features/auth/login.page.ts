@@ -13,7 +13,7 @@ import { Submission } from '../../shared/submission';
       <h1>⚽ Escuela de Fútbol Charales</h1>
       <p class="alert info">
         Modo demostración: la contraseña <strong>no se verifica</strong>. Usuarios: admin,
-        secretaria, coach o tutor (&#64;charales.mx)
+        secretaria, coach o tutor (&#64;example.com)
       </p>
       <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
         <label>Correo <input type="email" formControlName="email" autocomplete="username" /></label>

@@ -7,11 +7,11 @@
 \ir sid.sql
 
 INSERT INTO users (id, email, full_name, role, active) VALUES
-  (pg_temp.sid('user', 1), 'admin@charales.mx', 'Ana Admin', 'admin', true),
-  (pg_temp.sid('user', 2), 'secretaria@charales.mx', 'Sofía Secretaria', 'secretary', true),
-  (pg_temp.sid('user', 3), 'coach@charales.mx', 'Carlos Coach', 'coach', true),
-  (pg_temp.sid('user', 4), 'tutor@charales.mx', 'Teresa Tutor', 'tutor', true),
-  (pg_temp.sid('user', 5), 'baja@charales.mx', 'Usuario Inactivo', 'secretary', false),
+  (pg_temp.sid('user', 1), 'admin@example.com', 'Ana Admin', 'admin', true),
+  (pg_temp.sid('user', 2), 'secretaria@example.com', 'Sofía Secretaria', 'secretary', true),
+  (pg_temp.sid('user', 3), 'coach@example.com', 'Carlos Coach', 'coach', true),
+  (pg_temp.sid('user', 4), 'tutor@example.com', 'Teresa Tutor', 'tutor', true),
+  (pg_temp.sid('user', 5), 'baja@example.com', 'Usuario Inactivo', 'secretary', false),
   (pg_temp.sid('user', 6), 'jorge.ruiz@example.com', 'Jorge Ruiz', 'tutor', true);
 
 INSERT INTO players (id, full_name, birth_date, active) VALUES
@@ -21,9 +21,9 @@ INSERT INTO players (id, full_name, birth_date, active) VALUES
   (pg_temp.sid('player', 4), 'Valeria Soto', '2014-02-05', false);
 
 INSERT INTO tutors (id, full_name, phone, email, user_id) VALUES
-  (pg_temp.sid('tutor', 1), 'Teresa Tutor', '5550000001', 'tutor@charales.mx', pg_temp.sid('user', 4)),
-  (pg_temp.sid('tutor', 2), 'Jorge Ruiz', '5550000002', 'jorge.ruiz@example.com', pg_temp.sid('user', 6)),
-  (pg_temp.sid('tutor', 3), 'Pedro Hernández', '5550000003', NULL, NULL); -- second tutor of Diego, no login
+  (pg_temp.sid('tutor', 1), 'Teresa Tutor', '0000000001', 'tutor@example.com', pg_temp.sid('user', 4)),
+  (pg_temp.sid('tutor', 2), 'Jorge Ruiz', '0000000002', 'jorge.ruiz@example.com', pg_temp.sid('user', 6)),
+  (pg_temp.sid('tutor', 3), 'Pedro Hernández', '0000000003', NULL, NULL); -- second tutor of Diego, no login
 
 INSERT INTO tutor_players (tutor_id, player_id, relationship, is_primary) VALUES
   (pg_temp.sid('tutor', 1), pg_temp.sid('player', 1), 'Madre', true),
@@ -32,8 +32,8 @@ INSERT INTO tutor_players (tutor_id, player_id, relationship, is_primary) VALUES
   (pg_temp.sid('tutor', 2), pg_temp.sid('player', 3), 'Padre', true);
 
 INSERT INTO coaches (id, full_name, phone, email, active, user_id) VALUES
-  (pg_temp.sid('coach', 1), 'Carlos Coach', '5551111111', 'coach@charales.mx', true, pg_temp.sid('user', 3)),
-  (pg_temp.sid('coach', 2), 'Marta Díaz', '5552222222', 'marta@example.com', true, NULL);
+  (pg_temp.sid('coach', 1), 'Carlos Coach', '0000000011', 'coach@example.com', true, pg_temp.sid('user', 3)),
+  (pg_temp.sid('coach', 2), 'Marta Díaz', '0000000012', 'marta@example.com', true, NULL);
 
 INSERT INTO seasons (id, name, start_date, end_date, active) VALUES
   (pg_temp.sid('season', 1), 'Temporada 2025-2026', '2025-08-01', '2026-06-30', false),
