@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../core/auth/auth.service';
 import { ROLE_LABELS } from '../core/auth/permissions';
@@ -14,15 +14,23 @@ import { NAV_ITEMS } from './nav';
       <span class="demo-badge" title="Autenticación simulada, sin backend">DEMO</span>
       <div class="spacer"></div>
       @if (auth.user(); as user) {
-        <span class="user">{{ user.fullName }} · {{ roleLabel() }}</span>
+        <span class="user">{{ user.fullName }} · {{ roleLabels[user.role] }}</span>
         <a routerLink="/account/password">Contraseña</a>
         <button type="button" class="link" (click)="logout()">Salir</button>
       }
     </header>
     <div class="layout">
-      <nav aria-label="Principal" class="sidenav">
-        <details open>
-          <summary>Menú</summary>
+      <nav aria-label="Principal" class="sidenav" [class.open]="menuOpen()">
+        <button
+          type="button"
+          class="secondary menu-toggle"
+          aria-controls="nav-links"
+          [attr.aria-expanded]="menuOpen()"
+          (click)="menuOpen.set(!menuOpen())"
+        >
+          Menú
+        </button>
+        <div id="nav-links" class="nav-links" (click)="menuOpen.set(false)">
           <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"
             >Inicio</a
           >
@@ -34,7 +42,7 @@ import { NAV_ITEMS } from './nav';
               >{{ item.label }}</a
             >
           }
-        </details>
+        </div>
       </nav>
       <main id="main" tabindex="-1"><router-outlet /></main>
     </div>
@@ -46,7 +54,9 @@ export class Shell {
   protected items = computed(() =>
     this.auth.user() ? NAV_ITEMS.filter((i) => this.auth.can(i.permission)) : [],
   );
-  protected roleLabel = computed(() => ROLE_LABELS[this.auth.user()!.role]);
+  protected roleLabels = ROLE_LABELS;
+  /** Only matters on small screens, where the menu is collapsed by default. */
+  protected menuOpen = signal(false);
 
   logout(): void {
     this.auth.logout();

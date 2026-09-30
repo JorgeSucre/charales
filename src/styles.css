@@ -101,10 +101,8 @@ a {
   border-right: 1px solid var(--border);
   padding: 1rem;
 }
-.sidenav summary {
-  font-weight: 600;
-  cursor: pointer;
-  margin-bottom: 0.5rem;
+.menu-toggle {
+  display: none;
 }
 .sidenav a {
   display: block;
@@ -140,7 +138,7 @@ main {
   border-color: var(--primary);
 }
 .auth-box {
-  max-width: 420px;
+  width: min(420px, calc(100% - 2rem));
   margin: 3rem auto;
   background: var(--surface);
   padding: 1.5rem;
@@ -151,10 +149,18 @@ main {
 @media (max-width: 760px) {
   .layout {
     grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
   }
   .sidenav {
     border-right: 0;
     border-bottom: 1px solid var(--border);
+    padding: 0.5rem 1rem;
+  }
+  .menu-toggle {
+    display: block;
+  }
+  .sidenav:not(.open) .nav-links {
+    display: none;
   }
   main {
     padding: 1rem;
@@ -315,9 +321,9 @@ td {
 .num {
   text-align: right;
 }
-.row-actions {
-  display: flex;
-  gap: 0.75rem;
+/* On a <td>: flex would break the table cell, so space the buttons instead. */
+.row-actions > * + * {
+  margin-left: 0.75rem;
 }
 
 /* Receipt */
@@ -338,6 +344,9 @@ td {
 }
 
 @media print {
+  body {
+    background: #fff;
+  }
   .topbar,
   .sidenav,
   .no-print,

@@ -1,7 +1,10 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { AbstractControl } from '@angular/forms';
 
-const MESSAGES: Record<string, (e: any) => string> = {
+/** Error payloads as Angular's built-in validators produce them. */
+type ErrorInfo = { requiredLength?: number; min?: number };
+
+const MESSAGES: Record<string, (e: ErrorInfo) => string> = {
   required: () => 'Campo requerido.',
   email: () => 'Correo inválido.',
   minlength: (e) => `Mínimo ${e.requiredLength} caracteres.`,
