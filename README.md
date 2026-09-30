@@ -1,59 +1,55 @@
-# Project
+# Charales — WebApp Escuela de Fútbol
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 22.2.0.
+Proyecto escolar integrador: WebApp para administrar una escuela de fútbol (usuarios, tutores, inscripciones,
+entrenadores, cobranza, uniformes, portal de padres, reportes). Las historias de usuario están organizadas por
+**épicas** (EP01–EP12) y cada una tiene un **responsable** (Borrayo, Joss, Armando, Dani).
 
-## Development server
+> Estado: **frontend con datos simulados**. No hay backend ni autenticación real todavía.
 
-To start a local development server, run:
+## Stack
+Angular 22 (standalone, zoneless, signals) · TypeScript 6 · CSS plano · Vitest (vía `ng test`) · npm.
 
+## Comandos
 ```bash
-ng serve
+npm install
+npm start            # http://localhost:4200
+npm run build
+npm test             # ng test (Vitest, modo watch)
+npx ng test --watch=false   # una sola corrida (CI)
 ```
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
+Usuarios demo (la contraseña **no se verifica**, cualquier valor sirve):
+`admin@charales.mx`, `secretaria@charales.mx`, `coach@charales.mx`, `tutor@charales.mx`.
 
-## Code scaffolding
-
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
-
-```bash
-ng generate component component-name
+## Estructura
 ```
-
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
-
-```bash
-ng generate --help
+src/app/
+  core/
+    models/        contratos compartidos (people, sports, billing, uniforms)
+    auth/          AuthService (mock), permisos por rol, guards
+    data/mock-db.ts   ÚNICO lugar con datos simulados
+    services/      servicios compartidos de solo lectura (PlayerService)
+  shared/          MoneyPipe, LoadState, FieldError, Submission
+  layout/          Shell (menú por permisos), Home, nav.ts
+  features/<dominio>/   <x>.service.ts + páginas (rutas lazy)
+  app.routes.ts    todas las rutas con su permiso
 ```
+Flujo: **página → servicio → MockDb** (mañana: **servicio → HttpClient → API**). Las páginas nunca tocan `MockDb`.
 
-## Building
+## Roles y áreas
+| Rol | Área | Permisos (ver `core/auth/permissions.ts`) |
+|---|---|---|
+| Administrador | `/admin` | todo lo de oficina + usuarios + temporadas |
+| Secretaría | `/admin`, `/sports` | tutores, inscripciones, entrenadores, cobranza, uniformes, reportes, agenda |
+| Entrenador | `/sports` | categorías, agenda |
+| Padre/Tutor | `/portal` | sólo sus hijos |
 
-To build the project run:
+Rutas y menú verifican **permisos**, nunca roles. Para agregar uno: añádelo a `Permission` y a `ROLE_PERMISSIONS`.
 
-```bash
-ng build
-```
+## Alcance actual
+Implementada la base de las historias de **Borrayo** (ver `docs/PLAN.md`). Las de Joss, Armando y Dani no están
+implementadas; sólo existen los modelos compartidos que necesitan.
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
-
-## Running unit tests
-
-To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
-
-```bash
-ng test
-```
-
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
-
-```bash
-ng e2e
-```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+## Cómo continuar
+1. Nueva funcionalidad: carpeta en `features/`, servicio + página, ruta en `app.routes.ts` con `canActivate: [can('permiso')]`, entrada en `layout/nav.ts`.
+2. Conectar backend: añadir `provideHttpClient()`, reemplazar las llamadas a `MockDb` dentro de cada servicio por `firstValueFrom(http...)`, y borrar `mock-db.ts`. Las reglas de `billing.rules.ts` deben replicarse en el backend.
