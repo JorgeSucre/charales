@@ -1,67 +1,92 @@
 # Charales — WebApp Escuela de Fútbol
 
-Proyecto escolar integrador: WebApp para administrar una escuela de fútbol (usuarios, tutores, inscripciones,
-entrenadores, cobranza, uniformes, portal de padres, reportes). Las historias de usuario están organizadas por
-**épicas** (EP01–EP12) y cada una tiene un **responsable** (Borrayo, Joss, Armando, Dani).
+Proyecto escolar integrador: plataforma web para administrar una escuela formativa de fútbol, con usuarios, tutores,
+inscripciones, entrenadores, cobranza, uniformes, portal para padres y reportes. Las historias de usuario están
+organizadas por épicas y responsables.
 
-> Estado: **frontend con datos simulados** + **esquema de BD PostgreSQL** (`db/`, sin conectar todavía).
-> No hay backend ni autenticación real.
+> **Estado:** el frontend Angular funciona con **datos simulados** y el esquema PostgreSQL está listo, pero **todavía
+> no están conectados**: no hay backend ni autenticación real.
+> Contexto completo, estado por área y quién hace qué: [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).
 
-## Stack
+## Requisitos
 
-Angular 22 (standalone, zoneless, signals) · TypeScript 6 · CSS plano · Vitest (vía `ng test`) · npm.
+| Herramienta | Versión                                               | Para qué                      |
+| ----------- | ----------------------------------------------------- | ----------------------------- |
+| Node.js     | `^22.22.3`, `^24.15.0` o `>=26` (probado con 26.10.0) | Frontend                      |
+| npm         | 11 (probado con 11.19.1)                              | Dependencias y scripts        |
+| PostgreSQL  | 16, con `psql`, `createdb` y `dropdb` en el `PATH`    | Sólo para la BD y sus pruebas |
+| Git         | reciente                                              | —                             |
+| `sh`        | macOS/Linux; en Windows usa Git Bash o WSL            | Scripts de BD                 |
+
+## Empezar desde cero
+
+```bash
+git clone <url-del-repo> charales && cd charales
+npm install
+npm start                    # http://localhost:4200
+```
+
+Usuarios de demostración (la contraseña **no se verifica**; escribe cualquiera): `admin@charales.mx`,
+`secretaria@charales.mx`, `coach@charales.mx`, `tutor@charales.mx`.
+
+Base de datos local (opcional para el frontend):
+
+```bash
+npm run db:reset             # crea charales_dev: migraciones + seed ficticio
+npm run db:test              # crea charales_test desde cero y corre las pruebas de integridad
+```
+
+**Variables de entorno:** no hay archivo `.env` ni secretos. Los scripts de BD usan `DATABASE_URL`, que es opcional
+(por defecto `postgresql:///charales_dev`, local y sin contraseña), y las variables estándar de `psql` (`PGHOST`,
+`PGUSER`…) si tu servidor las necesita. El frontend no usa variables de entorno.
 
 ## Comandos
 
-```bash
-npm install
-npm start            # http://localhost:4200
-npm run build
-npm test             # ng test (Vitest, modo watch)
-npx ng test --watch=false   # una sola corrida (CI)
+Todos están definidos en `package.json`.
 
-# Base de datos (PostgreSQL 16 local) — ver docs/database/README.md
-npm run db:reset     # crea charales_dev con migraciones + seed ficticio
-npm run db:test      # pruebas de integridad + consultas críticas
-```
+| Comando                                | Qué hace                                                                                   |
+| -------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `npm start`                            | Servidor de desarrollo (`ng serve`)                                                        |
+| `npm run build`                        | Build de producción en `dist/`                                                             |
+| `npm run watch`                        | Build de desarrollo en modo watch                                                          |
+| `npm test`                             | Pruebas Angular (Vitest) en modo watch. Para una sola corrida: `npx ng test --watch=false` |
+| `npm run ng -- <args>`                 | Angular CLI                                                                                |
+| `npm run db:migrate`                   | Aplica las migraciones pendientes a `$DATABASE_URL`                                        |
+| `npm run db:reset`                     | **Borra** y recrea `charales_dev` con migraciones + seed (sólo local)                      |
+| `npm run db:test`                      | Recrea `charales_test` y corre las 50 pruebas de integridad y las 20 consultas críticas    |
+| `npx prettier --check .` / `--write .` | Revisar / aplicar formato (no hay script `format`)                                         |
 
-Usuarios demo (la contraseña **no se verifica**, cualquier valor sirve):
-`admin@charales.mx`, `secretaria@charales.mx`, `coach@charales.mx`, `tutor@charales.mx`.
+No existen `db:seed` ni `lint`: el seed se carga con `db:reset` y no hay ESLint configurado.
+
+## Herramientas
+
+**Requeridas:** las de la tabla de requisitos.
+
+**Recomendadas:**
+
+- Un editor con soporte de Angular y Prettier.
+- `psql` o un cliente gráfico de PostgreSQL (pgAdmin, DBeaver, TablePlus) para explorar la BD.
+
+**Opcionales:** cualquier editor sirve. Si usas VS Code o Code OSS, `.vscode/extensions.json` recomienda:
+
+- `angular.ng-template`: plantillas Angular;
+- `esbenp.prettier-vscode`: formato al guardar;
+- `editorconfig.editorconfig`: respeta `.editorconfig`.
+
+También son útiles una extensión de PostgreSQL/SQL, `bierner.markdown-mermaid` (el diagrama ER de
+`docs/database/relationships.md` es Mermaid) y GitLens. Ninguna es obligatoria.
 
 ## Estructura
 
-```
-src/app/
-  core/
-    models/        contratos compartidos (people, sports, billing, uniforms)
-    auth/          AuthService (mock), permisos por rol, guards
-    data/mock-db.ts   ÚNICO lugar con datos simulados
-    services/      lecturas compartidas (PlayerService, CategoryService, CompetitionService)
-  shared/          MoneyPipe, LoadState, FieldError, Submission, today()
-  layout/          Shell (menú por permisos), Home, nav.ts
-  features/<dominio>/   <x>.service.ts + páginas (rutas lazy)
-  app.routes.ts    todas las rutas con su permiso
+```text
+src/app/     frontend Angular: core/ (modelos, auth, datos mock, servicios compartidos), features/, shared/, layout/
+db/          PostgreSQL: migrations/, seed/, tests/, queries/, scripts/
+docs/        documentación: ROADMAP, INTEGRATION_MAP, PLAN y database/ (contrato de datos)
 ```
 
-Flujo: **página → servicio → MockDb** (mañana: **servicio → HttpClient → API**). Las páginas nunca tocan `MockDb`.
+## Documentación
 
-## Roles y áreas
-
-| Rol           | Área                | Permisos (ver `core/auth/permissions.ts`)                                   |
-| ------------- | ------------------- | --------------------------------------------------------------------------- |
-| Administrador | `/admin`            | todo lo de oficina + usuarios + temporadas                                  |
-| Secretaría    | `/admin`, `/sports` | tutores, inscripciones, entrenadores, cobranza, uniformes, reportes, agenda |
-| Entrenador    | `/sports`           | categorías, agenda                                                          |
-| Padre/Tutor   | `/portal`           | sólo sus hijos                                                              |
-
-Rutas y menú verifican **permisos**, nunca roles. Para agregar uno: añádelo a `Permission` y a `ROLE_PERMISSIONS`.
-
-## Alcance actual
-
-Implementada la base de las historias de **Borrayo** (ver `docs/PLAN.md`). Las de Joss, Armando y Dani no están
-implementadas; sólo existen los modelos compartidos que necesitan.
-
-## Cómo continuar
-
-1. Nueva funcionalidad: carpeta en `features/`, servicio + página, ruta en `app.routes.ts` con `canActivate: [can('permiso')]`, entrada en `layout/nav.ts`.
-2. Conectar backend: añadir `provideHttpClient()`, reemplazar las llamadas a `MockDb` dentro de cada servicio por `firstValueFrom(http...)`, y borrar `mock-db.ts`. Las reglas de `billing.rules.ts` deben replicarse en el backend.
+- [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md): qué es, estado e índice de toda la documentación.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md): branches, commits, PRs y migraciones.
+- [`AGENTS.md`](AGENTS.md) y [`CLAUDE.md`](CLAUDE.md): reglas para IAs.
+- [`docs/database/README.md`](docs/database/README.md): la base de datos en detalle.

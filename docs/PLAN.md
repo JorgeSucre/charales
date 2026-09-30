@@ -1,4 +1,4 @@
-# Plan y decisiones — Borrayo
+# Plan y decisiones del frontend — fases 1 y 2 (Borrayo)
 
 ## Qué existía (auditoría 2026-09-30)
 
@@ -147,27 +147,4 @@ métodos de pago). Los IDs del seed son consistentes (`u*`, `p*`, `t*`, `c*`, `s
 
 ## Estado de historias de Borrayo
 
-| HU                       | Estado                                                                                  | Dónde                             |
-| ------------------------ | --------------------------------------------------------------------------------------- | --------------------------------- |
-| 004 Usuarios             | Implementada (mock). Pendiente: vincular `tutorId`/`coachId` al crear                   | `features/users`                  |
-| 005 Contraseñas          | UI implementada; envío real → backend                                                   | `features/auth/password.pages.ts` |
-| 072 Seguridad            | Preparada: guards + permisos; hashing/tokens → backend                                  | `core/auth`                       |
-| 011 Tutores              | Implementada (alta; edición pendiente)                                                  | `features/tutors`                 |
-| 018 Grupos               | Implementada (lee `PlayerCategory`)                                                     | `features/categories`             |
-| 020 Inscripción          | Implementada (alta por temporada; cancelación pendiente)                                | `features/enrollments`            |
-| 022 Entrenadores         | Implementada (alta)                                                                     | `features/coaches`                |
-| 026 Asignación a torneos | Implementada                                                                            | `features/coaches`                |
-| 043 Conceptos            | Implementada                                                                            | `features/billing`                |
-| 044 Mensualidades        | Implementada (idempotente)                                                              | `features/billing`                |
-| 048 Recibos              | Implementada (consulta + imprimir, muestra cancelados)                                  | `features/billing`                |
-| 050 Adeudos              | Implementada                                                                            | `features/billing`                |
-| 052 Catálogo             | Implementada (alta)                                                                     | `features/uniforms`               |
-| 053 Pedidos              | Implementada                                                                            | `features/uniforms`               |
-| 054 Pago uniforme        | Implementada: el pedido crea un `Charge`                                                | `features/uniforms`               |
-| 055 Entrega              | Implementada                                                                            | `features/uniforms`               |
-| 056 Consulta tutor       | Implementada                                                                            | `features/parent-portal`          |
-| 063 Torneos (tutor)      | Implementada                                                                            | `features/parent-portal`          |
-| 067 Reporte ingresos     | Implementada (excluye pagos cancelados)                                                 | `features/reports`                |
-| 068 Agenda global        | Implementada (filtros tipo/categoría)                                                   | `features/reports`                |
-| 070 Temporadas           | Implementada                                                                            | `features/seasons`                |
-| 074 Pruebas              | 32 pruebas: RBAC por ruta y rol, reglas de cobro, flujos de servicio, render de páginas | `*.spec.ts`                       |
+Se movió a [`PROJECT_CONTEXT.md` › Historias de usuario](../PROJECT_CONTEXT.md#historias-de-usuario) (fuente única).

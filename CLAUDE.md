@@ -1,34 +1,12 @@
 # CLAUDE.md
 
-Angular 22 WebApp for a football school. Frontend uses mock data; the PostgreSQL schema lives in `db/` (not wired to
-the frontend yet). Read `README.md`, `docs/PLAN.md` and, for data work, `docs/database/DATA_CONTRACT.md` (frozen rules),
-`docs/database/OWNERSHIP.md` (who writes each table) and `docs/INTEGRATION_MAP.md` (module owners, dependencies) first.
+Lee [`AGENTS.md`](AGENTS.md) y [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) antes de cualquier tarea. Respeta
+[`DATA_CONTRACT.md`](docs/database/DATA_CONTRACT.md) y [`OWNERSHIP.md`](docs/database/OWNERSHIP.md).
 
-## Commands
+## Específico de Claude Code
 
-- `npx ng test --watch=false` — all tests (Vitest). Must pass before committing.
-- `npm run build` — must compile without warnings.
-- `npx prettier --check .` — must pass (`--write .` to fix).
-- `npm run db:test` — rebuilds `charales_test` from migrations + seed and runs DB integrity tests (needs local PostgreSQL 16).
-- DB changes = a NEW file `db/migrations/NNN_*.sql`; never edit an applied migration. Add a test in `db/tests/integrity.sql`.
-
-## Rules
-
-- Pages → services → `core/data/mock-db.ts`. Pages never inject `MockDb`. Services return `Promise` (swap to HttpClient later).
-- Models live in `core/models` (grouped by domain). Don't redeclare entity types in features.
-- Money is integer **cents**. `Charge` ≠ `Payment`; linked by `PaymentApplication`. Never store balances. Payments are
-  registered only through `BillingService.registerPayment` (see `docs/PLAN.md` › Pagos).
-- `Enrollment` = administrative/annual enrollment. `PlayerCategory` = player's category (spec `jugador_categoria`). Don't mix them.
-- Authorization by **permission** (`core/auth/permissions.ts`), never `role === '...'` checks. New route → add it to the
-  table in `app.routes.spec.ts`.
-- Dates: use `today()` from `shared/dates.ts` (local time), not `toISOString().slice(0, 10)`.
-- Components: standalone, inline templates, signals, `resource()` for loading, reactive forms + `FieldError`, `Submission` for submit state. OnPush is the default in v22.
-- Styles: global `src/styles.css` utility classes; no per-component CSS unless needed.
-- Code in English, UI text in Spanish.
-- Never put secrets, API keys or real passwords in the frontend.
-
-## Ownership
-
-Each user story has an owner (Borrayo, Joss, Armando, Dani). Only implement stories for the person you're working for;
-for others, create shared contracts only (e.g. read-only `core/services/*` because that CRUD is someone else's).
-Borrayo's stories: HU-004, 005, 011, 018, 020, 022, 026, 043, 044, 048, 050, 052–056, 063, 067, 068, 070, 072, 074.
+- Pruebas: usa `npx ng test --watch=false`. `npm test` entra en modo watch y no termina.
+- `npm run db:reset` y `npm run db:test` **borran y recrean** bases locales (`charales_dev`, `charales_test`). Nunca los
+  apuntes a una BD compartida; para esas usa `npm run db:migrate` con `DATABASE_URL`.
+- Validación visual: si la extensión de Chrome no está conectada, dilo. No declares la UI validada sin haberla visto.
+- Commits: sólo cuando te lo pidan, en una rama (`<persona>/<tema>`), nunca en `main`, sin push.
