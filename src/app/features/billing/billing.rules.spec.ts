@@ -3,6 +3,7 @@ import {
   allocatePayment,
   chargeBalance,
   debtsByPlayer,
+  effectiveApplications,
   generateMonthlyCharges,
   incomeByMonthAndConcept,
 } from './billing.rules';
@@ -81,6 +82,39 @@ describe('billing rules', () => {
     ];
     expect(debtsByPlayer(charges, apps)).toEqual([
       { playerId: 'p1', balanceCents: 1300, openCharges: 2, oldestDueDate: '2026-08-01' },
+    ]);
+  });
+
+  it('ignores applications of cancelled payments for balances and income', () => {
+    const charges = [charge('c', 'p1', 1000, '2026-09-01')];
+    const payments: Payment[] = [
+      {
+        id: 'ok',
+        receiptNumber: 'R1',
+        playerId: 'p1',
+        amountCents: 300,
+        method: 'cash',
+        paidAt: '2026-09-02',
+      },
+      {
+        id: 'void',
+        receiptNumber: 'R2',
+        playerId: 'p1',
+        amountCents: 700,
+        method: 'cash',
+        paidAt: '2026-09-03',
+        cancelledAt: '2026-09-04',
+      },
+    ];
+    const apps: PaymentApplication[] = [
+      { paymentId: 'ok', chargeId: 'c', amountCents: 300 },
+      { paymentId: 'void', chargeId: 'c', amountCents: 700 },
+    ];
+    const effective = effectiveApplications(payments, apps);
+    expect(chargeBalance(charges[0], effective)).toBe(700);
+    expect(allocatePayment('new', 700, charges, effective)).toHaveLength(1);
+    expect(incomeByMonthAndConcept(payments, apps, charges, '2026-09-01', '2026-09-30')).toEqual([
+      { month: '2026-09', conceptId: 'cc1', totalCents: 300 },
     ]);
   });
 

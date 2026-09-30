@@ -36,6 +36,17 @@ export interface Payment {
   amountCents: number;
   method: PaymentMethod;
   paidAt: string;
+  /** Set when the payment is voided. Its applications stop counting; nothing is deleted (audit trail). */
+  cancelledAt?: string;
+}
+
+/** Input of BillingService.registerPayment. The server assigns id, receiptNumber and paidAt. */
+export interface PaymentDraft {
+  playerId: string;
+  amountCents: number;
+  method: PaymentMethod;
+  /** Charges to pay, oldest due first. Omitted = all of the player's open charges. */
+  chargeIds?: string[];
 }
 
 export interface PaymentApplication {

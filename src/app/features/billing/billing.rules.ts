@@ -5,6 +5,16 @@ import { Charge, ChargeConcept, Payment, PaymentApplication } from '../../core/m
  * keeping them here makes the UI demo-able and testable meanwhile.
  */
 
+/** Applications of cancelled payments don't count toward balances or income. */
+export function effectiveApplications(
+  payments: Payment[],
+  apps: PaymentApplication[],
+): PaymentApplication[] {
+  const cancelled = new Set(payments.filter((p) => p.cancelledAt).map((p) => p.id));
+  return apps.filter((a) => !cancelled.has(a.paymentId));
+}
+
+/** Pass effectiveApplications(...) as `apps` to the functions below. */
 export function appliedTo(chargeId: string, apps: PaymentApplication[]): number {
   return apps.filter((a) => a.chargeId === chargeId).reduce((sum, a) => sum + a.amountCents, 0);
 }
@@ -108,7 +118,9 @@ export function incomeByMonthAndConcept(
   to: string,
 ): IncomeRow[] {
   const paidAt = new Map(
-    payments.filter((p) => p.paidAt >= from && p.paidAt <= to).map((p) => [p.id, p.paidAt]),
+    payments
+      .filter((p) => !p.cancelledAt && p.paidAt >= from && p.paidAt <= to)
+      .map((p) => [p.id, p.paidAt]),
   );
   const conceptOf = new Map(charges.map((c) => [c.id, c.conceptId]));
   const rows = new Map<string, IncomeRow>();

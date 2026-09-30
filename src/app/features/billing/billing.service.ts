@@ -1,12 +1,30 @@
 import { Injectable, inject } from '@angular/core';
 import { MockDb } from '../../core/data/mock-db';
-import { Charge, ChargeConcept, Payment, PaymentMethod } from '../../core/models';
-import { allocatePayment, debtsByPlayer, generateMonthlyCharges } from './billing.rules';
+import {
+  Charge,
+  ChargeConcept,
+  Payment,
+  PaymentApplication,
+  PaymentDraft,
+} from '../../core/models';
+import { today } from '../../shared/dates';
+import {
+  allocatePayment,
+  chargeBalance,
+  debtsByPlayer,
+  effectiveApplications,
+  generateMonthlyCharges,
+} from './billing.rules';
 
 export interface ReceiptView {
   payment: Payment;
   playerName: string;
   lines: { description: string; amountCents: number }[];
+}
+
+export interface OpenCharge {
+  charge: Charge;
+  balanceCents: number;
 }
 
 export interface DebtView {
@@ -66,25 +84,41 @@ export class BillingService {
     return this.db.respond(charge);
   }
 
+  /** Charges of a player that still have a balance, oldest due first. Feeds the payment capture UI. */
+  openCharges(playerId: string): Promise<OpenCharge[]> {
+    const apps = this.effectiveApps();
+    return this.db.respond(
+      this.db.charges
+        .filter((c) => c.playerId === playerId)
+        .map((charge) => ({ charge, balanceCents: chargeBalance(charge, apps) }))
+        .filter((c) => c.balanceCents > 0)
+        .sort((a, b) => a.charge.dueDate.localeCompare(b.charge.dueDate)),
+    );
+  }
+
   /**
-   * Payment capture UI belongs to another team member; this is the shared contract.
-   * The backend must do this atomically.
+   * SHARED CONTRACT for the payment-capture story (owned by another team member).
+   * Creates one Payment and splits it over one or more charges (PaymentApplication), oldest due first.
+   * Rejects: amount <= 0 or not integer cents, amount > open balance, charges of another player.
+   * The backend must repeat these checks, run it in one transaction and assign receiptNumber.
    */
-  async registerPayment(
-    playerId: string,
-    amountCents: number,
-    method: PaymentMethod,
-  ): Promise<Payment> {
+  async registerPayment(draft: PaymentDraft): Promise<Payment> {
+    const { playerId, amountCents, method, chargeIds } = draft;
+    const charges = this.db.charges.filter(
+      (c) => c.playerId === playerId && (!chargeIds || chargeIds.includes(c.id)),
+    );
+    if (chargeIds && charges.length !== chargeIds.length) {
+      throw new Error('Algún cargo no existe o no pertenece al jugador.');
+    }
     const id = this.db.id('pay');
-    const charges = this.db.charges.filter((c) => c.playerId === playerId);
-    const apps = allocatePayment(id, amountCents, charges, this.db.paymentApplications);
+    const apps = allocatePayment(id, amountCents, charges, this.effectiveApps());
     const payment: Payment = {
       id,
       receiptNumber: `R-${String(this.db.payments.length + 1).padStart(4, '0')}`,
       playerId,
       amountCents,
       method,
-      paidAt: new Date().toISOString().slice(0, 10),
+      paidAt: today(),
     };
     this.db.payments = [...this.db.payments, payment];
     this.db.paymentApplications = [...this.db.paymentApplications, ...apps];
@@ -109,7 +143,7 @@ export class BillingService {
   // HU-050
   debts(): Promise<DebtView[]> {
     return this.db.respond(
-      debtsByPlayer(this.db.charges, this.db.paymentApplications).map((d) => ({
+      debtsByPlayer(this.db.charges, this.effectiveApps()).map((d) => ({
         ...d,
         playerName: this.playerName(d.playerId),
       })),
@@ -127,6 +161,10 @@ export class BillingService {
           amountCents: a.amountCents,
         })),
     };
+  }
+
+  private effectiveApps(): PaymentApplication[] {
+    return effectiveApplications(this.db.payments, this.db.paymentApplications);
   }
 
   private playerName(id: string): string {

@@ -3,7 +3,7 @@ import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
-import { today } from '../../shared/submission';
+import { today } from '../../shared/dates';
 import { ReportService } from './report.service';
 
 /** HU-067 */

@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { AuthService } from './core/auth/auth.service';
 import { MockDb } from './core/data/mock-db';
+import { CategoryService } from './core/services/category.service';
 import { BillingService } from './features/billing/billing.service';
 import { EnrollmentService } from './features/enrollments/enrollment.service';
 import { PortalService } from './features/parent-portal/portal.service';
@@ -43,9 +44,18 @@ describe('critical flows', () => {
 
   it('enrollment: one active enrollment per player and season', async () => {
     const enrollments = get(EnrollmentService);
-    await expect(enrollments.enroll({ playerId: 'p1', categoryId: 'cat1' })).rejects.toThrow();
-    const e = await enrollments.enroll({ playerId: 'p4', categoryId: 'cat2' });
+    await expect(enrollments.enroll({ playerId: 'p1', seasonId: 's1' })).rejects.toThrow();
+    await expect(enrollments.enroll({ playerId: 'p4', seasonId: 'nope' })).rejects.toThrow();
+    const e = await enrollments.enroll({ playerId: 'p4', seasonId: 's1' });
     expect(e).toMatchObject({ seasonId: 's1', status: 'active' });
+  });
+
+  it('categories: members come from open PlayerCategory rows, not from enrollments', async () => {
+    const db = get(MockDb);
+    db.playerCategories = db.playerCategories.map((pc) =>
+      pc.playerId === 'p3' ? { ...pc, endDate: '2026-09-01' } : pc,
+    );
+    expect((await get(CategoryService).players('cat1')).map((p) => p.id)).toEqual(['p1']);
   });
 
   it('billing: concept → monthly charges → payment → balance', async () => {
@@ -60,12 +70,43 @@ describe('critical flows', () => {
     expect(await billing.generateMonthlyFees(concept.id, '2026-10', '2026-10-10')).toBe(0);
 
     const before = (await billing.debts()).find((d) => d.playerId === 'p3')!.balanceCents;
-    const payment = await billing.registerPayment('p3', 20000, 'cash');
+    const payment = await billing.registerPayment({
+      playerId: 'p3',
+      amountCents: 20000,
+      method: 'cash',
+    });
     const after = (await billing.debts()).find((d) => d.playerId === 'p3')!.balanceCents;
     expect(before - after).toBe(20000);
     expect((await billing.receipt(payment.id)).lines.reduce((s, l) => s + l.amountCents, 0)).toBe(
       20000,
     );
+  });
+
+  it('billing: registerPayment only touches the given charges of that player; cancelled payments reopen balance', async () => {
+    const billing = get(BillingService);
+    const db = get(MockDb);
+    await expect(
+      billing.registerPayment({
+        playerId: 'p3',
+        amountCents: 100,
+        method: 'cash',
+        chargeIds: ['ch2'],
+      }),
+    ).rejects.toThrow(); // ch2 belongs to p2
+
+    const payment = await billing.registerPayment({
+      playerId: 'p2',
+      amountCents: 25000,
+      method: 'card',
+      chargeIds: ['ch2'],
+    });
+    expect((await billing.openCharges('p2'))[0].balanceCents).toBe(35000);
+
+    db.payments = db.payments.map((p) =>
+      p.id === payment.id ? { ...p, cancelledAt: '2026-09-30' } : p,
+    );
+    expect((await billing.openCharges('p2'))[0].balanceCents).toBe(60000);
+    expect((await billing.debts()).find((d) => d.playerId === 'p2')?.balanceCents).toBe(60000);
   });
 
   it('uniforms: order keeps historical price, creates a charge, delivers once', async () => {
@@ -85,6 +126,16 @@ describe('critical flows', () => {
     await uniforms.deliver(order.id, 'Teresa');
     await expect(uniforms.deliver(order.id, 'Teresa')).rejects.toThrow();
     expect((await uniforms.orders())[0]).toMatchObject({ status: 'delivered', totalCents: 70000 });
+  });
+
+  it('portal: a tutor account not linked to a tutor sees nothing', async () => {
+    const db = get(MockDb);
+    db.users = db.users.map((u) => (u.id === 'u4' ? { ...u, tutorId: undefined } : u));
+    await get(AuthService).login('tutor@charales.mx', 'x');
+    const portal = get(PortalService);
+    expect(await portal.children()).toEqual([]);
+    expect(await portal.uniformOrders()).toEqual([]);
+    expect(await portal.competitions()).toEqual([]);
   });
 
   it('portal: tutor only sees their own children', async () => {

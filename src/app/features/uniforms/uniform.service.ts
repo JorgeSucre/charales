@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { MockDb } from '../../core/data/mock-db';
 import { UniformOrder, UniformProduct, UniformVariant } from '../../core/models';
+import { today } from '../../shared/dates';
 import { BillingService } from '../billing/billing.service';
 
 export interface OrderView extends UniformOrder {
@@ -54,19 +55,18 @@ export class UniformService {
     const concept = this.db.concepts.find((c) => c.kind === 'uniform' && c.active);
     if (!concept) throw new Error('Configura un concepto de cobro de tipo uniforme.');
     const id = this.db.id('uo');
-    const today = new Date().toISOString().slice(0, 10);
     const charge = await this.billing.createCharge({
       playerId,
       conceptId: concept.id,
       amountCents: lines.reduce((sum, l) => sum + l.quantity * l.unitPriceCents, 0),
       description: `Uniforme (pedido ${id})`,
-      dueDate: today,
+      dueDate: today(),
       source: { type: 'uniform-order', id },
     });
     const order: UniformOrder = {
       id,
       playerId,
-      createdAt: today,
+      createdAt: today(),
       lines,
       chargeId: charge.id,
       status: 'pending',

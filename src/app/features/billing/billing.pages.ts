@@ -5,7 +5,8 @@ import { ConceptKind } from '../../core/models';
 import { FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
-import { Submission, today } from '../../shared/submission';
+import { today } from '../../shared/dates';
+import { Submission } from '../../shared/submission';
 import { BillingService } from './billing.service';
 
 const KIND_LABELS: Record<ConceptKind, string> = {
@@ -188,7 +189,12 @@ export class MonthlyFeesPage {
           <tbody>
             @for (r of receipts.value() ?? []; track r.payment.id) {
               <tr>
-                <td>{{ r.payment.receiptNumber }}</td>
+                <td>
+                  {{ r.payment.receiptNumber }}
+                  @if (r.payment.cancelledAt) {
+                    <span class="tag off">Cancelado</span>
+                  }
+                </td>
                 <td>{{ r.payment.paidAt }}</td>
                 <td>{{ r.playerName }}</td>
                 <td class="num">{{ r.payment.amountCents | money }}</td>
@@ -216,6 +222,9 @@ export class ReceiptsPage {
       @if (receipt.value(); as r) {
         <article class="receipt">
           <h1>Recibo {{ r.payment.receiptNumber }}</h1>
+          @if (r.payment.cancelledAt) {
+            <p class="alert error">CANCELADO el {{ r.payment.cancelledAt }}</p>
+          }
           <p>Escuela de Fútbol Charales</p>
           <dl>
             <dt>Fecha</dt>
