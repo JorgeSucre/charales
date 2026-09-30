@@ -36,7 +36,8 @@ export class PortalService {
     return this.uniforms.orders(this.childIds());
   }
 
-  // HU-063: child → current category (PlayerCategory) → competitions that category is assigned to.
+  // HU-063: child → current category (PlayerCategory) → competitions the category takes part in (CompetitionCategory).
+  // ponytail: by category until HU-036 (roster) exists; then filter by the child's roster entry.
   competitions(): Promise<ChildCompetition[]> {
     const { db } = this;
     const children = this.childIds();
@@ -44,9 +45,9 @@ export class PortalService {
       .filter((pc) => !pc.endDate && children.includes(pc.playerId))
       .flatMap((pc) => {
         const competitionIds = new Set(
-          db.coachAssignments
-            .filter((a) => a.categoryId === pc.categoryId)
-            .map((a) => a.competitionId),
+          db.competitionCategories
+            .filter((cc) => cc.categoryId === pc.categoryId)
+            .map((cc) => cc.competitionId),
         );
         return db.competitions
           .filter((c) => competitionIds.has(c.id))

@@ -44,6 +44,10 @@ export class CoachService {
         a.categoryId === draft.categoryId,
     );
     if (dup) throw new Error('Esa asignación ya existe.');
+    const participates = this.db.competitionCategories.some(
+      (cc) => cc.competitionId === draft.competitionId && cc.categoryId === draft.categoryId,
+    );
+    if (!participates) throw new Error('La categoría no participa en esa competencia (HU-035).');
     const assignment = { ...draft, id: this.db.id('a') };
     this.db.coachAssignments = [...this.db.coachAssignments, assignment];
     return this.db.respond(assignment);

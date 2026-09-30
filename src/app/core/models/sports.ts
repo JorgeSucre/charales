@@ -49,7 +49,17 @@ export interface Competition {
   kind: 'tournament' | 'league';
 }
 
-/** Which coach takes which category to which competition (HU-026). */
+/**
+ * A category takes part in a competition (HU-035; spec competencia_categoria). This — not a coach
+ * assignment — is what says a category plays a competition.
+ */
+export interface CompetitionCategory {
+  id: string;
+  competitionId: string;
+  categoryId: string;
+}
+
+/** Which coach takes which category to which competition (HU-026). Requires a CompetitionCategory. */
 export interface CoachAssignment {
   id: string;
   coachId: string;

@@ -6,6 +6,7 @@ import {
   Coach,
   CoachAssignment,
   Competition,
+  CompetitionCategory,
   Enrollment,
   Match,
   Payment,
@@ -145,6 +146,11 @@ export class MockDb {
   competitions: Competition[] = [
     { id: 'comp1', seasonId: 's1', name: 'Liga Municipal', kind: 'league' },
     { id: 'comp2', seasonId: 's1', name: 'Copa Otoño', kind: 'tournament' },
+  ];
+  competitionCategories: CompetitionCategory[] = [
+    { id: 'cc1', competitionId: 'comp1', categoryId: 'cat1' },
+    { id: 'cc2', competitionId: 'comp2', categoryId: 'cat2' },
+    { id: 'cc3', competitionId: 'comp1', categoryId: 'cat2' }, // participates, no coach assigned yet
   ];
   coachAssignments: CoachAssignment[] = [
     { id: 'a1', coachId: 'c1', competitionId: 'comp1', categoryId: 'cat1' },

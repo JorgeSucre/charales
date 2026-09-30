@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { AuthService } from './core/auth/auth.service';
 import { MockDb } from './core/data/mock-db';
 import { CategoryService } from './core/services/category.service';
+import { CoachService } from './features/coaches/coach.service';
 import { BillingService } from './features/billing/billing.service';
 import { EnrollmentService } from './features/enrollments/enrollment.service';
 import { PortalService } from './features/parent-portal/portal.service';
@@ -128,6 +129,16 @@ describe('critical flows', () => {
     expect((await uniforms.orders())[0]).toMatchObject({ status: 'delivered', totalCents: 70000 });
   });
 
+  it('coach assignment requires the category to take part in the competition (C2)', async () => {
+    const coaches = get(CoachService);
+    await expect(
+      coaches.assign({ coachId: 'c1', competitionId: 'comp2', categoryId: 'cat1' }),
+    ).rejects.toThrow();
+    expect(
+      await coaches.assign({ coachId: 'c1', competitionId: 'comp1', categoryId: 'cat2' }),
+    ).toBeTruthy();
+  });
+
   it('portal: a tutor account not linked to a tutor sees nothing', async () => {
     const db = get(MockDb);
     db.users = db.users.map((u) => (u.id === 'u4' ? { ...u, tutorId: undefined } : u));
@@ -146,9 +157,13 @@ describe('critical flows', () => {
 
     expect((await portal.children()).map((p) => p.id).sort()).toEqual(['p1', 'p2']);
     expect((await portal.uniformOrders()).map((o) => o.playerId)).toEqual(['p1']);
-    expect((await portal.competitions()).map((c) => c.competitionName).sort()).toEqual([
-      'Copa Otoño',
-      'Liga Municipal',
+    // Lucía's Sub-12 plays the Liga without an assigned coach: participation, not coach assignment, decides (C2).
+    expect(
+      (await portal.competitions()).map((c) => `${c.playerName}: ${c.competitionName}`).sort(),
+    ).toEqual([
+      'Diego Hernández: Liga Municipal',
+      'Lucía Hernández: Copa Otoño',
+      'Lucía Hernández: Liga Municipal',
     ]);
   });
 
