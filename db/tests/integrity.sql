@@ -159,6 +159,18 @@ SELECT pg_temp.expect_error('one charge per uniform order',
   format($$INSERT INTO charges (player_id, concept_id, season_id, amount_cents, description, due_date, uniform_order_id)
            VALUES (%L, %L, %L, 100, 'x', '2026-10-01', %L)$$,
     pg_temp.sid('player', 1), pg_temp.sid('concept', 3), pg_temp.sid('season', 2), pg_temp.sid('order', 1)), '23505');
+SELECT pg_temp.expect_error('uniform charge must equal the sum of its order lines',
+  format('UPDATE charges SET amount_cents = 84000 WHERE uniform_order_id = %L', pg_temp.sid('order', 1)), '23514');
+SELECT pg_temp.expect_error('adding a line without updating the uniform charge is rejected',
+  format('INSERT INTO uniform_order_lines (order_id, variant_id, quantity, unit_price_cents) VALUES (%L, %L, 1, 35000)',
+    pg_temp.sid('order', 1), pg_temp.sid('variant', 2)), '23514');
+WITH l AS (
+  INSERT INTO uniform_order_lines (order_id, variant_id, quantity, unit_price_cents)
+  VALUES (pg_temp.sid('order', 1), pg_temp.sid('variant', 2), 1, 35000)
+)
+UPDATE charges SET amount_cents = amount_cents + 35000 WHERE uniform_order_id = pg_temp.sid('order', 1);
+SELECT pg_temp.check('line + charge updated together keep the uniform order consistent',
+  (SELECT amount_cents FROM charges WHERE uniform_order_id = pg_temp.sid('order', 1)) = 120000);
 SELECT pg_temp.expect_error('a delivery records when, who and to whom together',
   format('UPDATE uniform_order_lines SET delivered_at = now() WHERE id = %L', pg_temp.sid('order_line', 2)), '23514');
 
