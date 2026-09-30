@@ -9,7 +9,8 @@
 ## Fuera de alcance (deliberado)
 
 - Backend, autenticación real, JWT, correo, hashing de contraseñas (HU-072 se cumple en el backend).
-- La BD (PostgreSQL) se diseñó en la fase 3: ver `docs/database/`. El frontend todavía no se conecta a ella.
+- La BD (PostgreSQL) se diseñó en la fase 3 y su contrato se congeló en la 3.5: ver `docs/database/DATA_CONTRACT.md`.
+  El frontend todavía no se conecta a ella.
 - Historias de Joss, Armando y Dani (ver «Límites con otros integrantes»).
 - `environments/`: se agregan cuando exista una URL de API. E2E, CI/CD, Docker.
 

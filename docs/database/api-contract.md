@@ -1,6 +1,7 @@
 # Contrato Angular ↔ API ↔ BD
 
-Propuesta para acordar. **No hay API implementada.** Las rutas de API son sugeridas y siguen las áreas del frontend.
+Propuesta para acordar. **No hay API implementada.** Las rutas son sugerencias y siguen las áreas del frontend.
+Si algo de aquí contradice [`DATA_CONTRACT.md`](DATA_CONTRACT.md), manda el contrato de datos.
 La API usa `camelCase` y la BD `snake_case`. Los IDs viajan como `string` (UUID).
 
 ## Reglas generales
@@ -19,17 +20,17 @@ La API usa `camelCase` y la BD `snake_case`. Los IDs viajan como `string` (UUID)
 
 ## Entidades simples (1 modelo ≈ 1 tabla)
 
-| Angular                             | API sugerida                                        | Tabla                                    | Diferencias                                                                                               |
-| ----------------------------------- | --------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `User`                              | `GET/POST/PATCH /users`                             | `users`                                  | `tutorId`/`coachId` salen de `tutors.user_id`/`coaches.user_id`. `password_hash` **nunca** sale de la API |
-| `Player`                            | `GET /players`                                      | `players`                                | —                                                                                                         |
-| `Coach`                             | `GET/POST/PATCH /coaches`                           | `coaches`                                | + `user_id` opcional                                                                                      |
-| `Season`                            | `GET/POST/PATCH /seasons`                           | `seasons`                                | Activar una desactiva las demás en la misma transacción (índice único)                                    |
-| `Category`                          | `GET /categories?seasonId=`                         | `categories`                             | —                                                                                                         |
-| `Competition`                       | `GET /competitions`                                 | `competitions`                           | BD agrega `start_date`/`end_date` opcionales (pendiente en TS)                                            |
-| `Venue`, `Match`, `TrainingSession` | `GET /agenda?from=&to=&categoryId=`                 | `venues`, `matches`, `training_sessions` | `matches.season_id` lo llena el backend                                                                   |
-| `ChargeConcept`                     | `GET/POST/PATCH /charge-concepts`                   | `charge_concepts`                        | —                                                                                                         |
-| `UniformProduct`, `UniformVariant`  | `GET/POST /uniforms/products`, `/uniforms/variants` | `uniform_products`, `uniform_variants`   | —                                                                                                         |
+| Angular                             | API sugerida                                        | Tabla                                    | Diferencias                                                                                                                             |
+| ----------------------------------- | --------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `User`                              | `GET/POST/PATCH /users`                             | `users`                                  | `tutorId`/`coachId` salen de `tutors.user_id`/`coaches.user_id`. `password_hash` **nunca** sale de la API                               |
+| `Player`                            | `GET /players`                                      | `players`                                | —                                                                                                                                       |
+| `Coach`                             | `GET/POST/PATCH /coaches`                           | `coaches`                                | + `user_id` opcional                                                                                                                    |
+| `Season`                            | `GET/POST/PATCH /seasons`                           | `seasons`                                | Activar = en una transacción, **primero** desactivar la actual y **después** activar la nueva (el índice único se revisa fila por fila) |
+| `Category`                          | `GET /categories?seasonId=`                         | `categories`                             | —                                                                                                                                       |
+| `Competition`                       | `GET /competitions`                                 | `competitions`                           | BD agrega `start_date`/`end_date` opcionales (pendiente en TS)                                                                          |
+| `Venue`, `Match`, `TrainingSession` | `GET /agenda?from=&to=&categoryId=`                 | `venues`, `matches`, `training_sessions` | `matches.season_id` lo llena el backend                                                                                                 |
+| `ChargeConcept`                     | `GET/POST/PATCH /charge-concepts`                   | `charge_concepts`                        | —                                                                                                                                       |
+| `UniformProduct`, `UniformVariant`  | `GET/POST /uniforms/products`, `/uniforms/variants` | `uniform_products`, `uniform_variants`   | —                                                                                                                                       |
 
 ## Relaciones y casos compuestos
 
@@ -69,7 +70,8 @@ PaymentDraft { playerId, amountCents, method, chargeIds? }
     INSERT payments (received_by = usuario del token)            → receipt_number generado
     INSERT payment_applications (1 fila por cargo, más antiguo primero, player_id = playerId)
   COMMIT → los triggers verifican: Σ aplicaciones = monto del pago; ningún cargo sobrepagado
-  ↑ Payment { id, receiptNumber: 'R-' + lpad(receipt_number, 4), playerId, amountCents, method, paidAt, cancelledAt? }
+  ↑ Payment { id, receiptNumber: 'R-' + receipt_number con ceros a la izquierda hasta 4 dígitos, sin truncar (R-0001, R-12345),
+              playerId, amountCents, method, paidAt, cancelledAt? }
 
 POST /payments/:id/cancel { reason }  →  UPDATE payments SET cancelled_at, cancelled_by, cancellation_reason
 GET /players/:id/open-charges         →  charge_balances WHERE balance_cents > 0 ORDER BY due_date   (OpenCharge[])
@@ -90,6 +92,7 @@ POST /uniforms/orders { playerId, items: [{ variantId, quantity }] }
     INSERT uniform_orders (requested_by = token)
     INSERT uniform_order_lines (unit_price_cents = precio ACTUAL de la variante, copiado)
     INSERT charges (concepto kind='uniform', amount = Σ líneas, uniform_order_id, temporada activa)
+  COMMIT → la BD verifica cargo = Σ(quantity × unit_price_cents) (migración 007)
   ↑ UniformOrder { id, playerId, createdAt, lines[], chargeId, status }
       chargeId = charges.id WHERE uniform_order_id = order.id
       status   = 'delivered' si todas las líneas tienen delivered_at, si no 'pending'
@@ -109,11 +112,16 @@ Ninguna ruta del portal recibe `playerId` ni `tutorId` del cliente.
 
 ## Cambios de contrato pendientes en TS (no aplicados)
 
-| Modelo               | Cambio sugerido                           | Motivo                                        |
-| -------------------- | ----------------------------------------- | --------------------------------------------- |
-| `Charge`             | + `seasonId`, `issuedOn`                  | La BD los exige para reportes por temporada   |
-| `Payment.paidAt`     | Fecha → instante ISO                      | Se guarda el instante; la UI muestra la fecha |
-| `Payment`            | + `cancelledBy`, `cancellationReason`     | Trazabilidad                                  |
-| `Tutor.relationship` | Mover a la relación por jugador           | Parentesco por jugador                        |
-| `Competition`        | + `startDate?`, `endDate?`                | Agenda y portal                               |
-| `UniformOrder`       | Entrega por línea (`lines[].deliveredAt`) | Entregas parciales                            |
+| Modelo                                       | Cambio sugerido                           | Motivo                                                           |
+| -------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------- |
+| `Charge`                                     | + `seasonId`, `issuedOn`                  | La BD los exige para reportes por temporada                      |
+| `Payment.paidAt`                             | Fecha → instante ISO                      | Se guarda el instante; la UI muestra la fecha                    |
+| `Payment`                                    | + `cancelledBy`, `cancellationReason`     | Trazabilidad                                                     |
+| `Tutor.relationship`                         | Mover a la relación por jugador           | Parentesco por jugador                                           |
+| `Competition`                                | + `startDate?`, `endDate?`                | Agenda y portal                                                  |
+| `UniformOrder`                               | Entrega por línea (`lines[].deliveredAt`) | Entregas parciales                                               |
+| `UniformOrder.createdAt`                     | Fecha → instante ISO                      | La BD guarda `timestamptz`; hoy TS usa `today()`                 |
+| `Match.startsAt`, `TrainingSession.startsAt` | Incluir zona (`…T10:00:00-06:00`)         | El mock usa `2026-10-04T10:00` sin zona; la API siempre la manda |
+| `CoachAssignment`                            | (ninguno)                                 | `season_id` lo deduce el backend de la competencia               |
+
+En todos los casos **cambia TypeScript, no la BD**. Se aplicarán cuando se conecte la API, previa aprobación.

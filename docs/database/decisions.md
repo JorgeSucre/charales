@@ -1,9 +1,20 @@
-# Decisiones de base de datos (fase 3)
+# Decisiones de base de datos (fase 3, revisadas en la fase 3.5)
 
 Fuente: modelos de `src/app/core/models`, servicios, `core/auth/permissions.ts`, `docs/PLAN.md` y las historias de
 Borrayo. El Markdown de historias **no está en el repo**, así que ninguna tabla se deriva sólo de su nombre.
 
-Los puntos marcados con **⚠ Requiere acuerdo** son decisiones provisionales.
+Este documento guarda el **porqué**. Las reglas vigentes están en [`DATA_CONTRACT.md`](DATA_CONTRACT.md).
+
+## Estado tras la fase 3.5
+
+**Congeladas** (contrato del proyecto; cambiarlas requiere acuerdo del equipo y una migración):
+PostgreSQL 16, UUID, centavos enteros, `date` vs. `timestamptz` + `business_date()`, Enrollment ≠ PlayerCategory,
+Charge/Payment/PaymentApplication con cancelación sin borrado, uniformes con **un cargo por pedido** (cuadre garantizado
+por la BD desde la migración 007), `users` + `tutors`/`coaches` **sin** tabla `people`, RBAC con `users.role` y
+permisos en código, `tutor_players` con parentesco y tutor principal.
+
+**Pendientes de decisión humana** (marcadas ⚠ abajo): folios con huecos, sesiones vs. JWT, cancelación de cargos,
+aprobar los cambios de TS listados en `api-contract.md`, y los owners y conflictos de `OWNERSHIP.md`.
 
 ## 1. Clasificación de los modelos del frontend
 
@@ -55,7 +66,7 @@ Además está instalado en el equipo de desarrollo y se usa con SQL estándar.
 - MySQL: no tiene índices parciales (hay que simularlos con columnas generadas) y no tiene triggers diferibles.
 - SQLite: tipos débiles y un solo escritor.
 
-**⚠ Requiere acuerdo** si el equipo o el hosting imponen otro motor.
+**Congelada en la fase 3.5.**
 
 ## 3. IDs: UUID
 
@@ -64,7 +75,7 @@ Además está instalado en el equipo de desarrollo y se usa con SQL estándar.
 1. `bigint identity`: simple y compacto, pero enumerable (`/players/1`, `/players/2`…), justo lo que el portal debe evitar.
 2. **UUID v4** (`gen_random_uuid()`): no enumerable, se puede generar en cualquier capa y viaja como `string`, igual que hoy en Angular.
 
-**Decisión provisional: UUID en todas las tablas.** Todas las PK son `uuid`, excepto las tablas puente, que usan PK
+**Decisión (congelada en la fase 3.5): UUID en todas las tablas.** Todas las PK son `uuid`, excepto las tablas puente, que usan PK
 compuesta. Excepción deliberada: `payments.receipt_number` es un `bigint` consecutivo porque el folio lo lee una persona.
 
 - El seed usa UUIDs fijos y legibles (ver `db/seed/dev_seed.sql`).
@@ -112,7 +123,8 @@ mostrará la fecha. No se modificó el frontend en esta fase.
 - Una FK compuesta `(user_id, user_role) → users(id, role)` obliga a que la cuenta vinculada tenga el rol correcto.
   Esto impide ligar una cuenta de secretaría a un tutor y exponer datos del portal.
 - El nombre y el correo de tutores y entrenadores se guardan en su propia tabla, aunque se repitan en `users`: no todos
-  tienen cuenta. `users` guarda sólo el acceso. **⚠ Requiere acuerdo** si se prefiere una tabla `people` común.
+  tienen cuenta. `users` guarda sólo el acceso. **Congelado en la fase 3.5: no habrá tabla `people`.** Sólo evitaría
+  repetir nombre y correo, a cambio de más joins en todos los módulos y de reescribir el contrato probado.
 - Contraseñas: `password_hash` debe tener formato argon2id o bcrypt (`CHECK`), así un texto plano no se puede guardar
   por error. `NULL` = cuenta invitada sin contraseña. El seed **no** contiene contraseñas.
 - Recuperación: `password_reset_tokens` guarda sólo el **hash** del token, con expiración y marca de uso.
@@ -171,8 +183,11 @@ Se mantiene la separación de la fase 2:
   el saldo ya permite pagos parciales. Una FK compuesta obliga a que el cargo sea del mismo jugador que el pedido.
 - **Entrega por línea:** `delivered_at`, `delivered_by` y `delivered_to` se registran en cada línea, lo que permite
   entregas parciales. El «pedido entregado» del frontend = todas sus líneas entregadas.
-- **⚠ Divergencia con el encargo:** el diagrama del encargo pone el cargo en la línea. Se eligió el cargo por pedido para
-  no contradecir el contrato ya probado. Si el equipo necesita cobrar por línea, es una migración aditiva.
+- **Congelado en la fase 3.5: un cargo por pedido.** El diagrama del encargo de la fase 3 ponía el cargo en la línea; se
+  eligió por pedido para no contradecir el contrato ya probado.
+- Desde la migración 007 la BD garantiza, al `COMMIT`, que el cargo = Σ(`quantity × unit_price_cents`). Que exista un
+  cargo para todo pedido con total > 0 es regla del backend, porque un pedido de total 0 no puede tener cargo.
+- Cobrar por línea sigue siendo posible con una migración aditiva (ver `DATA_CONTRACT.md` § 5).
 
 ## 11. Competencias y agenda
 

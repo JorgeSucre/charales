@@ -1,6 +1,9 @@
 # Base de datos — Charales
 
-Base común para todos los módulos. **PostgreSQL 16.** Decisiones y pendientes: [`decisions.md`](decisions.md).
+Base común para todos los módulos. **PostgreSQL 16.**
+
+> **Antes de trabajar con datos lee [`DATA_CONTRACT.md`](DATA_CONTRACT.md)** (reglas congeladas) y
+> [`OWNERSHIP.md`](OWNERSHIP.md) (quién escribe cada tabla).
 
 | Documento                              | Para qué                                                     |
 | -------------------------------------- | ------------------------------------------------------------ |
@@ -28,14 +31,14 @@ Para otra base: `DATABASE_URL=postgresql://usuario@host:5432/nombre npm run db:m
 
 ```text
 db/
-  migrations/  001_…006_*.sql   se aplican en orden; cada una en su transacción; registro en schema_migrations
+  migrations/  001_…007_*.sql   se aplican en orden; cada una en su transacción; registro en schema_migrations
   seed/        dev_seed.sql      datos ficticios · sid.sql (UUIDs legibles)
-  tests/       integrity.sql     47 pruebas (transacción revertida)
+  tests/       integrity.sql     50 pruebas (transacción revertida)
   queries/     critical.sql      20 consultas del sistema
   scripts/     migrate.sh · reset.sh · test.sh
 ```
 
-**Nueva migración:** crear `db/migrations/007_descripcion.sql`. Nunca editar una migración ya aplicada en una BD
+**Nueva migración:** crear `db/migrations/008_descripcion.sql` (siguiente número; proceso completo en `DATA_CONTRACT.md`). Nunca editar una migración ya aplicada en una BD
 compartida.
 
 ## Convenciones

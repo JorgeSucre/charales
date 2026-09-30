@@ -1,5 +1,8 @@
 # Esquema
 
+Reglas de uso para el equipo: [`DATA_CONTRACT.md`](DATA_CONTRACT.md). Quién escribe cada tabla:
+[`OWNERSHIP.md`](OWNERSHIP.md).
+
 Todas las PK son `uuid DEFAULT gen_random_uuid()`, salvo que se indique otra cosa. La fuente de verdad son las
 migraciones en `db/migrations/`; este documento las resume.
 
@@ -62,6 +65,9 @@ Además: función `business_date(timestamptz) → date` (hora de México).
 
 - Un pago vigente se aplica exactamente por su monto.
 - Un cargo no recibe más que su monto sumando pagos vigentes.
+
+**Cuadre de uniformes (migración 007, diferido):** si un pedido tiene cargo,
+`charges.amount_cents = Σ(uniform_order_lines.quantity × unit_price_cents)`.
 
 **Vista `charge_balances`:** `charges.*`, `paid_cents`, `balance_cents` y `status` (`paid`, `overdue`, `partial`,
 `pending`).
