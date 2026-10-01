@@ -37,12 +37,14 @@ La API usa `camelCase` y la BD `snake_case`. Los IDs viajan como `string` (UUID)
 ### Tutor ↔ jugadores
 
 ```text
-Tutor { id, fullName, relationship, phone, email?, playerIds[] }
+Tutor { id, fullName, relationship, phone, email?, players: [{ playerId, isPrimary }] }
   ↓  POST /tutors
-tutors (1 fila) + tutor_players (1 fila por playerId, relationship copiado, is_primary=false salvo indicación)
+tutors (1 fila, email en minúsculas) + tutor_players (1 fila por players[i]: relationship copiado, is_primary = isPrimary)
 ```
 
 `relationship` está en la relación en la BD. Mientras TS no cambie, se usa el mismo valor para cada hijo.
+`isPrimary` ya es por jugador. Si el jugador ya tiene otro contacto principal, se rechaza (índice
+`tutor_players_one_primary`); no se reasigna automáticamente.
 
 ### Enrollment y PlayerCategory
 
