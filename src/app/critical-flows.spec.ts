@@ -129,6 +129,17 @@ describe('critical flows', () => {
     expect((await uniforms.orders())[0]).toMatchObject({ status: 'delivered', totalCents: 70000 });
   });
 
+  it('uniforms: a free order (total 0) creates no charge', async () => {
+    const uniforms = get(UniformService);
+    const db = get(MockDb);
+    const free = await uniforms.saveVariant({ productId: 'up2', size: 'Regalo', priceCents: 0 });
+    const charges = db.charges.length;
+    const order = await uniforms.createOrder('p1', [{ variantId: free.id, quantity: 2 }]);
+    expect(order.chargeId).toBeUndefined();
+    expect(db.charges).toHaveLength(charges); // charges.amount_cents > 0 in the DB
+    expect((await uniforms.orders())[0]).toMatchObject({ totalCents: 0, status: 'pending' });
+  });
+
   it('coach assignment requires the category to take part in the competition (C2)', async () => {
     const coaches = get(CoachService);
     await expect(

@@ -97,8 +97,8 @@ POST /uniforms/orders { playerId, items: [{ variantId, quantity }] }
     INSERT uniform_order_lines (unit_price_cents = precio ACTUAL de la variante, copiado)
     INSERT charges (concepto kind='uniform', amount = Σ líneas, uniform_order_id, temporada activa)
   COMMIT → la BD verifica cargo = Σ(quantity × unit_price_cents) (migración 007)
-  ↑ UniformOrder { id, playerId, createdAt, lines[], chargeId, status }
-      chargeId = charges.id WHERE uniform_order_id = order.id
+  ↑ UniformOrder { id, playerId, createdAt, lines[], chargeId?, status }
+      chargeId = charges.id WHERE uniform_order_id = order.id; ausente si el pedido suma 0 (no hay cargo de 0)
       status   = 'delivered' si todas las líneas tienen delivered_at, si no 'pending'
 
 POST /uniforms/orders/:id/deliver { deliveredTo }  → UPDATE uniform_order_lines SET delivered_* (todas las pendientes)
