@@ -31,16 +31,31 @@ describe('critical flows', () => {
     await expect(get(AuthService).login('nuevo@example.com', 'x')).rejects.toThrow();
   });
 
-  it('tutors: require at least one player', async () => {
+  it('tutors: require at least one player; primary contact is per player and unique', async () => {
     const tutors = get(TutorService);
     const draft = {
       fullName: 'Ana',
       relationship: 'Madre',
       phone: '0000000000',
-      playerIds: [] as string[],
+      email: ' Ana@Example.COM ',
+      players: [] as { playerId: string; isPrimary: boolean }[],
     };
     await expect(tutors.save(draft)).rejects.toThrow();
-    expect((await tutors.save({ ...draft, playerIds: ['p1', 'p3'] })).playerIds).toHaveLength(2);
+    // p1 already has Teresa as primary (tutor_players_one_primary in the DB).
+    await expect(
+      tutors.save({ ...draft, players: [{ playerId: 'p1', isPrimary: true }] }),
+    ).rejects.toThrow('Diego Hernández ya tiene un contacto principal.');
+    const saved = await tutors.save({
+      ...draft,
+      players: [
+        { playerId: 'p1', isPrimary: false },
+        { playerId: 'p4', isPrimary: true },
+      ],
+    });
+    expect(saved.players).toHaveLength(2);
+    expect(saved.email).toBe('ana@example.com'); // DB CHECK: stored lowercase
+    // Editing a tutor keeps their own primary contacts (not a conflict with themselves).
+    await expect(tutors.save({ ...saved, fullName: 'Ana M.' })).resolves.toBeTruthy();
   });
 
   it('enrollment: one active enrollment per player and season', async () => {
