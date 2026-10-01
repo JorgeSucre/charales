@@ -122,13 +122,24 @@ SELECT pg_temp.expect_error('a charge cannot be overpaid',
     pg_temp.sid('player', 1), pg_temp.sid('user', 2), pg_temp.sid('charge', 6), pg_temp.sid('player', 1)), '23514');
 SELECT pg_temp.expect_error('a charge amount cannot drop below what was paid',
   format('UPDATE charges SET amount_cents = 100 WHERE id = %L', pg_temp.sid('charge', 1)), '23514');
+-- Retroactive charge: September's fee generated in October (issued_on after due_date) is valid (HU-044).
+-- The identical second insert can only hit charges_one_per_period (23505), never a date rule (23514).
+INSERT INTO charges (player_id, concept_id, season_id, amount_cents, description, issued_on, due_date, period)
+VALUES (pg_temp.sid('player', 4), pg_temp.sid('concept', 1), pg_temp.sid('season', 2), 60000,
+        'Mensualidad 2026-09', '2026-10-01', '2026-09-10', '2026-09');
+SELECT pg_temp.check('a charge can be generated after its due date (retroactive)',
+  EXISTS (SELECT 1 FROM charges WHERE player_id = pg_temp.sid('player', 4) AND period = '2026-09'
+          AND issued_on > due_date));
 SELECT pg_temp.expect_error('monthly fee cannot be generated twice for the same period',
-  format($$INSERT INTO charges (player_id, concept_id, season_id, amount_cents, description, due_date, period)
-           VALUES (%L, %L, %L, 60000, 'dup', '2026-09-10', '2026-09')$$,
-    pg_temp.sid('player', 1), pg_temp.sid('concept', 1), pg_temp.sid('season', 2)), '23505');
+  format($$INSERT INTO charges (player_id, concept_id, season_id, amount_cents, description, issued_on, due_date, period)
+           VALUES (%L, %L, %L, 60000, 'Mensualidad 2026-09', '2026-10-01', '2026-09-10', '2026-09')$$,
+    pg_temp.sid('player', 4), pg_temp.sid('concept', 1), pg_temp.sid('season', 2)), '23505');
 SELECT pg_temp.expect_error('money cannot be zero or negative',
   format($$INSERT INTO charges (player_id, concept_id, season_id, amount_cents, description, due_date)
            VALUES (%L, %L, %L, -5, 'x', '2026-09-10')$$, pg_temp.sid('player', 1), pg_temp.sid('concept', 2), pg_temp.sid('season', 2)), '23514');
+SELECT pg_temp.expect_error('a payment cannot be cancelled before it was made',
+  format($$UPDATE payments SET cancelled_at = paid_at - interval '1 minute', cancelled_by = %L, cancellation_reason = 'x' WHERE id = %L$$,
+    pg_temp.sid('user', 1), pg_temp.sid('payment', 1)), '23514');
 
 -- A partial payment spread over two charges, then cancelled.
 WITH p AS (

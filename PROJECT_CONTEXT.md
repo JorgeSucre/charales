@@ -34,7 +34,7 @@ Las historias de usuario se organizan por épicas (EP01–EP12) y cada una tiene
 | --------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | Arquitectura frontend | **COMPLETADO**  | Angular standalone por dominio, RBAC por permisos, capa de servicios                                                        |
 | Frontend              | **EN PROGRESO** | Pantallas de las historias de Borrayo, con datos simulados (`MockDb`). Faltan los módulos de los demás                      |
-| Base de datos         | **COMPLETADO**  | PostgreSQL 16: 8 migraciones, 24 tablas, seed ficticio, 55 pruebas de integridad, 21 consultas críticas, contrato congelado |
+| Base de datos         | **COMPLETADO**  | PostgreSQL 16: 9 migraciones, 24 tablas, seed ficticio, 57 pruebas de integridad, 21 consultas críticas, contrato congelado |
 | Backend               | **NO INICIADO** | —                                                                                                                           |
 | API                   | **PENDIENTE**   | Sólo existe el contrato propuesto ([`api-contract.md`](docs/database/api-contract.md))                                      |
 | Autenticación         | **PENDIENTE**   | Hay un login **simulado**, sin verificación de contraseña, más guards y permisos. La autenticación real no existe           |
@@ -43,7 +43,7 @@ Las historias de usuario se organizan por épicas (EP01–EP12) y cada una tiene
 | Portal del tutor      | **EN PROGRESO** | UI filtrada por tutor + consultas en BD. Sin backend (la seguridad real depende del backend)                                |
 | Reportes              | **EN PROGRESO** | Ingresos y agenda en UI + consultas SQL. Sin backend                                                                        |
 | Agenda                | **EN PROGRESO** | Consulta lista (HU-068). Partidos y sesiones los escribe Joss (HU-037, HU-028), sin iniciar                                 |
-| Pruebas               | **EN PROGRESO** | 32 pruebas unitarias/de integración Angular + 50 de integridad de BD. Sin E2E                                               |
+| Pruebas               | **EN PROGRESO** | 32 pruebas unitarias/de integración Angular + 57 de integridad de BD. Sin E2E                                               |
 | Deployment            | **NO INICIADO** | —                                                                                                                           |
 
 ### Terminado
