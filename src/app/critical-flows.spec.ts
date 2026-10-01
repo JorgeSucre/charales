@@ -43,6 +43,16 @@ describe('critical flows', () => {
     expect((await tutors.save({ ...draft, playerIds: ['p1', 'p3'] })).playerIds).toHaveLength(2);
   });
 
+  it('coaches: email is normalized to lowercase', async () => {
+    const coach = await get(CoachService).save({
+      fullName: 'Nuevo Coach',
+      phone: '0000000099',
+      email: ' Coach.Nuevo@Example.com',
+      active: true,
+    });
+    expect(coach.email).toBe('coach.nuevo@example.com');
+  });
+
   it('enrollment: one active enrollment per player and season', async () => {
     const enrollments = get(EnrollmentService);
     await expect(enrollments.enroll({ playerId: 'p1', seasonId: 's1' })).rejects.toThrow();

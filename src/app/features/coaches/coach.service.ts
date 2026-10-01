@@ -18,7 +18,11 @@ export class CoachService {
   }
 
   async save(draft: Omit<Coach, 'id'> & { id?: string }): Promise<Coach> {
-    const coach: Coach = { ...draft, id: draft.id ?? this.db.id('c') };
+    const coach: Coach = {
+      ...draft,
+      email: draft.email.trim().toLowerCase(),
+      id: draft.id ?? this.db.id('c'),
+    };
     this.db.coaches = draft.id
       ? this.db.coaches.map((c) => (c.id === coach.id ? coach : c))
       : [...this.db.coaches, coach];
