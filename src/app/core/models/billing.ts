@@ -1,56 +1,92 @@
+import { Cents, DateTime, Id, ISODate } from './common';
+
 /**
- * Billing contracts. Amounts are integer cents.
+ * Billing contracts (amounts in integer cents; DECIMAL(12,2) in MariaDB).
  * Charge (what is owed) and Payment (money received) are separate; PaymentApplication links them.
- * Balances are always derived from these, never stored.
+ * The balance is derived — original − discounts − applications of non-cancelled payments —
+ * and the stored cargos.estado is kept in sync with it (billing.rules.ts).
  */
 
-export type ConceptKind = 'monthly' | 'enrollment' | 'uniform' | 'other';
-
+/**
+ * conceptos_cobro. MariaDB has no "kind" (monthly/enrollment/uniform): `recurring` marks the concepts that monthly
+ * generation can use, and every other flow lets the user pick the concept to charge.
+ */
 export interface ChargeConcept {
-  id: string;
+  id: Id;
   name: string;
-  kind: ConceptKind;
-  defaultAmountCents: number;
+  suggestedAmountCents: Cents;
+  recurring: boolean;
   active: boolean;
+  createdAt: DateTime;
 }
 
+export type ChargeStatus = 'PENDIENTE' | 'PARCIAL' | 'PAGADO' | 'VENCIDO' | 'CANCELADO';
+
+/** cargos. period 'YYYY-MM' is unique per player+concept (uq_cargo_periodo_concepto). */
 export interface Charge {
-  id: string;
-  playerId: string;
-  conceptId: string;
-  amountCents: number;
-  description: string;
-  dueDate: string;
-  /** 'YYYY-MM' for monthly fees; used to avoid duplicates. */
-  period?: string;
-  /** Origin document, e.g. a uniform order (HU-054). */
-  source?: { type: 'uniform-order'; id: string };
+  id: Id;
+  playerId: Id;
+  conceptId: Id;
+  seasonId: Id | null;
+  period: string | null;
+  chargedOn: ISODate;
+  dueDate: ISODate | null;
+  originalAmountCents: Cents;
+  status: ChargeStatus;
+  /** Free reference, e.g. 'INS-12' for an enrollment fee or 'PED-3' for a uniform order. */
+  reference: string | null;
+  createdAt: DateTime;
+  updatedAt: DateTime;
 }
 
-export type PaymentMethod = 'cash' | 'transfer' | 'card';
+export type PaymentMethod = 'EFECTIVO' | 'TRANSFERENCIA' | 'TARJETA' | 'OTRO';
+export type PaymentStatus = 'APLICADO' | 'CANCELADO';
 
+/** pagos. Never deleted; cancelling keeps the row and its applications (HU-049). */
 export interface Payment {
-  id: string;
-  receiptNumber: string;
-  playerId: string;
-  amountCents: number;
+  id: Id;
+  folio: string;
+  playerId: Id;
+  /** Who paid; must be a tutor of THIS player (fk_pago_tutor_jugador). */
+  tutorId: Id | null;
+  paidAt: DateTime;
+  amountCents: Cents;
   method: PaymentMethod;
-  paidAt: string;
-  /** Set when the payment is voided. Its applications stop counting; nothing is deleted (audit trail). */
-  cancelledAt?: string;
+  status: PaymentStatus;
+  cancellationReason: string | null;
+  recordedBy: Id | null;
+  createdAt: DateTime;
 }
 
-/** Input of BillingService.registerPayment. The server assigns id, receiptNumber and paidAt. */
+/** pago_aplicacion. Payment and charge belong to the same player (composite FKs). */
+export interface PaymentApplication {
+  id: Id;
+  paymentId: Id;
+  chargeId: Id;
+  playerId: Id;
+  amountCents: Cents;
+  createdAt: DateTime;
+}
+
+/** descuentos (HU-051). finalAmountCents is a generated column: original − adjustment. */
+export interface Discount {
+  id: Id;
+  chargeId: Id;
+  type: 'DESCUENTO' | 'BECA';
+  reason: string;
+  originalAmountCents: Cents;
+  adjustmentCents: Cents;
+  finalAmountCents: Cents;
+  authorizedBy: Id | null;
+  createdAt: DateTime;
+}
+
+/** Input of BillingService.registerPayment (HU-045). The server assigns id, folio and paidAt. */
 export interface PaymentDraft {
-  playerId: string;
-  amountCents: number;
+  playerId: Id;
+  tutorId: Id | null;
+  amountCents: Cents;
   method: PaymentMethod;
   /** Charges to pay, oldest due first. Omitted = all of the player's open charges. */
-  chargeIds?: string[];
-}
-
-export interface PaymentApplication {
-  paymentId: string;
-  chargeId: string;
-  amountCents: number;
+  chargeIds?: Id[];
 }
