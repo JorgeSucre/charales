@@ -1,216 +1,220 @@
 import { TestBed } from '@angular/core/testing';
 import { AuthService } from './core/auth/auth.service';
 import { MockDb } from './core/data/mock-db';
-import { CategoryService } from './core/services/category.service';
-import { CoachService } from './features/coaches/coach.service';
+import { integrityViolations } from './core/data/mock-db.integrity';
+import { PlayerService } from './core/services/player.service';
 import { BillingService } from './features/billing/billing.service';
 import { EnrollmentService } from './features/enrollments/enrollment.service';
+import { PlayerCategoryService } from './features/enrollments/player-category.service';
+import { MatchService } from './features/matches/match.service';
 import { PortalService } from './features/parent-portal/portal.service';
-import { ReportService } from './features/reports/report.service';
-import { TutorService } from './features/tutors/tutor.service';
-import { UniformService } from './features/uniforms/uniform.service';
-import { UserService } from './features/users/user.service';
 
-/** Critical flows through the service layer (HU-074). Runs against MockDb; swap for HTTP mocks later. */
-describe('critical flows', () => {
+/**
+ * HU-074: the six critical flows of the backlog, end to end through the service layer (the same calls the pages make)
+ * against MockDb. After each one, MockDb must still satisfy every MariaDB constraint (integrityViolations).
+ * Evidence: `npx ng test --watch=false` output.
+ */
+describe('critical flows (HU-074)', () => {
   const get = TestBed.inject.bind(TestBed);
+  const login = (who: string) => get(AuthService).login(`${who}@example.com`, 'demo1234');
 
   beforeEach(() => {
     sessionStorage.clear();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 9, 7, 12, 0));
     TestBed.resetTestingModule();
   });
-
-  it('users: create, reject duplicate email, deactivate', async () => {
-    const users = get(UserService);
-    const user = await users.save({ fullName: 'Nuevo', email: 'Nuevo@example.com', role: 'coach' });
-    expect(user).toMatchObject({ email: 'nuevo@example.com', active: true });
-    await expect(
-      users.save({ fullName: 'Otro', email: 'nuevo@example.com', role: 'coach' }),
-    ).rejects.toThrow();
-    await users.setActive(user.id, false);
-    await expect(get(AuthService).login('nuevo@example.com', 'x')).rejects.toThrow();
+  afterEach(() => {
+    expect(integrityViolations(get(MockDb))).toEqual([]);
+    vi.useRealTimers();
   });
 
-  it('tutors: require at least one player; primary contact is per player and unique', async () => {
-    const tutors = get(TutorService);
+  it('1. login: valid access by role, invalid rejected without details', async () => {
+    await expect(login('nadie')).rejects.toThrow('Correo o contraseña incorrectos.');
+    expect((await login('admin')).roles).toEqual(['ADMINISTRADOR']);
+    get(AuthService).logout();
+    expect((await login('tutor')).roles).toEqual(['TUTOR']);
+    expect(get(AuthService).homeUrl()).toBe('/portal');
+  });
+
+  it('2. player registration: identifier, age, evident duplicate rejected', async () => {
+    await login('secretaria');
+    const players = get(PlayerService);
     const draft = {
-      fullName: 'Ana',
-      relationship: 'Madre',
-      phone: '0000000000',
-      email: ' Ana@Example.COM ',
-      players: [] as { playerId: string; isPrimary: boolean }[],
+      firstName: 'Ana',
+      lastName1: 'Pérez',
+      lastName2: null,
+      birthDate: '2017-01-20',
+      sex: 'F' as const,
+      phone: null,
+      email: null,
+      address: null,
     };
-    await expect(tutors.save(draft)).rejects.toThrow();
-    // p1 already has Teresa as primary (tutor_players_one_primary in the DB).
+    const ana = await players.create(draft);
+    expect(ana).toMatchObject({ id: 7, identifier: 'J-0007', status: 'ACTIVO' });
+    expect((await players.record(ana.id)).age).toBe(9);
     await expect(
-      tutors.save({ ...draft, players: [{ playerId: 'p1', isPrimary: true }] }),
-    ).rejects.toThrow('Diego Hernández ya tiene un contacto principal.');
-    const saved = await tutors.save({
-      ...draft,
-      players: [
-        { playerId: 'p1', isPrimary: false },
-        { playerId: 'p4', isPrimary: true },
-      ],
+      players.create({ ...draft, firstName: ' ana ', lastName1: 'PEREZ' }),
+    ).rejects.toThrow('Posible duplicado');
+  });
+
+  it('3. enrollment: annual enrollment with fee charge + category membership with age rule', async () => {
+    await login('secretaria');
+    const players = get(PlayerService);
+    const ana = await players.create({
+      firstName: 'Ana',
+      lastName1: 'Pérez',
+      lastName2: null,
+      birthDate: '2017-01-20',
+      sex: 'F',
+      phone: null,
+      email: null,
+      address: null,
     });
-    expect(saved.players).toHaveLength(2);
-    expect(saved.email).toBe('ana@example.com'); // DB CHECK: stored lowercase
-    // Editing a tutor keeps their own primary contacts (not a conflict with themselves).
-    await expect(tutors.save({ ...saved, fullName: 'Ana M.' })).resolves.toBeTruthy();
-  });
-
-  it('coaches: email is normalized to lowercase', async () => {
-    const coach = await get(CoachService).save({
-      fullName: 'Nuevo Coach',
-      phone: '0000000099',
-      email: ' Coach.Nuevo@Example.com',
-      active: true,
+    const enrollment = await get(EnrollmentService).enroll({
+      playerId: ana.id,
+      seasonId: 2,
+      enrolledOn: '2026-10-07',
+      amountCents: 120000,
+      status: 'ACTIVA',
+      conceptId: 2,
+      dueDate: '2026-10-15',
     });
-    expect(coach.email).toBe('coach.nuevo@example.com');
-  });
-
-  it('enrollment: one active enrollment per player and season', async () => {
-    const enrollments = get(EnrollmentService);
-    await expect(enrollments.enroll({ playerId: 'p1', seasonId: 's1' })).rejects.toThrow();
-    await expect(enrollments.enroll({ playerId: 'p4', seasonId: 'nope' })).rejects.toThrow();
-    const e = await enrollments.enroll({ playerId: 'p4', seasonId: 's1' });
-    expect(e).toMatchObject({ seasonId: 's1', status: 'active' });
-  });
-
-  it('categories: members come from open PlayerCategory rows, not from enrollments', async () => {
-    const db = get(MockDb);
-    db.playerCategories = db.playerCategories.map((pc) =>
-      pc.playerId === 'p3' ? { ...pc, endDate: '2026-09-01' } : pc,
-    );
-    expect((await get(CategoryService).players('cat1')).map((p) => p.id)).toEqual(['p1']);
-  });
-
-  it('billing: concept → monthly charges → payment → balance', async () => {
-    const billing = get(BillingService);
-    const concept = await billing.saveConcept({
-      name: 'Mensualidad B',
-      kind: 'monthly',
-      defaultAmountCents: 50000,
-      active: true,
-    });
-    expect(await billing.generateMonthlyFees(concept.id, '2026-10', '2026-10-10')).toBe(3); // p1, p2, p3 (p4 not enrolled)
-    expect(await billing.generateMonthlyFees(concept.id, '2026-10', '2026-10-10')).toBe(0);
-
-    const before = (await billing.debts()).find((d) => d.playerId === 'p3')!.balanceCents;
-    const payment = await billing.registerPayment({
-      playerId: 'p3',
-      amountCents: 20000,
-      method: 'cash',
-    });
-    const after = (await billing.debts()).find((d) => d.playerId === 'p3')!.balanceCents;
-    expect(before - after).toBe(20000);
-    expect((await billing.receipt(payment.id)).lines.reduce((s, l) => s + l.amountCents, 0)).toBe(
-      20000,
-    );
-  });
-
-  it('billing: registerPayment only touches the given charges of that player; cancelled payments reopen balance', async () => {
-    const billing = get(BillingService);
-    const db = get(MockDb);
     await expect(
-      billing.registerPayment({
-        playerId: 'p3',
-        amountCents: 100,
-        method: 'cash',
-        chargeIds: ['ch2'],
+      get(EnrollmentService).enroll({
+        playerId: ana.id,
+        seasonId: 2,
+        enrolledOn: '2026-10-07',
+        amountCents: 0,
+        status: 'ACTIVA',
+        conceptId: null,
+        dueDate: null,
       }),
-    ).rejects.toThrow(); // ch2 belongs to p2
-
-    const payment = await billing.registerPayment({
-      playerId: 'p2',
-      amountCents: 25000,
-      method: 'card',
-      chargeIds: ['ch2'],
-    });
-    expect((await billing.openCharges('p2'))[0].balanceCents).toBe(35000);
-
-    db.payments = db.payments.map((p) =>
-      p.id === payment.id ? { ...p, cancelledAt: '2026-09-30' } : p,
-    );
-    expect((await billing.openCharges('p2'))[0].balanceCents).toBe(60000);
-    expect((await billing.debts()).find((d) => d.playerId === 'p2')?.balanceCents).toBe(60000);
-  });
-
-  it('uniforms: order keeps historical price, creates a charge, delivers once', async () => {
-    const uniforms = get(UniformService);
-    const db = get(MockDb);
-    const order = await uniforms.createOrder('p1', [{ variantId: 'uv1', quantity: 2 }]);
-    db.uniformVariants = db.uniformVariants.map((v) =>
-      v.id === 'uv1' ? { ...v, priceCents: 99900 } : v,
-    );
-
-    expect(order.lines[0].unitPriceCents).toBe(35000);
-    expect(db.charges.find((c) => c.id === order.chargeId)).toMatchObject({
-      amountCents: 70000,
-      source: { type: 'uniform-order', id: order.id },
+    ).rejects.toThrow('ya está inscrito');
+    expect(get(MockDb).charges.find((c) => c.reference === `INS-${enrollment.id}`)).toMatchObject({
+      originalAmountCents: 120000,
+      seasonId: 2,
     });
 
-    await uniforms.deliver(order.id, 'Teresa');
-    await expect(uniforms.deliver(order.id, 'Teresa')).rejects.toThrow();
-    expect((await uniforms.orders())[0]).toMatchObject({ status: 'delivered', totalCents: 70000 });
-  });
-
-  it('uniforms: a free order (total 0) creates no charge', async () => {
-    const uniforms = get(UniformService);
-    const db = get(MockDb);
-    const free = await uniforms.saveVariant({ productId: 'up2', size: 'Regalo', priceCents: 0 });
-    const charges = db.charges.length;
-    const order = await uniforms.createOrder('p1', [{ variantId: free.id, quantity: 2 }]);
-    expect(order.chargeId).toBeUndefined();
-    expect(db.charges).toHaveLength(charges); // charges.amount_cents > 0 in the DB
-    expect((await uniforms.orders())[0]).toMatchObject({ totalCents: 0, status: 'pending' });
-  });
-
-  it('coach assignment requires the category to take part in the competition (C2)', async () => {
-    const coaches = get(CoachService);
+    const membership = get(PlayerCategoryService);
     await expect(
-      coaches.assign({ coachId: 'c1', competitionId: 'comp2', categoryId: 'cat1' }),
+      membership.assign({
+        playerId: ana.id,
+        categoryId: 2,
+        date: '2026-10-07',
+        exceptionReason: null,
+      }),
+    ).rejects.toThrow('fuera del rango');
+    const row = await membership.assign({
+      playerId: ana.id,
+      categoryId: 1,
+      date: '2026-10-07',
+      exceptionReason: null,
+    });
+    expect(row).toMatchObject({ categoryId: 1, endDate: null, isAgeException: false });
+  });
+
+  it('4. payment and balance: partial payment, folio, derived status, cancellation reopens the balance', async () => {
+    await login('admin');
+    const billing = get(BillingService);
+    // Mateo (3): enrollment fee 1,200.00 with 500.00 already paid → 700.00 open and overdue.
+    expect((await billing.statement(3)).totals).toMatchObject({
+      balanceCents: 70000,
+      overdueCents: 70000,
+    });
+    const payment = await billing.registerPayment({
+      playerId: 3,
+      tutorId: 2,
+      amountCents: 20000,
+      method: 'EFECTIVO',
+      chargeIds: [3],
+    });
+    expect(payment.folio).toBe('R-0004');
+    expect((await billing.statement(3)).totals.balanceCents).toBe(50000);
+    await expect(
+      billing.registerPayment({ playerId: 3, tutorId: 1, amountCents: 100, method: 'EFECTIVO' }),
+    ).rejects.toThrow('tutor de ese jugador');
+    await expect(
+      billing.registerPayment({ playerId: 3, tutorId: 2, amountCents: 50001, method: 'EFECTIVO' }),
+    ).rejects.toThrow('excede');
+
+    const full = await billing.registerPayment({
+      playerId: 3,
+      tutorId: 2,
+      amountCents: 50000,
+      method: 'TRANSFERENCIA',
+    });
+    expect(get(MockDb).charges.find((c) => c.id === 3)?.status).toBe('PAGADO');
+    await billing.cancelPayment(full.id, 'Transferencia rechazada');
+    expect(get(MockDb).charges.find((c) => c.id === 3)?.status).toBe('VENCIDO');
+    expect((await billing.statement(3)).totals.balanceCents).toBe(50000);
+    expect((await billing.receipt(full.id)).payment).toMatchObject({
+      status: 'CANCELADO',
+      cancellationReason: 'Transferencia rechazada',
+    });
+  });
+
+  it('5. match scheduling: only registered categories, reschedule with reason, result only when played', async () => {
+    await login('secretaria');
+    const matches = get(MatchService);
+    const match = await matches.schedule({
+      competitionCategoryId: 1,
+      opponentId: 2,
+      venueId: 1,
+      date: '2026-11-08',
+      time: '09:30',
+      homeAway: 'LOCAL',
+      notes: null,
+    });
+    expect(match).toMatchObject({ status: 'PROGRAMADO', goalsFor: null });
+    get(MockDb).competitionCategories[2].status = 'BAJA';
+    await expect(
+      matches.schedule({
+        competitionCategoryId: 3,
+        opponentId: 2,
+        venueId: 1,
+        date: '2026-11-08',
+        time: '09:30',
+        homeAway: 'LOCAL',
+        notes: null,
+      }),
+    ).rejects.toThrow('no está inscrita');
+    await expect(
+      matches.reschedule(match.id, { date: '2026-11-09', time: '10:00', venueId: 2, reason: '' }),
+    ).rejects.toThrow('motivo');
+    expect(
+      await matches.reschedule(match.id, {
+        date: '2026-11-09',
+        time: '10:00',
+        venueId: 2,
+        reason: 'Cancha ocupada',
+      }),
+    ).toMatchObject({ status: 'REPROGRAMADO', date: '2026-11-09' });
+    await expect(
+      matches.recordResult(match.id, { goalsFor: 1, goalsAgainst: 0, notes: null }),
+    ).rejects.toThrow('futuro');
+    await expect(
+      matches.recordResult(1, { goalsFor: -1, goalsAgainst: 0, notes: null }),
     ).rejects.toThrow();
-    expect(
-      await coaches.assign({ coachId: 'c1', competitionId: 'comp1', categoryId: 'cat2' }),
-    ).toBeTruthy();
   });
 
-  it('portal: a tutor account not linked to a tutor sees nothing', async () => {
-    const db = get(MockDb);
-    db.users = db.users.map((u) => (u.id === 'u4' ? { ...u, tutorId: undefined } : u));
-    await get(AuthService).login('tutor@example.com', 'x');
+  it('6. tutor access is restricted to their own children (tutor → tutor_jugador → jugadores)', async () => {
+    await login('tutor');
     const portal = get(PortalService);
-    expect(await portal.children()).toEqual([]);
-    expect(await portal.uniformOrders()).toEqual([]);
-    expect(await portal.competitions()).toEqual([]);
-  });
-
-  it('portal: tutor only sees their own children', async () => {
-    await get(UniformService).createOrder('p3', [{ variantId: 'uv3', quantity: 1 }]); // someone else's child
-    await get(UniformService).createOrder('p1', [{ variantId: 'uv3', quantity: 1 }]);
-    await get(AuthService).login('tutor@example.com', 'x');
-    const portal = get(PortalService);
-
-    expect((await portal.children()).map((p) => p.id).sort()).toEqual(['p1', 'p2']);
-    expect((await portal.uniformOrders()).map((o) => o.playerId)).toEqual(['p1']);
-    // Lucía's Sub-12 plays the Liga without an assigned coach: participation, not coach assignment, decides (C2).
-    expect(
-      (await portal.competitions()).map((c) => `${c.playerName}: ${c.competitionName}`).sort(),
-    ).toEqual([
-      'Diego Hernández: Liga Municipal',
-      'Lucía Hernández: Copa Otoño',
-      'Lucía Hernández: Liga Municipal',
+    expect((await portal.overview()).map((c) => c.name).sort()).toEqual([
+      'Diego Hernández López',
+      'Lucía Hernández López',
     ]);
-  });
-
-  it('reports: income by concept and a sorted agenda', async () => {
-    const reports = get(ReportService);
-    expect(await reports.income('2026-08-01', '2026-09-30')).toEqual([
-      { month: '2026-08', conceptName: 'Inscripción anual', totalCents: 50000 },
-      { month: '2026-09', conceptName: 'Mensualidad', totalCents: 60000 },
+    await expect(portal.child(3)).rejects.toThrow('No tienes acceso');
+    const lucia = await portal.child(2);
+    expect(lucia.competitions.map((c) => c.competitionName).sort()).toEqual([
+      'Copa Otoño',
+      'Liga Municipal',
     ]);
-    const agenda = await reports.agenda();
-    expect(agenda.map((a) => a.startsAt)).toEqual([...agenda.map((a) => a.startsAt)].sort());
-    expect(agenda.find((a) => a.kind === 'match')?.coachName).toBe('Carlos Coach');
+    expect(lucia.statement.charges.every((c) => c.playerId === 2)).toBe(true);
+    // A tutor account without a linked tutor profile sees nothing.
+    get(AuthService).logout();
+    get(MockDb).tutors[0].userId = null;
+    await expect(login('tutor')).rejects.toThrow('rol o perfil activo');
   });
 });
