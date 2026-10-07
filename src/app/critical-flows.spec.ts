@@ -31,16 +31,41 @@ describe('critical flows', () => {
     await expect(get(AuthService).login('nuevo@example.com', 'x')).rejects.toThrow();
   });
 
-  it('tutors: require at least one player', async () => {
+  it('tutors: require at least one player; primary contact is per player and unique', async () => {
     const tutors = get(TutorService);
     const draft = {
       fullName: 'Ana',
       relationship: 'Madre',
       phone: '0000000000',
-      playerIds: [] as string[],
+      email: ' Ana@Example.COM ',
+      players: [] as { playerId: string; isPrimary: boolean }[],
     };
     await expect(tutors.save(draft)).rejects.toThrow();
-    expect((await tutors.save({ ...draft, playerIds: ['p1', 'p3'] })).playerIds).toHaveLength(2);
+    // p1 already has Teresa as primary (tutor_players_one_primary in the DB).
+    await expect(
+      tutors.save({ ...draft, players: [{ playerId: 'p1', isPrimary: true }] }),
+    ).rejects.toThrow('Diego Hernández ya tiene un contacto principal.');
+    const saved = await tutors.save({
+      ...draft,
+      players: [
+        { playerId: 'p1', isPrimary: false },
+        { playerId: 'p4', isPrimary: true },
+      ],
+    });
+    expect(saved.players).toHaveLength(2);
+    expect(saved.email).toBe('ana@example.com'); // DB CHECK: stored lowercase
+    // Editing a tutor keeps their own primary contacts (not a conflict with themselves).
+    await expect(tutors.save({ ...saved, fullName: 'Ana M.' })).resolves.toBeTruthy();
+  });
+
+  it('coaches: email is normalized to lowercase', async () => {
+    const coach = await get(CoachService).save({
+      fullName: 'Nuevo Coach',
+      phone: '0000000099',
+      email: ' Coach.Nuevo@Example.com',
+      active: true,
+    });
+    expect(coach.email).toBe('coach.nuevo@example.com');
   });
 
   it('enrollment: one active enrollment per player and season', async () => {
@@ -127,6 +152,17 @@ describe('critical flows', () => {
     await uniforms.deliver(order.id, 'Teresa');
     await expect(uniforms.deliver(order.id, 'Teresa')).rejects.toThrow();
     expect((await uniforms.orders())[0]).toMatchObject({ status: 'delivered', totalCents: 70000 });
+  });
+
+  it('uniforms: a free order (total 0) creates no charge', async () => {
+    const uniforms = get(UniformService);
+    const db = get(MockDb);
+    const free = await uniforms.saveVariant({ productId: 'up2', size: 'Regalo', priceCents: 0 });
+    const charges = db.charges.length;
+    const order = await uniforms.createOrder('p1', [{ variantId: free.id, quantity: 2 }]);
+    expect(order.chargeId).toBeUndefined();
+    expect(db.charges).toHaveLength(charges); // charges.amount_cents > 0 in the DB
+    expect((await uniforms.orders())[0]).toMatchObject({ totalCents: 0, status: 'pending' });
   });
 
   it('coach assignment requires the category to take part in the competition (C2)', async () => {

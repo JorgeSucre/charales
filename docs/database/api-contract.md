@@ -37,12 +37,14 @@ La API usa `camelCase` y la BD `snake_case`. Los IDs viajan como `string` (UUID)
 ### Tutor ↔ jugadores
 
 ```text
-Tutor { id, fullName, relationship, phone, email?, playerIds[] }
+Tutor { id, fullName, relationship, phone, email?, players: [{ playerId, isPrimary }] }
   ↓  POST /tutors
-tutors (1 fila) + tutor_players (1 fila por playerId, relationship copiado, is_primary=false salvo indicación)
+tutors (1 fila, email en minúsculas) + tutor_players (1 fila por players[i]: relationship copiado, is_primary = isPrimary)
 ```
 
 `relationship` está en la relación en la BD. Mientras TS no cambie, se usa el mismo valor para cada hijo.
+`isPrimary` ya es por jugador. Si el jugador ya tiene otro contacto principal, se rechaza (índice
+`tutor_players_one_primary`); no se reasigna automáticamente.
 
 ### Enrollment y PlayerCategory
 
@@ -97,8 +99,8 @@ POST /uniforms/orders { playerId, items: [{ variantId, quantity }] }
     INSERT uniform_order_lines (unit_price_cents = precio ACTUAL de la variante, copiado)
     INSERT charges (concepto kind='uniform', amount = Σ líneas, uniform_order_id, temporada activa)
   COMMIT → la BD verifica cargo = Σ(quantity × unit_price_cents) (migración 007)
-  ↑ UniformOrder { id, playerId, createdAt, lines[], chargeId, status }
-      chargeId = charges.id WHERE uniform_order_id = order.id
+  ↑ UniformOrder { id, playerId, createdAt, lines[], chargeId?, status }
+      chargeId = charges.id WHERE uniform_order_id = order.id; ausente si el pedido suma 0 (no hay cargo de 0)
       status   = 'delivered' si todas las líneas tienen delivered_at, si no 'pending'
 
 POST /uniforms/orders/:id/deliver { deliveredTo }  → UPDATE uniform_order_lines SET delivered_* (todas las pendientes)
