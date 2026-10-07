@@ -4,8 +4,9 @@ Proyecto escolar integrador: plataforma web para administrar una escuela formati
 inscripciones, entrenadores, cobranza, uniformes, portal para padres y reportes. Las historias de usuario están
 organizadas por épicas y responsables.
 
-> **Estado:** el frontend Angular funciona con **datos simulados** y el esquema PostgreSQL está listo, pero **todavía
-> no están conectados**: no hay backend ni autenticación real.
+> **Estado:** el frontend Angular implementa el backlog (HU-001…076) sobre **datos simulados** (`MockDb`) que siguen el
+> modelo **MariaDB** adoptado ([`docs/database/MARIADB.md`](docs/database/MARIADB.md)). Todavía **no hay backend**: la
+> autenticación y los datos viven en el navegador. Trazabilidad HU → código → pruebas: [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md).
 > Contexto completo, estado por área y quién hace qué: [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).
 
 ## Requisitos
@@ -26,10 +27,14 @@ npm install
 npm start                    # http://localhost:4200
 ```
 
-Usuarios de demostración (la contraseña **no se verifica**; escribe cualquiera): `admin@example.com`,
-`secretaria@example.com`, `coach@example.com`, `tutor@example.com`.
+Usuarios de demostración (contraseña `demo1234`, se verifica contra un hash con sal del mock): `admin@example.com`,
+`secretaria@example.com`, `coach@example.com`, `tutor@example.com` y `marta@example.com` (entrenadora y tutora en la
+misma cuenta). Los datos simulados se reinician al recargar la página.
 
-Base de datos local (opcional para el frontend):
+Modelo MariaDB (opcional para el frontend): `docs/escuela_futbol_mariadb.sql` + `db/mariadb/010_permisos_app.sql`;
+pruebas del esquema en `docs/escuela_futbol_mariadb_checks.sql` (ver su encabezado; sólo sobre una copia vacía).
+
+Esquema PostgreSQL anterior (historial; ya no es la fuente de verdad):
 
 ```bash
 npm run db:reset             # crea charales_dev: migraciones + seed ficticio
@@ -80,8 +85,8 @@ También son útiles una extensión de PostgreSQL/SQL, `bierner.markdown-mermaid
 
 ```text
 src/app/     frontend Angular: core/ (modelos, auth, datos mock, servicios compartidos), features/, shared/, layout/
-db/          PostgreSQL: migrations/, seed/, tests/, queries/, scripts/
-docs/        documentación: ROADMAP, INTEGRATION_MAP, PLAN y database/ (contrato de datos)
+db/          mariadb/ (seed de permisos de la app) y el esquema PostgreSQL anterior: migrations/, seed/, tests/…
+docs/        documentación: TRACEABILITY, ROADMAP, INTEGRATION_MAP, PLAN, database/ (MARIADB.md = contrato vigente)
 ```
 
 ## Documentación

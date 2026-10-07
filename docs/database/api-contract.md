@@ -1,5 +1,8 @@
 # Contrato Angular ↔ API ↔ BD
 
+> **Esquema PostgreSQL anterior (historial).** Desde 2026-10-07 el modelo vigente es MariaDB:
+> [`MARIADB.md`](MARIADB.md). Este documento describe `db/migrations` y ya no es la fuente de verdad.
+
 Propuesta para acordar. **No hay API implementada.** Las rutas son sugerencias y siguen las áreas del frontend.
 Si algo de aquí contradice [`DATA_CONTRACT.md`](DATA_CONTRACT.md), manda el contrato de datos.
 La API usa `camelCase` y la BD `snake_case`. Los IDs viajan como `string` (UUID).

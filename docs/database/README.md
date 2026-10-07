@@ -1,5 +1,8 @@
 # Base de datos — Charales
 
+> **Esquema PostgreSQL anterior (historial).** Desde 2026-10-07 el modelo vigente es MariaDB:
+> [`MARIADB.md`](MARIADB.md). Este documento describe `db/migrations` y ya no es la fuente de verdad.
+
 Base común para todos los módulos. **PostgreSQL 16.**
 
 > **Antes de trabajar con datos lee [`DATA_CONTRACT.md`](DATA_CONTRACT.md)** (reglas congeladas) y

@@ -30,21 +30,21 @@ Las historias de usuario se organizan por épicas (EP01–EP12) y cada una tiene
 
 ## Estado del proyecto
 
-| Área                  | Estado          | Detalle                                                                                                                     |
-| --------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Arquitectura frontend | **COMPLETADO**  | Angular standalone por dominio, RBAC por permisos, capa de servicios                                                        |
-| Frontend              | **EN PROGRESO** | Pantallas de las historias de Borrayo, con datos simulados (`MockDb`). Faltan los módulos de los demás                      |
-| Base de datos         | **COMPLETADO**  | PostgreSQL 16: 9 migraciones, 24 tablas, seed ficticio, 57 pruebas de integridad, 21 consultas críticas, contrato congelado |
-| Backend               | **NO INICIADO** | —                                                                                                                           |
-| API                   | **PENDIENTE**   | Sólo existe el contrato propuesto ([`api-contract.md`](docs/database/api-contract.md))                                      |
-| Autenticación         | **PENDIENTE**   | Hay un login **simulado**, sin verificación de contraseña, más guards y permisos. La autenticación real no existe           |
-| Cobranza              | **EN PROGRESO** | UI + reglas probadas + esquema de BD. Sin backend. Registro de pagos: Dani (HU-045); cancelación: Joss (HU-049)             |
-| Uniformes             | **EN PROGRESO** | UI + esquema de BD. Sin backend                                                                                             |
-| Portal del tutor      | **EN PROGRESO** | UI filtrada por tutor + consultas en BD. Sin backend (la seguridad real depende del backend)                                |
-| Reportes              | **EN PROGRESO** | Ingresos y agenda en UI + consultas SQL. Sin backend                                                                        |
-| Agenda                | **EN PROGRESO** | Consulta lista (HU-068). Partidos y sesiones los escribe Joss (HU-037, HU-028), sin iniciar                                 |
-| Pruebas               | **EN PROGRESO** | 35 pruebas unitarias/de integración Angular + 57 de integridad de BD. Sin E2E                                               |
-| Deployment            | **NO INICIADO** | —                                                                                                                           |
+| Área                  | Estado          | Detalle                                                                                                                                                             |
+| --------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Arquitectura frontend | **COMPLETADO**  | Angular standalone por dominio, RBAC por permisos, capa de servicios                                                                                                |
+| Frontend              | **EN REVISIÓN** | Las 76 HU implementadas sobre `MockDb` en la rama `jorgesucre/feat/backlog-mariadb` ([`TRACEABILITY.md`](docs/TRACEABILITY.md)); cada responsable revisa las suyas  |
+| Base de datos         | **COMPLETADO**  | Modelo **MariaDB** adoptado ([`MARIADB.md`](docs/database/MARIADB.md)); 42/42 checks del esquema. El PostgreSQL de `db/` queda como historial                       |
+| Backend               | **NO INICIADO** | —                                                                                                                                                                   |
+| API                   | **PENDIENTE**   | Contrato: [`MARIADB.md`](docs/database/MARIADB.md) § 1–3 y § 7 (pasos para conectar)                                                                                |
+| Autenticación         | **SIMULADA**    | Login con hash con sal (mock), sesiones con expiración, roles por perfil, permisos editables, recuperación con token. El hash real (argon2/bcrypt) va en el backend |
+| Cobranza              | **EN REVISIÓN** | Conceptos, cargos, mensualidades, pagos parciales, folios, cancelación, estado de cuenta, adeudos, descuentos/becas. Sin backend                                    |
+| Uniformes             | **EN REVISIÓN** | Catálogo, pedidos con precio histórico, cargo vinculado (`cargo_id`), pagado derivado, entrega, cancelación. Sin backend                                            |
+| Portal del tutor      | **EN REVISIÓN** | Tarjetas por hijo, datos deportivos, partidos/resultados por plantel, estado de cuenta, asistencia, uniformes, avisos, perfil                                       |
+| Reportes              | **EN REVISIÓN** | Tablero con fuentes, jugadores por categoría, ingresos, agenda global                                                                                               |
+| Agenda                | **EN REVISIÓN** | Sesiones (también desde horarios), partidos con reprogramación y resultados                                                                                         |
+| Pruebas               | **EN PROGRESO** | 74 pruebas Angular (6 flujos críticos HU-074 + reglas por HU + RBAC por ruta) con verificación de integridad. Sin E2E de navegador                                  |
+| Deployment            | **NO INICIADO** | —                                                                                                                                                                   |
 
 ### Terminado
 
@@ -87,13 +87,16 @@ Backend, API, JWT/sesiones, correo real, pagos en línea, almacenamiento de arch
 en 12 épicas (EP01–EP12), con responsable, módulo, dependencias, entidades sugeridas, release (MVP, Versión 1,
 Versión 2) y sprint.
 
-| Responsable                      | HU  | Estado                                                               |
-| -------------------------------- | --- | -------------------------------------------------------------------- |
-| Borrayo                          | 22  | EN PROGRESO (tabla de abajo)                                         |
-| Joss                             | 19  | NO INICIADO                                                          |
-| Armando                          | 19  | NO INICIADO                                                          |
-| Dani (en HU-003 aparece «Dany»)  | 15  | NO INICIADO                                                          |
-| Todos (HU-073, integridad de BD) | 1   | EN PROGRESO: la BD ya tiene PK/FK, unicidad y transacciones en pagos |
+| Responsable                      | HU  | Estado                                                                                                                         |
+| -------------------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Borrayo                          | 22  | EN PROGRESO (tabla de abajo)                                                                                                   |
+| Joss                             | 19  | EN REVISIÓN: implementación base en `jorgesucre/feat/backlog-mariadb`; cada responsable valida sus HU (`docs/TRACEABILITY.md`) |
+| Armando                          | 19  | EN REVISIÓN: implementación base en `jorgesucre/feat/backlog-mariadb`; cada responsable valida sus HU (`docs/TRACEABILITY.md`) |
+| Dani (en HU-003 aparece «Dany»)  | 15  | EN REVISIÓN: implementación base en `jorgesucre/feat/backlog-mariadb`; cada responsable valida sus HU (`docs/TRACEABILITY.md`) |
+| Todos (HU-073, integridad de BD) | 1   | EN REVISIÓN: implementación base en `jorgesucre/feat/backlog-mariadb`; cada responsable valida sus HU (`docs/TRACEABILITY.md`) |
+
+> El detalle de abajo es el estado **anterior** a la rama del backlog; el estado actual de cada HU está en
+> [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md).
 
 **Historias de Borrayo.** En todas el backend está **pendiente**. «EN PROGRESO» = existen la UI (con datos simulados)
 y el soporte en BD.
@@ -203,22 +206,24 @@ La BD no usa paquetes npm: los scripts llaman a `psql`.
 
 ## Documentación importante
 
-| Documento                                                                | Propósito                                                                  | Cuándo leerlo                                |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------------- | -------------------------------------------- |
-| [`README.md`](README.md)                                                 | Instalar, ejecutar, comandos, herramientas                                 | Al clonar                                    |
-| `PROJECT_CONTEXT.md`                                                     | Este documento: qué es, estado, quién hace qué                             | Antes de cualquier tarea                     |
-| [`AGENTS.md`](AGENTS.md)                                                 | Reglas de trabajo para cualquier IA                                        | Si eres una IA, antes de tocar nada          |
-| [`CLAUDE.md`](CLAUDE.md)                                                 | Notas específicas de Claude Code                                           | Si usas Claude Code                          |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md)                                     | Branches, commits, PRs, migraciones                                        | Antes del primer commit                      |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md)                                     | Fases y lo que sigue (**fuente de verdad del roadmap**)                    | Al planear                                   |
-| [`docs/requirements/USER_STORIES.md`](docs/requirements/USER_STORIES.md) | **Tabla oficial de las 76 HU** (responsable, sprint, criterios)            | Antes de empezar cualquier HU                |
-| [`docs/INTEGRATION_MAP.md`](docs/INTEGRATION_MAP.md)                     | Servicios de backend, owners, dependencias, cambios TS pendientes          | Antes de trabajar en backend o integración   |
-| [`docs/PLAN.md`](docs/PLAN.md)                                           | Decisiones del frontend de las fases 1–2 (Enrollment, pagos, portal, RBAC) | Al tocar el frontend existente               |
-| [`docs/database/README.md`](docs/database/README.md)                     | Levantar la BD, estructura de `db/`, seed                                  | Al trabajar con la BD                        |
-| [`docs/database/DATA_CONTRACT.md`](docs/database/DATA_CONTRACT.md)       | **Reglas de datos congeladas** y proceso de cambios                        | Antes de tocar datos, modelos o SQL          |
-| [`docs/database/OWNERSHIP.md`](docs/database/OWNERSHIP.md)               | **Quién escribe cada tabla**; cobertura por historia; conflictos           | Antes de escribir en una tabla               |
-| [`docs/database/schema.md`](docs/database/schema.md)                     | Cada tabla: PK, FK, restricciones                                          | Al diseñar consultas o endpoints             |
-| [`docs/database/relationships.md`](docs/database/relationships.md)       | Relaciones en lenguaje sencillo + diagrama ER                              | Para entender el modelo                      |
-| [`docs/database/api-contract.md`](docs/database/api-contract.md)         | Mapeo Angular ↔ API ↔ tabla                                                | Al implementar la API o conectar el frontend |
-| [`docs/database/decisions.md`](docs/database/decisions.md)               | El porqué de cada decisión de BD                                           | Antes de proponer un cambio de diseño        |
-| [`docs/database/queries.md`](docs/database/queries.md)                   | Las 21 consultas críticas                                                  | Al implementar reportes o el portal          |
+| Documento                                                                | Propósito                                                                          | Cuándo leerlo                                |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- | -------------------------------------------- |
+| [`README.md`](README.md)                                                 | Instalar, ejecutar, comandos, herramientas                                         | Al clonar                                    |
+| `PROJECT_CONTEXT.md`                                                     | Este documento: qué es, estado, quién hace qué                                     | Antes de cualquier tarea                     |
+| [`AGENTS.md`](AGENTS.md)                                                 | Reglas de trabajo para cualquier IA                                                | Si eres una IA, antes de tocar nada          |
+| [`CLAUDE.md`](CLAUDE.md)                                                 | Notas específicas de Claude Code                                                   | Si usas Claude Code                          |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md)                                     | Branches, commits, PRs, migraciones                                                | Antes del primer commit                      |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md)                                     | Fases y lo que sigue (**fuente de verdad del roadmap**)                            | Al planear                                   |
+| [`docs/requirements/USER_STORIES.md`](docs/requirements/USER_STORIES.md) | **Tabla oficial de las 76 HU** (responsable, sprint, criterios)                    | Antes de empezar cualquier HU                |
+| [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md)                           | Estado real de cada HU → código → pruebas                                          | Antes de tomar o revisar una HU              |
+| [`docs/database/MARIADB.md`](docs/database/MARIADB.md)                   | **Modelo MariaDB vigente**: convenciones, tablas → servicios, decisiones, respaldo | Antes de tocar datos, modelos o la API       |
+| [`docs/INTEGRATION_MAP.md`](docs/INTEGRATION_MAP.md)                     | Servicios de backend, owners, dependencias, cambios TS pendientes                  | Antes de trabajar en backend o integración   |
+| [`docs/PLAN.md`](docs/PLAN.md)                                           | Decisiones del frontend de las fases 1–2 (Enrollment, pagos, portal, RBAC)         | Al tocar el frontend existente               |
+| [`docs/database/README.md`](docs/database/README.md)                     | Levantar la BD, estructura de `db/`, seed                                          | Al trabajar con la BD                        |
+| [`docs/database/DATA_CONTRACT.md`](docs/database/DATA_CONTRACT.md)       | **Reglas de datos congeladas** y proceso de cambios                                | Antes de tocar datos, modelos o SQL          |
+| [`docs/database/OWNERSHIP.md`](docs/database/OWNERSHIP.md)               | **Quién escribe cada tabla**; cobertura por historia; conflictos                   | Antes de escribir en una tabla               |
+| [`docs/database/schema.md`](docs/database/schema.md)                     | Cada tabla: PK, FK, restricciones                                                  | Al diseñar consultas o endpoints             |
+| [`docs/database/relationships.md`](docs/database/relationships.md)       | Relaciones en lenguaje sencillo + diagrama ER                                      | Para entender el modelo                      |
+| [`docs/database/api-contract.md`](docs/database/api-contract.md)         | Mapeo Angular ↔ API ↔ tabla                                                        | Al implementar la API o conectar el frontend |
+| [`docs/database/decisions.md`](docs/database/decisions.md)               | El porqué de cada decisión de BD                                                   | Antes de proponer un cambio de diseño        |
+| [`docs/database/queries.md`](docs/database/queries.md)                   | Las 21 consultas críticas                                                          | Al implementar reportes o el portal          |

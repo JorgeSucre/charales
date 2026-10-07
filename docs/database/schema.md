@@ -1,5 +1,8 @@
 # Esquema
 
+> **Esquema PostgreSQL anterior (historial).** Desde 2026-10-07 el modelo vigente es MariaDB:
+> [`MARIADB.md`](MARIADB.md). Este documento describe `db/migrations` y ya no es la fuente de verdad.
+
 Reglas de uso para el equipo: [`DATA_CONTRACT.md`](DATA_CONTRACT.md). Quién escribe cada tabla:
 [`OWNERSHIP.md`](OWNERSHIP.md).
 
