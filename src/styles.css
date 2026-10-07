@@ -360,3 +360,259 @@ td {
     border: 0;
   }
 }
+
+/* ── Added with the backlog implementation ─────────────────────────────── */
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.page-head h1,
+.page-head h3 {
+  margin: 0;
+}
+a.button {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--primary-text);
+  text-decoration: none;
+}
+a.button.secondary {
+  background: var(--surface);
+  color: var(--primary);
+}
+.nav-section {
+  margin: 0.75rem 0 0.25rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.danger {
+  color: var(--danger);
+}
+.pre {
+  white-space: pre-line;
+}
+td.wrap {
+  white-space: normal;
+  min-width: 12rem;
+}
+.inline-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+.inline-row > select,
+.inline-row > input:not([type='checkbox']) {
+  flex: 1 1 12rem;
+  width: auto;
+}
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  min-width: 0;
+}
+.checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.25rem 1rem;
+}
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+.panel h2,
+.panel h3 {
+  margin: 0 0 0.5rem;
+}
+.list {
+  padding-left: 1.1rem;
+}
+.list li {
+  margin-bottom: 0.35rem;
+}
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+}
+.facts dd {
+  margin: 0;
+}
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  margin: 1rem 0;
+}
+.tabs button {
+  background: none;
+  color: var(--text);
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  white-space: nowrap;
+}
+.tabs button.active {
+  border-bottom-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+.kpi {
+  display: grid;
+  gap: 0.15rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  color: var(--text);
+  text-decoration: none;
+}
+.kpi strong {
+  font-size: 1.4rem;
+}
+.kpi.danger strong {
+  color: var(--danger);
+}
+.week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(110px, 1fr));
+  gap: 0.5rem;
+  overflow-x: auto;
+}
+.day h3 {
+  font-size: 0.9rem;
+  margin: 0 0 0.25rem;
+}
+.slot {
+  background: var(--ok-bg);
+  border-radius: var(--radius);
+  padding: 0.4rem;
+  margin: 0 0 0.4rem;
+  font-size: 0.9rem;
+}
+.slot.overlap {
+  background: var(--error-bg);
+}
+.attendance {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.attendance li {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) auto minmax(8rem, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem;
+}
+.seg {
+  display: flex;
+  gap: 0.25rem;
+}
+.seg label {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.seg label.on {
+  background: var(--ok-bg);
+  border-color: var(--primary);
+}
+.seg input {
+  width: auto;
+}
+.child-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+.card.child {
+  display: grid;
+  gap: 0.3rem;
+  font-weight: 400;
+}
+.cards-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.card-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.75rem;
+}
+.agenda {
+  list-style: none;
+  padding: 0;
+}
+.agenda li {
+  border-left: 4px solid var(--primary);
+  background: var(--surface);
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.4rem;
+}
+.agenda li.match {
+  border-left-color: #b26a00;
+}
+tr.muted td,
+li.muted {
+  opacity: 0.65;
+}
+
+@media (max-width: 600px) {
+  .attendance li {
+    grid-template-columns: 1fr;
+  }
+  .seg label {
+    flex: 1;
+    justify-content: center;
+  }
+  .grid-form {
+    padding: 0.75rem;
+  }
+  h1 {
+    font-size: 1.3rem;
+  }
+}
