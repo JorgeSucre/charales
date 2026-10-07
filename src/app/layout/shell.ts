@@ -4,6 +4,15 @@ import { AuthService } from '../core/auth/auth.service';
 import { ROLE_LABELS } from '../core/auth/permissions';
 import { NAV_ITEMS } from './nav';
 
+/** Groups the allowed menu items by section (also used by the home page). */
+export function navSections(can: (item: (typeof NAV_ITEMS)[number]) => boolean) {
+  const items = NAV_ITEMS.filter(can);
+  return [...new Set(items.map((i) => i.section))].map((name) => ({
+    name,
+    items: items.filter((i) => i.section === name),
+  }));
+}
+
 @Component({
   selector: 'app-shell',
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
@@ -11,10 +20,10 @@ import { NAV_ITEMS } from './nav';
     <a class="skip-link" href="#main">Saltar al contenido</a>
     <header class="topbar">
       <a routerLink="/" class="brand">⚽ Charales</a>
-      <span class="demo-badge" title="Autenticación simulada, sin backend">DEMO</span>
+      <span class="demo-badge" title="Datos simulados, sin backend">DEMO</span>
       <div class="spacer"></div>
       @if (auth.user(); as user) {
-        <span class="user">{{ user.fullName }} · {{ roleLabels[user.role] }}</span>
+        <span class="user">{{ user.displayName }} · {{ roles() }}</span>
         <a routerLink="/account/password">Contraseña</a>
         <button type="button" class="link" (click)="logout()">Salir</button>
       }
@@ -34,13 +43,16 @@ import { NAV_ITEMS } from './nav';
           <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"
             >Inicio</a
           >
-          @for (item of items(); track item.path) {
-            <a
-              [routerLink]="item.path"
-              routerLinkActive="active"
-              [routerLinkActiveOptions]="{ exact: true }"
-              >{{ item.label }}</a
-            >
+          @for (section of sections(); track section.name) {
+            <p class="nav-section">{{ section.name }}</p>
+            @for (item of section.items; track item.path) {
+              <a
+                [routerLink]="item.path"
+                routerLinkActive="active"
+                [routerLinkActiveOptions]="{ exact: true }"
+                >{{ item.label }}</a
+              >
+            }
           }
         </div>
       </nav>
@@ -51,10 +63,12 @@ import { NAV_ITEMS } from './nav';
 export class Shell {
   protected auth = inject(AuthService);
   private router = inject(Router);
-  protected items = computed(() =>
-    this.auth.user() ? NAV_ITEMS.filter((i) => this.auth.can(i.permission)) : [],
+  protected sections = computed(() =>
+    this.auth.user() ? navSections((i) => this.auth.can(i.permission)) : [],
   );
-  protected roleLabels = ROLE_LABELS;
+  protected roles = computed(() =>
+    (this.auth.user()?.roles ?? []).map((r) => ROLE_LABELS[r] ?? r).join(' + '),
+  );
   /** Only matters on small screens, where the menu is collapsed by default. */
   protected menuOpen = signal(false);
 
