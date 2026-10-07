@@ -52,23 +52,29 @@ export class UniformService {
       if (!variant || quantity < 1) throw new Error('Artículo inválido.');
       return { variantId, quantity, unitPriceCents: variant.priceCents };
     });
-    const concept = this.db.concepts.find((c) => c.kind === 'uniform' && c.active);
-    if (!concept) throw new Error('Configura un concepto de cobro de tipo uniforme.');
     const id = this.db.id('uo');
-    const charge = await this.billing.createCharge({
-      playerId,
-      conceptId: concept.id,
-      amountCents: lines.reduce((sum, l) => sum + l.quantity * l.unitPriceCents, 0),
-      description: `Uniforme (pedido ${id})`,
-      dueDate: today(),
-      source: { type: 'uniform-order', id },
-    });
+    const totalCents = lines.reduce((sum, l) => sum + l.quantity * l.unitPriceCents, 0);
+    // Charges are always > 0 (DB CHECK), so a free order has no charge.
+    let chargeId: string | undefined;
+    if (totalCents > 0) {
+      const concept = this.db.concepts.find((c) => c.kind === 'uniform' && c.active);
+      if (!concept) throw new Error('Configura un concepto de cobro de tipo uniforme.');
+      const charge = await this.billing.createCharge({
+        playerId,
+        conceptId: concept.id,
+        amountCents: totalCents,
+        description: `Uniforme (pedido ${id})`,
+        dueDate: today(),
+        source: { type: 'uniform-order', id },
+      });
+      chargeId = charge.id;
+    }
     const order: UniformOrder = {
       id,
       playerId,
       createdAt: today(),
       lines,
-      chargeId: charge.id,
+      chargeId,
       status: 'pending',
     };
     this.db.uniformOrders = [...this.db.uniformOrders, order];

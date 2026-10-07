@@ -25,8 +25,8 @@ export interface UniformOrder {
   playerId: string;
   createdAt: string;
   lines: UniformOrderLine[];
-  /** Charge created in billing for this order (HU-054). */
-  chargeId: string;
+  /** Charge created in billing for this order (HU-054). Absent when the order totals 0 (charges are > 0). */
+  chargeId?: string;
   status: 'pending' | 'delivered';
   deliveredAt?: string;
   deliveredTo?: string;

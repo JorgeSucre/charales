@@ -76,14 +76,17 @@ export class MockDb {
       relationship: 'Madre',
       phone: '0000000001',
       email: 'tutor@example.com',
-      playerIds: ['p1', 'p2'],
+      players: [
+        { playerId: 'p1', isPrimary: true },
+        { playerId: 'p2', isPrimary: true },
+      ],
     },
     {
       id: 't2',
       fullName: 'Jorge Ruiz',
       relationship: 'Padre',
       phone: '0000000002',
-      playerIds: ['p3'],
+      players: [{ playerId: 'p3', isPrimary: true }],
     },
   ];
   coaches: Coach[] = [

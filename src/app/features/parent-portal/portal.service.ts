@@ -23,7 +23,7 @@ export class PortalService {
 
   private childIds(): string[] {
     const tutorId = this.auth.user()?.tutorId;
-    return this.db.tutors.find((t) => t.id === tutorId)?.playerIds ?? [];
+    return this.db.tutors.find((t) => t.id === tutorId)?.players.map((l) => l.playerId) ?? [];
   }
 
   children(): Promise<Player[]> {

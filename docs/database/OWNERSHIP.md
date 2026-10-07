@@ -19,7 +19,7 @@ trabajo. Este documento manda sobre la **escritura** de datos. Las reglas de dat
    escritura.
 4. Nada se reasigna aquí: si cambia un responsable, se cambia primero la tabla oficial.
 
-## Tablas existentes (8 migraciones, 24 tablas)
+## Tablas existentes (9 migraciones, 24 tablas)
 
 | Tabla                                   | Owner (HU)                       | Otras HU que escriben (vía el servicio owner)                                               | Lectores principales                                                      | Borrado                           |
 | --------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | --------------------------------- |

@@ -21,13 +21,19 @@ export interface Player {
   active: boolean;
 }
 
+/** Tutor ↔ player link (tutor_players). `isPrimary` is per player: at most one primary contact per player. */
+export interface TutorPlayer {
+  playerId: string;
+  isPrimary: boolean;
+}
+
 export interface Tutor {
   id: string;
   fullName: string;
   relationship: string; // padre, madre, abuela...
   phone: string;
   email?: string;
-  playerIds: string[];
+  players: TutorPlayer[];
 }
 
 export interface Coach {

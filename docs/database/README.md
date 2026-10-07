@@ -33,7 +33,7 @@ Para otra base: `DATABASE_URL=postgresql://usuario@host:5432/nombre npm run db:m
 db/
   migrations/  001_…008_*.sql   se aplican en orden; cada una en su transacción; registro en schema_migrations
   seed/        dev_seed.sql      datos ficticios · sid.sql (UUIDs legibles)
-  tests/       integrity.sql     55 pruebas (transacción revertida)
+  tests/       integrity.sql     57 pruebas (transacción revertida)
   queries/     critical.sql      21 consultas del sistema
   scripts/     migrate.sh · reset.sh · test.sh
 ```

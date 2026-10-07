@@ -1,9 +1,11 @@
-import { Component, inject, resource } from '@angular/core';
+import { Component, computed, inject, resource } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { PlayerService } from '../../core/services/player.service';
 import { FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
 import { Submission } from '../../shared/submission';
+import { Tutor } from '../../core/models';
 import { TutorService } from './tutor.service';
 
 /** HU-011: one or more tutors per player (a tutor can also have several players). */
@@ -33,6 +35,14 @@ import { TutorService } from './tutor.service';
         </select>
       </label>
       <app-field-error [control]="form.controls.playerIds" />
+      <label
+        >Contacto principal de (opcional; uno por jugador)
+        <select multiple formControlName="primaryIds" size="4">
+          @for (p of selectedPlayers(); track p.id) {
+            <option [value]="p.id">{{ p.fullName }}</option>
+          }
+        </select>
+      </label>
       @if (submission.result(); as r) {
         <p class="alert" [class.ok]="r.ok" [class.error]="!r.ok" role="status">{{ r.text }}</p>
       }
@@ -55,7 +65,7 @@ import { TutorService } from './tutor.service';
                 <td>{{ t.fullName }}</td>
                 <td>{{ t.relationship }}</td>
                 <td>{{ t.phone }}</td>
-                <td>{{ playerNames(t.playerIds) }}</td>
+                <td>{{ playerNames(t) }}</td>
               </tr>
             }
           </tbody>
@@ -76,21 +86,32 @@ export class TutorsPage {
     phone: ['', [Validators.required, Validators.pattern(/^\+?\d{10,13}$/)]],
     email: ['', Validators.email],
     playerIds: [[] as string[], Validators.required],
+    primaryIds: [[] as string[]],
   });
+  private playerIds = toSignal(this.form.controls.playerIds.valueChanges, { initialValue: [] });
+  protected selectedPlayers = computed(() =>
+    (this.players.value() ?? []).filter((p) => this.playerIds().includes(p.id)),
+  );
 
-  playerNames(ids: string[]): string {
-    return (this.players.value() ?? [])
-      .filter((p) => ids.includes(p.id))
-      .map((p) => p.fullName)
+  playerNames(tutor: Tutor): string {
+    return tutor.players
+      .map((l) => {
+        const name = this.players.value()?.find((p) => p.id === l.playerId)?.fullName ?? '—';
+        return l.isPrimary ? `${name} (principal)` : name;
+      })
       .join(', ');
   }
 
   async submit(): Promise<void> {
     if (this.form.invalid) return this.form.markAllAsTouched();
-    const { email, ...rest } = this.form.getRawValue();
+    const { email, playerIds, primaryIds, ...rest } = this.form.getRawValue();
+    const players = playerIds.map((playerId) => ({
+      playerId,
+      isPrimary: primaryIds.includes(playerId),
+    }));
     if (
       await this.submission.run(
-        () => this.service.save({ ...rest, email: email || undefined }),
+        () => this.service.save({ ...rest, email: email || undefined, players }),
         'Tutor registrado.',
       )
     ) {
