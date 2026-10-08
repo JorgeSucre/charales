@@ -116,7 +116,13 @@ trazabilidad) con el **diagrama** («Crear categorías y temporadas» para ambos
 - **Exclusivo del Administrador** (administración del sistema y decisiones o reversiones financieras): `usuarios.*`,
   `roles.*`, `auditoria.consultar`, `pagos.cancelar` (HU-049), `descuentos.crear` (HU-051). La captura de asistencia es
   del entrenador (HU-030); el Administrador la conserva para cualquier sesión.
-- Una persona puede ser SECRETARIA **y** ENTRENADORA; los permisos que trae el perfil sólo valen en su alcance.
+- Una persona puede ser SECRETARIA **y** ENTRENADORA; los permisos que trae el perfil sólo valen en su alcance
+  (sus sesiones y categorías): no obtiene asistencia global, jugadores globales, catálogos de oficina ni permisos
+  administrativos adicionales. Lo garantizan `officePermissions` + `grants()` y `requireOffice()`
+  ([`AUTHORIZATION.md`](../AUTHORIZATION.md)).
+- **Entrenador:** opera sólo dentro de sus categorías y sesiones (asistencia, observaciones, completar la sesión).
+- **Tutor:** sólo información propia y de sus hijos; **consulta** uniformes en el portal y no hace pedidos (HU-056 es
+  de sólo lectura).
 - `USER_STORIES.md` (tabla oficial) no se modifica: esta decisión es posterior y queda documentada aquí.
 
 Resultado: SECRETARIA 42 → 45 permisos (+`temporadas.crear`, +`temporadas.editar`, +`descuentos.consultar`).
@@ -126,7 +132,7 @@ Resultado: SECRETARIA 42 → 45 permisos (+`temporadas.crear`, +`temporadas.edit
 
 - Listados con paginación (`shared/page.ts`, `Paginator`): jugadores, cargos, pagos/recibos y auditoría.
 - Las vistas compuestas (expediente HU-013, portal HU-061, estado de cuenta) se resuelven en **una** llamada de servicio
-  que hace los joins en el servidor; la página no consulta por cada fila (sin N+1).
+  que hace los joins en el servicio (hoy sobre `MockDb`; con la API, en el servidor); la página no consulta por cada fila (sin N+1).
 - Índices del esquema que respaldan las búsquedas y filtros: `idx_jugador_nombre`, `idx_jugador_estatus`,
   `idx_jugador_categoria_categoria`, `idx_cargo_jugador`, `idx_cargo_vencimiento`, `idx_cargo_estado`,
   `idx_pago_jugador_fecha`, `idx_sesion_ent_fecha`, `idx_partido_fecha`, `idx_aviso_vigencia`,

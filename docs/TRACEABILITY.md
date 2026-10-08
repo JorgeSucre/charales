@@ -1,7 +1,12 @@
 # Trazabilidad HU → código → pruebas
 
-Estado al 2026-10-07, rama `jorgesucre/fix/audit-go-with-fixes` (corrige la auditoría de verificación del mismo día;
-las HU marcadas «corregida» estaban sobreestimadas en la versión anterior de este documento). Modelo: [`docs/database/MARIADB.md`](database/MARIADB.md).
+Estado de `main` en `18178ba` (2026-10-07; integra `jorgesucre/fix/audit-go-with-fixes`, que corrigió la auditoría de
+verificación: las HU marcadas «corregida» estaban sobreestimadas en una versión anterior de este documento). Fuente
+oficial de las 76 HU: [`requirements/USER_STORIES.md`](requirements/USER_STORIES.md). Modelo:
+[`docs/database/MARIADB.md`](database/MARIADB.md).
+
+> **Alcance:** todo lo de esta tabla corre en el frontend sobre `MockDb`. **Ninguna HU está respaldada por una API**
+> (no existe todavía); que exista el flujo en el frontend no significa que exista su endpoint.
 
 - **Estado anterior:** lo que existía en `main` + PRs #1–#4 antes de esta rama. _Parcial_ = UI con `MockDb` de IDs de
   texto y modelo distinto del SQL; _No existía_ = sin servicio ni pantalla.

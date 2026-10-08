@@ -13,11 +13,12 @@ HU: HU-xxx (responsable según docs/requirements/USER_STORIES.md)
 - [ ] `npm run build`
 - [ ] `npx ng test --watch=false`
 - [ ] `npx prettier --check .`
-- [ ] `npm run db:test` (si toca `db/` o contratos de datos)
+- [ ] `npx tsc -p tsconfig.app.json --noEmit` y `npx tsc -p tsconfig.spec.json --noEmit`
+- [ ] `npm run db:mariadb:test-backup` (si toca el modelo MariaDB o `db/mariadb`)
 
 ## Impacto en BD
 
-<!-- Ninguno / migración NNN (nueva, nunca editada) / seed / pruebas agregadas -->
+<!-- Ninguno / cambio en docs/escuela_futbol_mariadb.sql (con su caso en los checks) / db/mariadb/NNN_*.sql -->
 
 ## Impacto en contratos
 

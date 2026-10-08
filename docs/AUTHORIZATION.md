@@ -1,7 +1,7 @@
 # Autorización — contrato por operación
 
-Estado al 2026-10-07 (rama `jorgesucre/fix/audit-go-with-fixes`). Corrige el hallazgo principal de la auditoría:
-la autorización existía casi sólo en las rutas.
+Estado de `main` en `18178ba` (2026-10-07). Toda esta autorización corre en el navegador sobre `MockDb`: **no hay API**
+todavía; cuando exista, debe repetir esta matriz (barrera 3).
 
 ## Tres barreras
 
@@ -37,7 +37,8 @@ la autorización existía casi sólo en las rutas.
   `panel_entrenador`) sale del perfil; cualquier otro módulo cuenta **sólo si lo da el rol de seguridad**. Los permisos
   de oficina que trae un perfil (ENTRENADOR → `asistencias.*`) valen únicamente dentro del alcance de ese perfil
   (`TrainingService.canRecord`). Así una persona puede ser SECRETARIA y ENTRENADORA a la vez, pero captura asistencia
-  sólo en sus sesiones, nunca en todas. `assertCanGrantRole` también compara sólo contra el rol de seguridad.
+  sólo en sus sesiones, nunca en todas; el perfil tampoco le da jugadores globales, catálogos de oficina (`requireOffice()`
+  exige un rol de seguridad) ni permisos administrativos adicionales. Prueba: «SECRETARIA + linked ENTRENADOR profile». `assertCanGrantRole` también compara sólo contra el rol de seguridad.
 
 ## Matriz de roles (D12)
 

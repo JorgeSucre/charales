@@ -2,7 +2,8 @@
 
 ## Antes de modificar código
 
-1. Lee [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md): qué es, estado, quién hace qué.
+1. Lee [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md): qué es, estado, quién hace qué. Comandos y mapa del código:
+   [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) y [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). La API no existe todavía.
 2. Lee el contrato de lo que vas a tocar: modelo de datos → [`MARIADB.md`](docs/database/MARIADB.md) (vigente) y las
    reglas de dominio de [`DATA_CONTRACT.md`](docs/database/DATA_CONTRACT.md); reglas que la API debe garantizar →
    [`DOMAIN_RULES.md`](docs/DOMAIN_RULES.md); autorización → [`AUTHORIZATION.md`](docs/AUTHORIZATION.md); estado de
@@ -39,6 +40,10 @@
 - Modelos sólo en `src/app/core/models/`; no se redeclaran en los módulos.
 - Autorización por **permiso** (`core/auth/permissions.ts`), nunca `role === '…'`. Toda ruta nueva va en la tabla de
   `app.routes.spec.ts`.
+- Decide con `AuthorizationService` / `grants()`. `user.permissions` incluye los permisos de perfil: sólo se lee dentro
+  de una verificación de alcance de ese perfil (como `TrainingService.canRecord`); usarlo para algo global abriría una
+  escalada lateral. La matriz de roles (D12) no se cambia sin acuerdo; `permissions.ts` y
+  `db/mariadb/010_permisos_app.sql` deben quedar sincronizados.
 - Dinero en centavos enteros; fechas locales con `today()` (`shared/dates.ts`). Detalle en `DATA_CONTRACT.md` § 1.
 - Componentes standalone, templates inline, signals, `resource()`, formularios reactivos con `FieldError` y
   `Submission`. OnPush es el default en Angular 22.
