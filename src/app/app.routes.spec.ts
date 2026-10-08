@@ -152,6 +152,12 @@ describe('routes & RBAC', () => {
         const el = await settle(harness);
         expect(el.querySelector('h1')?.textContent, item.path).toBeTruthy();
         expect(el.textContent, item.path).not.toContain('No se pudo cargar');
+        // HU-071: every table can scroll horizontally on narrow screens instead of breaking the layout.
+        for (const table of Array.from(el.querySelectorAll('table')))
+          expect(
+            table.closest('.table-wrap'),
+            `${item.path}: tabla sin .table-wrap`,
+          ).not.toBeNull();
       }
     }, 60_000);
   }

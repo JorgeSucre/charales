@@ -94,6 +94,9 @@ describe('domain rules by HU', () => {
         amountCents: 1000,
         method: 'EFECTIVO',
       });
+      get(AuthService).logout();
+      await login('admin'); // only the administrator reads the audit log
+      await expect(get(AuditService).list()).resolves.toBeTruthy();
       const page = await get(AuditService).list({ module: 'jugadores' });
       expect(page.items[0]).toMatchObject({
         userEmail: 'secretaria@example.com',
