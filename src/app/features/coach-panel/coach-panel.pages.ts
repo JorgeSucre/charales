@@ -154,6 +154,15 @@ export class CoachSessionsPage {
     <h2>Calendario de mis categorías</h2>
     <div class="filters">
       <label
+        >Categoría
+        <select [ngModel]="categoryId()" (ngModelChange)="categoryId.set(idOrNull($event))">
+          <option [ngValue]="null">Todas</option>
+          @for (c of categoryOptions.value() ?? []; track c.id) {
+            <option [ngValue]="c.id">{{ c.name }}</option>
+          }
+        </select>
+      </label>
+      <label
         >Competencia
         <select [ngModel]="competitionId()" (ngModelChange)="competitionId.set(idOrNull($event))">
           <option [ngValue]="null">Todas</option>
@@ -226,12 +235,15 @@ export class CoachCompetitionsPage {
   protected competitions = resource({ loader: () => this.service.myCompetitions() });
   protected options = resource({ loader: () => this.service.competitionOptions() });
   protected competitionId = signal<Id | null>(null);
+  protected categoryId = signal<Id | null>(null);
+  protected categoryOptions = resource({ loader: () => this.service.categoryOptions() });
   protected from = signal(addDays(today(), -60));
   protected to = signal(addDays(today(), 90));
   protected order = signal<'asc' | 'desc'>('asc');
   protected matches = resource({
     params: () => ({
       competitionId: this.competitionId(),
+      categoryId: this.categoryId(),
       from: this.from(),
       to: this.to(),
       order: this.order(),

@@ -4,7 +4,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Id } from '../../core/models';
 import { TYPE_LABELS } from '../../core/services/competition.service';
-import { WEEKDAYS } from '../../shared/dates';
+import { WEEKDAYS, addDays, today } from '../../shared/dates';
 import { FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
@@ -198,23 +198,41 @@ type ChildTab = 'deportivo' | 'partidos' | 'cuenta' | 'asistencia' | 'uniformes'
               </ul>
             }
             @case ('asistencia') {
-              <p>
-                {{ c.attendance.summary.presentPct }}% de asistencia ({{
-                  c.attendance.summary.present
-                }}
-                de {{ c.attendance.summary.total }});
-                {{ c.attendance.summary.justified }} justificadas.
-              </p>
-              <ul class="list">
-                @for (a of c.attendance.rows; track $index) {
-                  <li>
-                    {{ a.date | date: 'EEE d MMM' }} · {{ attendanceLabels[a.status] }}
-                    {{ a.notes ? '· ' + a.notes : '' }}
-                  </li>
-                } @empty {
-                  <li class="muted">Sin registros.</li>
-                }
-              </ul>
+              <div class="filters">
+                <label
+                  >Desde
+                  <input
+                    type="date"
+                    [value]="from()"
+                    (change)="from.set($any($event.target).value)"
+                /></label>
+                <label
+                  >Hasta
+                  <input type="date" [value]="to()" (change)="to.set($any($event.target).value)"
+                /></label>
+              </div>
+              <app-load-state [res]="attendance"
+                ><ng-template>
+                  @if (attendance.value(); as a) {
+                    <p>
+                      {{ a.summary.presentPct }}% de asistencia en el periodo ({{
+                        a.summary.present
+                      }}
+                      de {{ a.summary.total }}); {{ a.summary.justified }} justificadas.
+                    </p>
+                    <ul class="list">
+                      @for (r of a.rows; track $index) {
+                        <li>
+                          {{ r.date | date: 'EEE d MMM' }} · {{ attendanceLabels[r.status] }}
+                          {{ r.notes ? '· ' + r.notes : '' }}
+                        </li>
+                      } @empty {
+                        <li class="muted">Sin registros en el periodo.</li>
+                      }
+                    </ul>
+                  }
+                </ng-template></app-load-state
+              >
             }
             @case ('uniformes') {
               <ul class="list">
@@ -257,6 +275,13 @@ export class ChildPage {
     ['uniformes', 'Uniformes'],
   ];
   protected tab = signal<ChildTab>('deportivo');
+  /** HU-033: attendance period (default: from the 1st of the previous month to today). */
+  protected from = signal(addDays(`${today().slice(0, 7)}-01`, -31).slice(0, 8) + '01');
+  protected to = signal(today());
+  protected attendance = resource({
+    params: () => ({ id: this.id(), from: this.from(), to: this.to() }),
+    loader: ({ params }) => this.service.attendance(params.id, params.from, params.to),
+  });
   protected child = resource({
     params: () => this.id(),
     loader: ({ params }) => this.service.child(params),

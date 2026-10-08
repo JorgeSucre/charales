@@ -9,7 +9,13 @@ import {
   signal,
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
+import {
+  FormBuilder,
+  FormControl,
+  FormsModule,
+  ReactiveFormsModule,
+  Validators,
+} from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { Id, PlayerStatus, Sex } from '../../core/models';
@@ -172,6 +178,16 @@ export class PlayersPage {
       <app-field-error [control]="form.controls.phone" />
       <app-field-error [control]="form.controls.email" />
       <label>Dirección <input formControlName="address" autocomplete="off" /></label>
+      @if (!id()) {
+        <label
+          >Estatus inicial
+          <select [formControl]="initialStatus">
+            @for (s of statuses; track s[0]) {
+              <option [value]="s[0]">{{ s[1] }}</option>
+            }
+          </select>
+        </label>
+      }
       <p class="muted">El contacto de la familia se registra en Tutores.</p>
       <app-submission-alert [submission]="submission" />
       <button type="submit" [disabled]="submission.busy() || (!!id() && player.isLoading())">
@@ -187,6 +203,9 @@ export class PlayerFormPage {
   private service = inject(PlayerService);
   private router = inject(Router);
   protected sexes = Object.entries(SEX_LABELS) as [Sex, string][];
+  protected statuses = STATUSES;
+  /** HU-008.1: status captured at registration (changes afterwards go through HU-010 with history). */
+  protected initialStatus = new FormControl<PlayerStatus>('ACTIVO', { nonNullable: true });
   protected maxDate = today();
   protected submission = new Submission();
   protected form = inject(FormBuilder).nonNullable.group({
@@ -227,11 +246,14 @@ export class PlayerFormPage {
   async submit(): Promise<void> {
     if (this.form.invalid) return this.form.markAllAsTouched();
     const draft: PlayerDraft = { ...this.form.getRawValue() };
+    const status = this.initialStatus.value;
     const id = this.id();
     let savedId: Id | null = null;
     const ok = await this.submission.run(
       async () => {
-        const p = id ? await this.service.update(id, draft) : await this.service.create(draft);
+        const p = id
+          ? await this.service.update(id, draft)
+          : await this.service.create(draft, status);
         savedId = p.id;
         return p;
       },

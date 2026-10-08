@@ -1,3 +1,4 @@
+import { sumCents } from '../../shared/money';
 import {
   Component,
   computed,
@@ -14,6 +15,7 @@ import { AuthService } from '../../core/auth/auth.service';
 import { Id, PaymentMethod } from '../../core/models';
 import { CategoryService } from '../../core/services/category.service';
 import { PlayerService } from '../../core/services/player.service';
+import { nowDateTime } from '../../shared/dates';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
 import { Submission } from '../../shared/submission';
@@ -77,6 +79,10 @@ import { BillingService, CHARGE_STATUS_LABELS, METHOD_LABELS } from './billing.s
               [(ngModel)]="amount"
           /></label>
           <label
+            >Fecha y hora del pago
+            <input type="datetime-local" name="paidAt" [(ngModel)]="paidAt" [max]="maxPaidAt" />
+          </label>
+          <label
             >Forma de pago
             <select name="method" [(ngModel)]="method">
               @for (m of methods; track m[0]) {
@@ -118,13 +124,15 @@ export class PaymentPage {
   });
   protected selected = signal(new Set<Id>());
   protected due = computed(() =>
-    (this.open.value() ?? [])
-      .filter((c) => this.selected().has(c.id))
-      .reduce((s, c) => s + c.balanceCents, 0),
+    sumCents(
+      (this.open.value() ?? []).filter((c) => this.selected().has(c.id)).map((c) => c.balanceCents),
+    ),
   );
   protected tutorId: Id | null = null;
   protected amount = 0;
   protected method: PaymentMethod = 'EFECTIVO';
+  protected maxPaidAt = nowDateTime().slice(0, 16);
+  protected paidAt = this.maxPaidAt;
   protected lastId = signal<Id | null>(null);
   protected submission = new Submission();
 
@@ -149,6 +157,7 @@ export class PaymentPage {
       amountCents: centsFromInput(this.amount),
       method: this.method,
       chargeIds: [...this.selected()],
+      paidAt: this.paidAt,
     };
     const ok = await this.submission.run(
       () => this.service.registerPayment(draft),
@@ -600,9 +609,7 @@ export class DebtsPage {
     loader: ({ params }) => this.service.debts(params),
   });
   protected overdue = computed(() =>
-    (this.debts.value() ?? []).reduce((s, d) => s + d.overdueCents, 0),
+    sumCents((this.debts.value() ?? []).map((d) => d.overdueCents)),
   );
-  protected total = computed(() =>
-    (this.debts.value() ?? []).reduce((s, d) => s + d.balanceCents, 0),
-  );
+  protected total = computed(() => sumCents((this.debts.value() ?? []).map((d) => d.balanceCents)));
 }

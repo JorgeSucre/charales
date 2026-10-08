@@ -1,3 +1,4 @@
+import { sumCents } from '../../shared/money';
 import { Component, computed, inject, resource, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -5,7 +6,7 @@ import { RouterLink } from '@angular/router';
 import { Id, PlayerStatus } from '../../core/models';
 import { CategoryService } from '../../core/services/category.service';
 import { STATUS_LABELS } from '../../core/services/player.service';
-import { addDays, today } from '../../shared/dates';
+import { WEEKDAYS, addDays, addMonths, monthGrid, today } from '../../shared/dates';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
 import { idOrNull } from '../../shared/ui';
@@ -227,22 +228,67 @@ export class IncomeReportPage {
     params: () => ({ from: this.from(), to: this.to() }),
     loader: ({ params }) => this.service.income(params.from, params.to),
   });
-  protected total = computed(() =>
-    (this.income.value() ?? []).reduce((sum, r) => sum + r.totalCents, 0),
-  );
+  protected total = computed(() => sumCents((this.income.value() ?? []).map((r) => r.totalCents)));
 }
 
-/** HU-068: global agenda of trainings and matches; filters by type, category and coach; venue and time. */
+/**
+ * HU-068: global agenda of trainings and matches — month calendar (default) or list; filters by type, category and
+ * coach; shows venue and time. Trainings and matches are told apart by colour and label.
+ */
 @Component({
   selector: 'app-agenda-page',
   imports: [FormsModule, LoadState, DatePipe],
   template: `
     <h1>Agenda</h1>
     <div class="filters">
-      <label
-        >Desde <input type="date" [ngModel]="from()" (ngModelChange)="from.set($event)"
-      /></label>
-      <label>Hasta <input type="date" [ngModel]="to()" (ngModelChange)="to.set($event)" /></label>
+      <div class="seg" role="radiogroup" aria-label="Vista">
+        <label [class.on]="view() === 'calendar'"
+          ><input
+            type="radio"
+            name="view"
+            value="calendar"
+            [checked]="view() === 'calendar'"
+            (change)="view.set('calendar')"
+          />
+          Calendario</label
+        >
+        <label [class.on]="view() === 'list'"
+          ><input
+            type="radio"
+            name="view"
+            value="list"
+            [checked]="view() === 'list'"
+            (change)="view.set('list')"
+          />
+          Lista</label
+        >
+      </div>
+      @if (view() === 'calendar') {
+        <div class="actions">
+          <button
+            type="button"
+            class="secondary"
+            (click)="month.set(shift(-1))"
+            aria-label="Mes anterior"
+          >
+            ‹
+          </button>
+          <strong class="month-title">{{ month() + '-01' | date: 'MMMM y' }}</strong>
+          <button
+            type="button"
+            class="secondary"
+            (click)="month.set(shift(1))"
+            aria-label="Mes siguiente"
+          >
+            ›
+          </button>
+        </div>
+      } @else {
+        <label
+          >Desde <input type="date" [ngModel]="from()" (ngModelChange)="from.set($event)"
+        /></label>
+        <label>Hasta <input type="date" [ngModel]="to()" (ngModelChange)="to.set($event)" /></label>
+      }
       <label
         >Tipo
         <select [ngModel]="kind()" (ngModelChange)="kind.set($event)">
@@ -270,25 +316,71 @@ export class IncomeReportPage {
         </select>
       </label>
     </div>
-    <app-load-state [res]="agenda" [empty]="!filtered().length" emptyText="Sin eventos."
-      ><ng-template>
-        @for (day of days(); track day.date) {
-          <h2>{{ day.date | date: 'EEEE d MMMM' }}</h2>
-          <ul class="agenda">
-            @for (e of day.items; track $index) {
-              <li [class.match]="e.kind === 'match'" [class.muted]="e.status === 'CANCELADO'">
-                <strong>{{ e.start }}{{ e.end ? '–' + e.end : '' }}</strong>
-                <span class="tag">{{ e.kind === 'match' ? 'Partido' : 'Entrenamiento' }}</span>
-                {{ e.categoryName }} · {{ e.detail }} · {{ e.venueName }} · {{ e.coachNames }}
-                @if (e.status === 'CANCELADO' || e.status === 'REPROGRAMADO') {
-                  <span class="tag off">{{ e.status }}</span>
+    @if (view() === 'calendar') {
+      <app-load-state [res]="agenda" [empty]="false"
+        ><ng-template>
+          <div class="table-wrap">
+            <table class="calendar" aria-label="Calendario mensual">
+              <thead>
+                <tr>
+                  @for (d of weekdays; track d) {
+                    <th scope="col">{{ d }}</th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (week of grid(); track week[0]) {
+                  <tr>
+                    @for (day of week; track day) {
+                      <td
+                        [class.out]="day.slice(0, 7) !== month()"
+                        [class.today]="day === todayDate"
+                      >
+                        <span class="day-number">{{ +day.slice(8) }}</span>
+                        @for (e of byDay().get(day) ?? []; track $index) {
+                          <span
+                            class="event"
+                            [class.match]="e.kind === 'match'"
+                            [class.muted]="e.status === 'CANCELADO'"
+                            [title]="e.detail + ' · ' + e.venueName + ' · ' + e.coachNames"
+                            >{{ e.start }} {{ e.kind === 'match' ? '⚽' : '🏃' }}
+                            {{ e.categoryName }}</span
+                          >
+                        }
+                      </td>
+                    }
+                  </tr>
                 }
-              </li>
-            }
-          </ul>
-        }
-      </ng-template></app-load-state
-    >
+              </tbody>
+            </table>
+          </div>
+          <p class="muted">
+            ⚽ partido · 🏃 entrenamiento. Pasa el cursor sobre un evento para ver sede y
+            entrenador.
+          </p>
+        </ng-template></app-load-state
+      >
+    } @else {
+      <app-load-state [res]="agenda" [empty]="!filtered().length" emptyText="Sin eventos."
+        ><ng-template>
+          @for (day of days(); track day.date) {
+            <h2>{{ day.date | date: 'EEEE d MMMM' }}</h2>
+            <ul class="agenda">
+              @for (e of day.items; track $index) {
+                <li [class.match]="e.kind === 'match'" [class.muted]="e.status === 'CANCELADO'">
+                  <strong>{{ e.start }}{{ e.end ? '–' + e.end : '' }}</strong>
+                  <span class="tag">{{ e.kind === 'match' ? 'Partido' : 'Entrenamiento' }}</span>
+                  {{ e.categoryName }} · {{ e.detail }} · {{ e.venueName }} · {{ e.coachNames }}
+                  @if (e.status === 'CANCELADO' || e.status === 'REPROGRAMADO') {
+                    <span class="tag off">{{ e.status }}</span>
+                  }
+                </li>
+              }
+            </ul>
+          }
+        </ng-template></app-load-state
+      >
+    }
   `,
 })
 export class AgendaPage {
@@ -296,17 +388,26 @@ export class AgendaPage {
   private categoryService = inject(CategoryService);
   private coachService = inject(CoachService);
   protected idOrNull = idOrNull;
+  protected weekdays = WEEKDAYS.slice(1);
+  protected todayDate = today();
   protected categories = resource({
     loader: () => this.categoryService.list({ onlyActive: true }),
   });
   protected coaches = resource({ loader: () => this.coachService.list() });
+  protected view = signal<'calendar' | 'list'>('calendar');
+  protected month = signal(today().slice(0, 7));
+  protected grid = computed(() => monthGrid(this.month()));
   protected from = signal(today());
   protected to = signal(addDays(today(), 14));
   protected kind = signal('');
   protected category = signal<Id | null>(null);
   protected coach = signal<Id | null>(null);
   protected agenda = resource({
-    params: () => ({ from: this.from(), to: this.to() }),
+    params: () => {
+      if (this.view() === 'list') return { from: this.from(), to: this.to() };
+      const weeks = this.grid();
+      return { from: weeks[0][0], to: weeks.at(-1)![6] };
+    },
     loader: ({ params }) => this.service.agenda(params.from, params.to),
   });
   protected filtered = computed(() =>
@@ -317,9 +418,16 @@ export class AgendaPage {
         (this.coach() === null || e.coachIds.includes(this.coach()!)),
     ),
   );
-  protected days = computed(() => {
+  protected byDay = computed(() => {
     const map = new Map<string, ReturnType<typeof this.filtered>>();
     for (const e of this.filtered()) map.set(e.date, [...(map.get(e.date) ?? []), e]);
-    return [...map.entries()].map(([date, items]) => ({ date, items }));
+    return map;
   });
+  protected days = computed(() =>
+    [...this.byDay().entries()].map(([date, items]) => ({ date, items })),
+  );
+
+  shift(n: number): string {
+    return addMonths(this.month(), n);
+  }
 }
