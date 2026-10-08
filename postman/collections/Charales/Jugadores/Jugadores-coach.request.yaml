@@ -1,0 +1,13 @@
+$kind: http-request
+name: 'GET /api/jugadores (entrenador)'
+method: GET
+url: '{{baseUrl}}/api/jugadores'
+order: 3000
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('403: un perfil de entrenador no da acceso de oficina (D12)', () => {
+        pm.response.to.have.status(403);
+        pm.expect(pm.response.json().error).to.eql('No tienes permiso para esta operación.');
+      });

@@ -1,0 +1,105 @@
+$kind: http-example
+request:
+  url: '{{baseUrl}}/api/jugadores'
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    - key: Content-Type
+      value: application/json; charset=utf-8
+  body:
+    type: json
+    content: |-
+      [
+        {
+          "id": 1,
+          "identificador": "J-0001",
+          "nombre": "Diego",
+          "apellido_paterno": "Hernández",
+          "apellido_materno": "López",
+          "fecha_nacimiento": "2016-03-12",
+          "sexo": "M",
+          "telefono": null,
+          "email": null,
+          "direccion": "Calle Pino 12",
+          "estatus": "ACTIVO",
+          "creado_en": "2026-10-08 11:17:18",
+          "actualizado_en": "2026-10-08 11:17:18"
+        },
+        {
+          "id": 2,
+          "identificador": "J-0002",
+          "nombre": "Lucía",
+          "apellido_paterno": "Hernández",
+          "apellido_materno": "López",
+          "fecha_nacimiento": "2014-07-01",
+          "sexo": "F",
+          "telefono": null,
+          "email": null,
+          "direccion": "Calle Pino 12",
+          "estatus": "ACTIVO",
+          "creado_en": "2026-10-08 11:17:18",
+          "actualizado_en": "2026-10-08 11:17:18"
+        },
+        {
+          "id": 3,
+          "identificador": "J-0003",
+          "nombre": "Mateo",
+          "apellido_paterno": "Ruiz",
+          "apellido_materno": null,
+          "fecha_nacimiento": "2016-11-20",
+          "sexo": "M",
+          "telefono": null,
+          "email": null,
+          "direccion": null,
+          "estatus": "ACTIVO",
+          "creado_en": "2026-10-08 11:17:18",
+          "actualizado_en": "2026-10-08 11:17:18"
+        },
+        {
+          "id": 4,
+          "identificador": "J-0004",
+          "nombre": "Valeria",
+          "apellido_paterno": "Soto",
+          "apellido_materno": "Mena",
+          "fecha_nacimiento": "2014-02-05",
+          "sexo": "F",
+          "telefono": null,
+          "email": null,
+          "direccion": null,
+          "estatus": "BAJA_TEMPORAL",
+          "creado_en": "2026-10-08 11:17:18",
+          "actualizado_en": "2026-10-08 11:17:18"
+        },
+        {
+          "id": 5,
+          "identificador": "J-0005",
+          "nombre": "Emiliano",
+          "apellido_paterno": "Díaz",
+          "apellido_materno": null,
+          "fecha_nacimiento": "2017-05-09",
+          "sexo": "M",
+          "telefono": null,
+          "email": null,
+          "direccion": null,
+          "estatus": "ACTIVO",
+          "creado_en": "2026-10-08 11:17:18",
+          "actualizado_en": "2026-10-08 11:17:18"
+        },
+        {
+          "id": 6,
+          "identificador": "J-0006",
+          "nombre": "Sofía",
+          "apellido_paterno": "Ruiz",
+          "apellido_materno": null,
+          "fecha_nacimiento": "2015-01-15",
+          "sexo": "F",
+          "telefono": null,
+          "email": null,
+          "direccion": null,
+          "estatus": "ACTIVO",
+          "creado_en": "2026-10-08 11:17:18",
+          "actualizado_en": "2026-10-08 11:17:18"
+        }
+      ]

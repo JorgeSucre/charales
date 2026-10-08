@@ -8,6 +8,10 @@ values:
     value: admin@example.com
     enabled: true
     type: default
+  - key: coachEmail
+    value: coach@example.com
+    enabled: true
+    type: default
   - key: disabledEmail
     value: baja@example.com
     enabled: true

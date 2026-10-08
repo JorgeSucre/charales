@@ -24,3 +24,26 @@ INSERT IGNORE INTO tutores (usuario_id, nombre, apellido_paterno, email)
 SELECT id, 'Teresa', 'López', email FROM usuarios WHERE email = 'tutor@example.com'
 UNION ALL
 SELECT id, 'Marta', 'Díaz', email FROM usuarios WHERE email = 'marta@example.com';
+
+-- Datos deportivos mínimos (los de MockDb): temporada actual, sus categorías y los jugadores de demostración.
+-- Personas ficticias. Idempotente por las claves únicas (temporadas.nombre, categorias(temporada_id, nombre),
+-- jugadores.identificador).
+INSERT IGNORE INTO temporadas (nombre, fecha_inicio, fecha_fin, activa, es_actual) VALUES
+('Temporada 2026-2027', '2026-08-01', '2027-06-30', TRUE, TRUE);
+
+INSERT IGNORE INTO categorias (temporada_id, nombre, edad_minima, edad_maxima, cupo_maximo)
+SELECT t.id, c.nombre, c.edad_minima, c.edad_maxima, c.cupo_maximo
+  FROM temporadas t
+  JOIN (SELECT 'Sub-10' AS nombre, 8 AS edad_minima, 10 AS edad_maxima, 20 AS cupo_maximo
+        UNION ALL SELECT 'Sub-12', 10, 12, 2
+        UNION ALL SELECT 'Sub-8', 6, 8, NULL) c
+ WHERE t.nombre = 'Temporada 2026-2027';
+
+INSERT IGNORE INTO jugadores
+  (identificador, nombre, apellido_paterno, apellido_materno, fecha_nacimiento, sexo, direccion, estatus) VALUES
+('J-0001', 'Diego', 'Hernández', 'López', '2016-03-12', 'M', 'Calle Pino 12', 'ACTIVO'),
+('J-0002', 'Lucía', 'Hernández', 'López', '2014-07-01', 'F', 'Calle Pino 12', 'ACTIVO'),
+('J-0003', 'Mateo', 'Ruiz', NULL, '2016-11-20', 'M', NULL, 'ACTIVO'),
+('J-0004', 'Valeria', 'Soto', 'Mena', '2014-02-05', 'F', NULL, 'BAJA_TEMPORAL'),
+('J-0005', 'Emiliano', 'Díaz', NULL, '2017-05-09', 'M', NULL, 'ACTIVO'),
+('J-0006', 'Sofía', 'Ruiz', NULL, '2015-01-15', 'F', NULL, 'ACTIVO');

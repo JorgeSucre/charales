@@ -29,6 +29,18 @@ const routes: Record<string, Handler> = {
   'POST /auth/login': auth.login,
   'GET /auth/session': auth.session,
   'POST /auth/logout': auth.logout,
+  // Lab exercise (docs/API.md § Práctica): plain table reads, same permissions as PlayerService.search and
+  // CategoryService.list. Rows go out as stored (snake_case), so they compare 1:1 with SELECT * in MariaDB.
+  'GET /api/jugadores': async (ctx, db) =>
+    (await auth.requireOffice(ctx, db, 'jugadores.consultar')) ?? {
+      status: 200,
+      body: await db.query('SELECT * FROM jugadores ORDER BY id'),
+    },
+  'GET /api/categorias': async (ctx, db) =>
+    (await auth.requireOffice(ctx, db)) ?? {
+      status: 200,
+      body: await db.query('SELECT * FROM categorias ORDER BY id'),
+    },
 };
 
 async function health(_ctx: Ctx, db: Pool): Promise<Reply> {

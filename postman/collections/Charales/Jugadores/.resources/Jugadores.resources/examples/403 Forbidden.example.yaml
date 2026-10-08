@@ -1,0 +1,14 @@
+$kind: http-example
+request:
+  url: '{{baseUrl}}/api/jugadores'
+  method: GET
+response:
+  statusCode: 403
+  statusText: Forbidden
+  headers:
+    - key: Content-Type
+      value: application/json; charset=utf-8
+  body:
+    type: json
+    content: |-
+      { "error": "No tienes permiso para esta operación." }

@@ -1,6 +1,6 @@
 # API — contrato de endpoints
 
-Estado: **Milestone 1** (infraestructura + autenticación). Código en [`api/`](../api); sobre el modelo
+Estado: **Milestone 1** (infraestructura + autenticación) + dos `GET` de la práctica de laboratorio. Código en [`api/`](../api); sobre el modelo
 [`MARIADB.md`](database/MARIADB.md) (convenciones de JSON en § 1, sesión en § 8.3). El frontend todavía usa `MockDb`.
 
 ## Ejecutar
@@ -45,12 +45,14 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
 
 ## Endpoints
 
-| Método y ruta       | Sesión | Respuestas                                                                                                                                                      |
-| ------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /health`       | No     | `200 {status:"ok",database:"ok"}` · `503` si MariaDB no responde                                                                                                |
-| `POST /auth/login`  | No     | `200 AuthUser` + cookie · `400` faltan datos · `401` correo/contraseña incorrectos **o cuenta deshabilitada** (mismo mensaje) · `403` sin rol ni perfil · `429` |
-| `GET /auth/session` | Sí     | `200 AuthUser` (renueva el uso) · `401` sin sesión, vencida o cerrada                                                                                           |
-| `POST /auth/logout` | —      | `204` siempre; borra la cookie y cierra la sesión si había una                                                                                                  |
+| Método y ruta         | Sesión | Respuestas                                                                                                                                                      |
+| --------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /health`         | No     | `200 {status:"ok",database:"ok"}` · `503` si MariaDB no responde                                                                                                |
+| `POST /auth/login`    | No     | `200 AuthUser` + cookie · `400` faltan datos · `401` correo/contraseña incorrectos **o cuenta deshabilitada** (mismo mensaje) · `403` sin rol ni perfil · `429` |
+| `GET /auth/session`   | Sí     | `200 AuthUser` (renueva el uso) · `401` sin sesión, vencida o cerrada                                                                                           |
+| `POST /auth/logout`   | —      | `204` siempre; borra la cookie y cierra la sesión si había una                                                                                                  |
+| `GET /api/jugadores`  | Sí     | `200` arreglo de filas de `jugadores` · `401` sin sesión · `403` sin `jugadores.consultar` del rol de seguridad                                                 |
+| `GET /api/categorias` | Sí     | `200` arreglo de filas de `categorias` · `401` sin sesión · `403` sin ningún permiso de oficina                                                                 |
 
 `AuthUser` es la interfaz de `src/app/core/auth/session.store.ts`: `userId`, `sessionId`, `email`, `displayName`,
 `roles`, `permissions`, `officePermissions`, `tutorId`, `coachId`, `isStaff`, `expiresAt`, `lastUsedAt`. Nunca incluye
@@ -61,6 +63,39 @@ curl -i -c jar -H 'Content-Type: application/json' -d '{"email":"admin@example.c
 curl -b jar localhost:3000/auth/session
 curl -b jar -c jar -X POST localhost:3000/auth/logout
 ```
+
+## Práctica de laboratorio: dos endpoints GET
+
+La práctica pide Node.js + Express + MySQL + Postman, una base existente y dos endpoints `GET`. Se cumple **extendiendo
+esta API**, no con un proyecto aparte:
+
+| La práctica pide   | Charales usa                       | Por qué                                                                              |
+| ------------------ | ---------------------------------- | ------------------------------------------------------------------------------------ |
+| MySQL + `mysql2`   | **MariaDB + driver `mariadb`**     | Es la base real del proyecto integrador (`escuela_futbol`); mismo SQL                |
+| Express            | `node:http` (ya existente)         | La API ya está construida así; el objetivo (API REST + BD + Postman) se cumple igual |
+| Endpoints públicos | Sesión (cookie HttpOnly) + permiso | `jugadores` tiene datos de menores; se respeta `AUTHORIZATION.md`                    |
+
+- `GET /api/jugadores` → `SELECT * FROM jugadores ORDER BY id`, permiso `jugadores.consultar` (como
+  `PlayerService.search`).
+- `GET /api/categorias` → `SELECT * FROM categorias ORDER BY id`, cualquier permiso de oficina (como
+  `CategoryService.list`).
+- Devuelven las filas **tal como están en MariaDB** (columnas `snake_case`, `DATETIME` como `"YYYY-MM-DD HH:MM:SS"`,
+  `BOOLEAN` como `0/1`) para compararlas 1:1 con la base. El contrato definitivo (`camelCase`, § Convenciones) se aplica
+  cuando el frontend consuma estos datos.
+- Datos: `npm run db:mariadb:dev-seed` carga la temporada actual, 3 categorías y 6 jugadores ficticios (los de `MockDb`).
+
+**Comparar API y base:**
+
+```bash
+mariadb escuela_futbol -e "SELECT * FROM jugadores ORDER BY id;"
+mariadb escuela_futbol -e "SELECT * FROM categorias ORDER BY id;"
+curl -s -c jar -o /dev/null -H 'Content-Type: application/json' -d '{"email":"admin@example.com","password":"demo1234"}' localhost:3000/auth/login
+curl -s -b jar localhost:3000/api/jugadores
+curl -s -b jar localhost:3000/api/categorias
+```
+
+Cada fila de la tabla es un objeto del arreglo, en el mismo orden (`id`), con las mismas columnas y valores; `NULL` es
+`null`. Las pruebas de `api/api.test.ts` hacen esa comparación automáticamente (`deepEqual` contra el `SELECT *`).
 
 ## Postman
 

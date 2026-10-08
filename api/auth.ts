@@ -17,6 +17,7 @@ const SCHOOL_TZ = 'America/Mexico_City';
 const INVALID = 'Correo o contraseña incorrectos.';
 const NO_SESSION = 'Sesión no iniciada o expirada.';
 const NO_ROLE = 'Tu cuenta no tiene un rol o perfil activo. Contacta a la escuela.';
+const FORBIDDEN = 'No tienes permiso para esta operación.';
 
 // ---------------------------------------------------------------- passwords (argon2id, PHC string)
 
@@ -170,6 +171,29 @@ export async function session(ctx: Ctx, db: Pool): Promise<Reply> {
       lastUsedAt: toJson(now),
     },
   };
+}
+
+/**
+ * Barrier 3 of AUTHORIZATION.md for office operations, like the mock's `requireOffice()` / `require(permission)`:
+ * an open session (401) whose SEGURIDAD role grants `permission`, or any permission when none is given (403).
+ * A profile (TUTOR/ENTRENADOR) never grants office-wide access (D12). Returns the refusal, or null to proceed.
+ */
+export async function requireOffice(
+  ctx: Ctx,
+  db: Pool,
+  permission?: string,
+): Promise<Reply | null> {
+  const s = await currentSession(ctx, db);
+  if (!s) return { status: 401, body: { error: NO_SESSION } };
+  await db.query('UPDATE sesiones SET ultimo_uso_en = ? WHERE id = ?', [
+    localDateTime(),
+    s.sessionId,
+  ]);
+  const { officePermissions } = await accessOf(db, s.user);
+  const allowed = permission
+    ? officePermissions.includes(permission)
+    : officePermissions.length > 0;
+  return allowed ? null : { status: 403, body: { error: FORBIDDEN } };
 }
 
 /** Idempotent: always clears the cookie; closes and audits the session if there was a valid one. */

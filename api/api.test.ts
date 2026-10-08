@@ -166,3 +166,39 @@ test('5 wrong passwords lock that e-mail for this client → 429, even with the 
   assert.equal((await login('secretaria@example.com')).status, 429);
   assert.equal((await login('admin@example.com')).status, 200);
 });
+
+const getAs = (path: string, cookie?: string) =>
+  fetch(`${base}${path}`, { headers: cookie ? { Cookie: cookie } : {} });
+
+test('GET /api/jugadores: 401 anonymous, 403 profile-only account, 200 with jugadores.consultar (admin; secretaria is locked by the 429 test)', async () => {
+  assert.equal((await getAs('/api/jugadores')).status, 401);
+  assert.equal(
+    (await getAs('/api/jugadores', cookieOf(await login('coach@example.com')))).status,
+    403,
+  );
+  const res = await getAs('/api/jugadores', cookieOf(await login('admin@example.com')));
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type') ?? '', /^application\/json/);
+  const rows = await res.json();
+  assert.deepEqual(rows, await db.query('SELECT * FROM jugadores ORDER BY id'));
+  assert.deepEqual(
+    rows.map((r: { identificador: string }) => r.identificador),
+    ['J-0001', 'J-0002', 'J-0003', 'J-0004', 'J-0005', 'J-0006'],
+  );
+});
+
+test('GET /api/categorias: 401 anonymous, 403 profile-only account, 200 with an office role', async () => {
+  assert.equal((await getAs('/api/categorias')).status, 401);
+  assert.equal(
+    (await getAs('/api/categorias', cookieOf(await login('marta@example.com')))).status,
+    403,
+  );
+  const res = await getAs('/api/categorias', cookieOf(await login('admin@example.com')));
+  assert.equal(res.status, 200);
+  const rows = await res.json();
+  assert.deepEqual(rows, await db.query('SELECT * FROM categorias ORDER BY id'));
+  assert.deepEqual(
+    rows.map((r: { nombre: string }) => r.nombre),
+    ['Sub-10', 'Sub-12', 'Sub-8'],
+  );
+});

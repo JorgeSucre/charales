@@ -1,0 +1,4 @@
+$kind: collection
+order: 3000
+description: |-
+  Práctica de laboratorio (docs/API.md § Práctica). Secuencia: anónimo → entrenador (403) → administrador (200).
