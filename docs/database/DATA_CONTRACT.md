@@ -1,5 +1,12 @@
 # Contrato de datos del equipo (congelado — fase 3.5)
 
+> **Actualización 2026-10-07 — modelo MariaDB adoptado.** El modelo físico objetivo es
+> [`docs/escuela_futbol_mariadb.sql`](../escuela_futbol_mariadb.sql) y su contrato con el frontend está en
+> [`MARIADB.md`](MARIADB.md). Quedan **reemplazadas** de este documento las convenciones de motor (PostgreSQL), IDs
+> (UUID → `BIGINT` numérico), dinero en BD (`*_cents` → `DECIMAL(12,2)`; en TypeScript sigue siendo centavos enteros) e
+> instantes (`timestamptz` → `DATETIME` local sin zona). Siguen vigentes las reglas de dominio: inscripción ≠ categoría,
+> saldo derivado, nada se borra en cobranza, una entidad = un servicio que escribe.
+
 **Léelo antes de tocar datos.** Es el contrato común: si tu módulo necesita algo distinto, se propone un cambio
 (ver [«¿Cómo modificar la BD?»](#cómo-modificar-la-bd)). No se inventa por separado.
 

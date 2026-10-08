@@ -1,5 +1,8 @@
 # Base de datos — Charales
 
+> **Esquema PostgreSQL anterior (historial).** Desde 2026-10-07 el modelo vigente es MariaDB:
+> [`MARIADB.md`](MARIADB.md). Este documento describe `db/migrations` y ya no es la fuente de verdad.
+
 Base común para todos los módulos. **PostgreSQL 16.**
 
 > **Antes de trabajar con datos lee [`DATA_CONTRACT.md`](DATA_CONTRACT.md)** (reglas congeladas) y
@@ -31,9 +34,9 @@ Para otra base: `DATABASE_URL=postgresql://usuario@host:5432/nombre npm run db:m
 
 ```text
 db/
-  migrations/  001_…008_*.sql   se aplican en orden; cada una en su transacción; registro en schema_migrations
+  migrations/  001_…009_*.sql   se aplican en orden; cada una en su transacción; registro en schema_migrations
   seed/        dev_seed.sql      datos ficticios · sid.sql (UUIDs legibles)
-  tests/       integrity.sql     55 pruebas (transacción revertida)
+  tests/       integrity.sql     57 pruebas (transacción revertida)
   queries/     critical.sql      21 consultas del sistema
   scripts/     migrate.sh · reset.sh · test.sh
 ```

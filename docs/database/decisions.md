@@ -1,5 +1,8 @@
 # Decisiones de base de datos (fase 3, revisadas en la fase 3.5)
 
+> **Esquema PostgreSQL anterior (historial).** Desde 2026-10-07 el modelo vigente es MariaDB:
+> [`MARIADB.md`](MARIADB.md). Este documento describe `db/migrations` y ya no es la fuente de verdad.
+
 Fuente: modelos de `src/app/core/models`, servicios, `core/auth/permissions.ts`, `docs/PLAN.md` y las historias de
 Borrayo. En esta fase el Markdown de historias no estaba en el repo. Hoy la tabla oficial está en
 `docs/requirements/USER_STORIES.md`, y los owners vigentes en `OWNERSHIP.md`.

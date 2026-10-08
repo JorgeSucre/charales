@@ -1,140 +1,241 @@
-import { Charge, ChargeConcept, Payment, PaymentApplication } from '../../core/models';
+import {
+  Cents,
+  Charge,
+  ChargeConcept,
+  ChargeStatus,
+  Discount,
+  Id,
+  ISODate,
+  Payment,
+  PaymentApplication,
+} from '../../core/models';
+import { addCents, assertCents, sumCents } from '../../shared/money';
 
 /**
- * Pure billing rules (no Angular, no I/O). The backend must enforce the same rules;
- * keeping them here makes the UI demo-able and testable meanwhile.
+ * Pure billing rules (no Angular, no I/O). All amounts are integer cents. The API must enforce the same rules
+ * inside one transaction; MariaDB backs them with CHECKs and composite FKs.
+ *
+ *   balance = original − Σ discount adjustments − Σ applications of non-cancelled payments
  */
 
-/** Applications of cancelled payments don't count toward balances or income. */
+/** Applications of CANCELADO payments don't count toward balances or income (they stay as history). */
 export function effectiveApplications(
   payments: Payment[],
   apps: PaymentApplication[],
 ): PaymentApplication[] {
-  const cancelled = new Set(payments.filter((p) => p.cancelledAt).map((p) => p.id));
+  const cancelled = new Set(payments.filter((p) => p.status === 'CANCELADO').map((p) => p.id));
   return apps.filter((a) => !cancelled.has(a.paymentId));
 }
 
-/** Pass effectiveApplications(...) as `apps` to the functions below. */
-export function appliedTo(chargeId: string, apps: PaymentApplication[]): number {
-  return apps.filter((a) => a.chargeId === chargeId).reduce((sum, a) => sum + a.amountCents, 0);
+/** Pass effectiveApplications(...) as `apps`. */
+/**
+ * Paid per charge, indexed once per applications array (HU-075: avoids charges × applications scans).
+ * The arrays passed here (effectiveApplications results, test literals) are never mutated after creation;
+ * the length check rebuilds the index if one ever is.
+ */
+const paidIndex = new WeakMap<PaymentApplication[], { length: number; byCharge: Map<Id, Cents> }>();
+
+export function paidOn(chargeId: Id, apps: PaymentApplication[]): Cents {
+  let index = paidIndex.get(apps);
+  if (!index || index.length !== apps.length) {
+    const byCharge = new Map<Id, Cents>();
+    for (const a of apps)
+      byCharge.set(a.chargeId, addCents(byCharge.get(a.chargeId) ?? 0, a.amountCents));
+    index = { length: apps.length, byCharge };
+    paidIndex.set(apps, index);
+  }
+  return index.byCharge.get(chargeId) ?? 0;
 }
 
-export function chargeBalance(charge: Charge, apps: PaymentApplication[]): number {
-  return charge.amountCents - appliedTo(charge.id, apps);
+export function discountOn(chargeId: Id, discounts: Discount[]): Cents {
+  return sumCents(discounts.filter((d) => d.chargeId === chargeId).map((d) => d.adjustmentCents));
 }
 
-/** Monthly fees for the given players; idempotent (skips players already charged for concept+period). */
+/** What is really owed after discounts/scholarships (never below 0: CHECK monto_ajuste <= monto_original). */
+export function netAmount(charge: Charge, discounts: Discount[]): Cents {
+  return charge.originalAmountCents - discountOn(charge.id, discounts);
+}
+
+export function chargeBalance(
+  charge: Charge,
+  apps: PaymentApplication[],
+  discounts: Discount[],
+): Cents {
+  if (charge.status === 'CANCELADO') return 0;
+  return netAmount(charge, discounts) - paidOn(charge.id, apps);
+}
+
+export function isOverdue(charge: Charge, balance: Cents, today: ISODate): boolean {
+  return balance > 0 && !!charge.dueDate && charge.dueDate < today;
+}
+
+/**
+ * cargos.estado derived from the amounts (HU-044.3). CANCELADO is final. Overdue wins over partial,
+ * because collections care about the due date first; `paid > 0` still tells partial from untouched.
+ */
+export function chargeStatus(
+  charge: Charge,
+  apps: PaymentApplication[],
+  discounts: Discount[],
+  today: ISODate,
+): ChargeStatus {
+  if (charge.status === 'CANCELADO') return 'CANCELADO';
+  const balance = chargeBalance(charge, apps, discounts);
+  if (balance <= 0) return 'PAGADO';
+  if (isOverdue(charge, balance, today)) return 'VENCIDO';
+  return paidOn(charge.id, apps) > 0 ? 'PARCIAL' : 'PENDIENTE';
+}
+
+export const PERIOD_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+export type ChargeDraft = Omit<Charge, 'id' | 'createdAt' | 'updatedAt'>;
+
+/** Monthly fees (HU-044); idempotent: skips players already charged for concept+period (uq_cargo_periodo_concepto). */
 export function generateMonthlyCharges(
-  playerIds: string[],
+  playerIds: Id[],
   concept: ChargeConcept,
   period: string,
-  dueDate: string,
+  dueDate: ISODate,
+  chargedOn: ISODate,
+  seasonId: Id | null,
   existing: Charge[],
-  newId: () => string,
-): Charge[] {
+): ChargeDraft[] {
+  if (!PERIOD_PATTERN.test(period)) throw new Error('El periodo debe tener formato AAAA-MM.');
+  if (!concept.recurring) throw new Error('Las mensualidades usan un concepto recurrente.');
   const charged = new Set(
     existing
       .filter((c) => c.conceptId === concept.id && c.period === period)
       .map((c) => c.playerId),
   );
-  return playerIds
+  return [...new Set(playerIds)]
     .filter((id) => !charged.has(id))
     .map((playerId) => ({
-      id: newId(),
       playerId,
       conceptId: concept.id,
-      amountCents: concept.defaultAmountCents,
-      description: `${concept.name} ${period}`,
-      dueDate,
+      seasonId,
       period,
+      chargedOn,
+      dueDate,
+      originalAmountCents: concept.suggestedAmountCents,
+      status: 'PENDIENTE',
+      reference: null,
     }));
 }
 
-/** Applies a payment to open charges, oldest due date first. Overpayment is rejected (no credit balances yet). */
+/**
+ * Splits a payment over open charges, oldest due date first (charges without due date last). Total or partial
+ * payments are fine; paying more than is owed is rejected (no credit balances in the model).
+ */
 export function allocatePayment(
-  paymentId: string,
-  amountCents: number,
+  amountCents: Cents,
   charges: Charge[],
   apps: PaymentApplication[],
-): PaymentApplication[] {
-  if (!Number.isInteger(amountCents) || amountCents <= 0)
-    throw new Error('El monto debe ser mayor a cero.');
+  discounts: Discount[],
+): { chargeId: Id; amountCents: Cents }[] {
+  assertCents(amountCents);
+  if (amountCents <= 0) throw new Error('El importe debe ser mayor a cero.');
   const open = charges
-    .map((charge) => ({ charge, balance: chargeBalance(charge, apps) }))
+    .map((charge) => ({ charge, balance: chargeBalance(charge, apps, discounts) }))
     .filter((c) => c.balance > 0)
-    .sort((a, b) => a.charge.dueDate.localeCompare(b.charge.dueDate));
-  const due = open.reduce((sum, c) => sum + c.balance, 0);
+    .sort(
+      (a, b) =>
+        (a.charge.dueDate ?? '9999').localeCompare(b.charge.dueDate ?? '9999') ||
+        a.charge.id - b.charge.id,
+    );
+  const due = sumCents(open.map((c) => c.balance));
+  if (!open.length) throw new Error('No hay cargos pendientes por pagar.');
   if (amountCents > due) throw new Error('El pago excede el adeudo.');
 
   let left = amountCents;
-  const result: PaymentApplication[] = [];
+  const result: { chargeId: Id; amountCents: Cents }[] = [];
   for (const { charge, balance } of open) {
     if (left === 0) break;
     const applied = Math.min(left, balance);
-    result.push({ paymentId, chargeId: charge.id, amountCents: applied });
+    result.push({ chargeId: charge.id, amountCents: applied });
     left -= applied;
   }
   return result;
 }
 
 export interface DebtRow {
-  playerId: string;
-  balanceCents: number;
+  playerId: Id;
+  balanceCents: Cents;
+  overdueCents: Cents;
   openCharges: number;
-  oldestDueDate: string;
+  oldestDueDate: ISODate | null;
 }
 
-export function debtsByPlayer(charges: Charge[], apps: PaymentApplication[]): DebtRow[] {
-  const rows = new Map<string, DebtRow>();
+/** Debts per player (HU-050). Cancelled charges never count; sorted by overdue amount. */
+export function debtsByPlayer(
+  charges: Charge[],
+  apps: PaymentApplication[],
+  discounts: Discount[],
+  today: ISODate,
+): DebtRow[] {
+  const rows = new Map<Id, DebtRow>();
   for (const charge of charges) {
-    const balance = chargeBalance(charge, apps);
+    const balance = chargeBalance(charge, apps, discounts);
     if (balance <= 0) continue;
     const row = rows.get(charge.playerId) ?? {
       playerId: charge.playerId,
       balanceCents: 0,
+      overdueCents: 0,
       openCharges: 0,
-      oldestDueDate: charge.dueDate,
+      oldestDueDate: null,
     };
-    row.balanceCents += balance;
+    row.balanceCents = addCents(row.balanceCents, balance);
+    if (isOverdue(charge, balance, today)) row.overdueCents = addCents(row.overdueCents, balance);
     row.openCharges++;
-    if (charge.dueDate < row.oldestDueDate) row.oldestDueDate = charge.dueDate;
+    if (charge.dueDate && (!row.oldestDueDate || charge.dueDate < row.oldestDueDate))
+      row.oldestDueDate = charge.dueDate;
     rows.set(charge.playerId, row);
   }
-  return [...rows.values()].sort((a, b) => b.balanceCents - a.balanceCents);
+  return [...rows.values()].sort(
+    (a, b) => b.overdueCents - a.overdueCents || b.balanceCents - a.balanceCents,
+  );
 }
 
 export interface IncomeRow {
   month: string; // YYYY-MM
-  conceptId: string;
-  totalCents: number;
+  conceptId: Id;
+  totalCents: Cents;
 }
 
-/** Income received between from..to (inclusive ISO dates), grouped by month and concept. */
+/** Income received between from..to (inclusive DATEs, compared with the payment's calendar day), by month and concept (HU-067). */
 export function incomeByMonthAndConcept(
   payments: Payment[],
   apps: PaymentApplication[],
   charges: Charge[],
-  from: string,
-  to: string,
+  from: ISODate,
+  to: ISODate,
 ): IncomeRow[] {
-  const paidAt = new Map(
+  const paidOnDay = new Map(
     payments
-      .filter((p) => !p.cancelledAt && p.paidAt >= from && p.paidAt <= to)
-      .map((p) => [p.id, p.paidAt]),
+      .filter(
+        (p) =>
+          p.status === 'APLICADO' && p.paidAt.slice(0, 10) >= from && p.paidAt.slice(0, 10) <= to,
+      )
+      .map((p) => [p.id, p.paidAt.slice(0, 10)]),
   );
   const conceptOf = new Map(charges.map((c) => [c.id, c.conceptId]));
   const rows = new Map<string, IncomeRow>();
   for (const app of apps) {
-    const date = paidAt.get(app.paymentId);
+    const date = paidOnDay.get(app.paymentId);
     const conceptId = conceptOf.get(app.chargeId);
-    if (!date || !conceptId) continue;
+    if (!date || conceptId === undefined) continue;
     const month = date.slice(0, 7);
     const key = `${month}|${conceptId}`;
     const row = rows.get(key) ?? { month, conceptId, totalCents: 0 };
-    row.totalCents += app.amountCents;
+    row.totalCents = addCents(row.totalCents, app.amountCents);
     rows.set(key, row);
   }
   return [...rows.values()].sort(
-    (a, b) => a.month.localeCompare(b.month) || a.conceptId.localeCompare(b.conceptId),
+    (a, b) => a.month.localeCompare(b.month) || a.conceptId - b.conceptId,
   );
+}
+
+/** Next folio 'R-0001' … (pagos.folio is UNIQUE; the API generates it inside the payment transaction). */
+export function nextFolio(payments: Payment[]): string {
+  const max = payments.reduce((m, p) => Math.max(m, Number(p.folio.replace(/\D/g, '')) || 0), 0);
+  return `R-${String(max + 1).padStart(4, '0')}`;
 }

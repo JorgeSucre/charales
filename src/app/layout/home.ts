@@ -1,13 +1,14 @@
 import { Component, computed, inject } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../core/auth/auth.service';
-import { NAV_ITEMS } from './nav';
+import { navSections } from './shell';
 
+/** Home: tutors and coaches land on their own area (HU-001.4 redirect by role); staff get the module cards. */
 @Component({
   selector: 'app-home',
   imports: [RouterLink],
   template: `
-    <h1>Hola, {{ auth.user()?.fullName }}</h1>
+    <h1>Hola, {{ auth.user()?.displayName }}</h1>
     @for (section of sections(); track section.name) {
       <h2>{{ section.name }}</h2>
       <div class="cards">
@@ -20,13 +21,12 @@ import { NAV_ITEMS } from './nav';
 })
 export class Home {
   protected auth = inject(AuthService);
-  protected sections = computed(() => {
-    const items = NAV_ITEMS.filter((i) => this.auth.can(i.permission));
-    return [...new Set(items.map((i) => i.section))].map((name) => ({
-      name,
-      items: items.filter((i) => i.section === name),
-    }));
-  });
+  protected sections = computed(() => navSections((i) => this.auth.can(i.permission)));
+
+  constructor() {
+    const target = this.auth.homeUrl();
+    if (target !== '/') inject(Router).navigateByUrl(target, { replaceUrl: true });
+  }
 }
 
 @Component({

@@ -9,7 +9,8 @@
     "test": "ng test",
     "db:migrate": "sh db/scripts/migrate.sh",
     "db:reset": "sh db/scripts/reset.sh",
-    "db:test": "sh db/scripts/test.sh"
+    "db:test": "sh db/scripts/test.sh",
+    "db:mariadb:test-backup": "sh db/mariadb/scripts/test-backup-restore.sh"
   },
   "private": true,
   "packageManager": "npm@11.19.1",

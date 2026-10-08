@@ -1,5 +1,8 @@
 # Relaciones, en lenguaje sencillo
 
+> **Esquema PostgreSQL anterior (historial).** Desde 2026-10-07 el modelo vigente es MariaDB:
+> [`MARIADB.md`](MARIADB.md). Este documento describe `db/migrations` y ya no es la fuente de verdad.
+
 ## Personas y cuentas
 
 - Un **usuario** es alguien que puede iniciar sesión. Su `role` decide qué puede hacer; los permisos por rol están en

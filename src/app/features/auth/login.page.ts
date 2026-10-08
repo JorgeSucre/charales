@@ -5,15 +5,20 @@ import { AuthService } from '../../core/auth/auth.service';
 import { FieldError } from '../../shared/field-error';
 import { Submission } from '../../shared/submission';
 
+/** HU-001/002/003: one login for every role; the landing page depends on the roles/profiles of the account. */
 @Component({
   selector: 'app-login-page',
   imports: [ReactiveFormsModule, RouterLink, FieldError],
   template: `
     <main class="auth-box">
       <h1>⚽ Escuela de Fútbol Charales</h1>
+      @if (expired) {
+        <p class="alert info" role="status">Tu sesión expiró. Vuelve a iniciar sesión.</p>
+      }
       <p class="alert info">
-        Modo demostración: la contraseña <strong>no se verifica</strong>. Usuarios: admin,
-        secretaria, coach o tutor (&#64;example.com)
+        Demostración con datos simulados. Contraseña de todas las cuentas:
+        <strong>demo1234</strong>. Cuentas: admin, secretaria, coach, tutor y marta (entrenadora y
+        tutora) &#64;example.com
       </p>
       <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
         <label>Correo <input type="email" formControlName="email" autocomplete="username" /></label>
@@ -40,6 +45,7 @@ export class LoginPage {
   private auth = inject(AuthService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
+  protected expired = this.route.snapshot.queryParamMap.get('expired') === '1';
   protected submission = new Submission();
   protected form = inject(FormBuilder).nonNullable.group({
     email: ['', [Validators.required, Validators.email]],
@@ -50,7 +56,9 @@ export class LoginPage {
     if (this.form.invalid) return this.form.markAllAsTouched();
     const { email, password } = this.form.getRawValue();
     if (await this.submission.run(() => this.auth.login(email, password), 'Bienvenido')) {
-      this.router.navigateByUrl(this.route.snapshot.queryParamMap.get('returnUrl') ?? '/');
+      this.router.navigateByUrl(
+        this.route.snapshot.queryParamMap.get('returnUrl') ?? this.auth.homeUrl(),
+      );
     }
   }
 }

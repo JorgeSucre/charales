@@ -1,5 +1,8 @@
 # Consultas críticas
 
+> **Esquema PostgreSQL anterior (historial).** Desde 2026-10-07 el modelo vigente es MariaDB:
+> [`MARIADB.md`](MARIADB.md). Este documento describe `db/migrations` y ya no es la fuente de verdad.
+
 El SQL está en [`db/queries/critical.sql`](../../db/queries/critical.sql). `npm run db:test` las ejecuta sobre una BD
 recién creada; cualquier error hace fallar la prueba. Resultados con el seed, verificados el 2026-09-30:
 

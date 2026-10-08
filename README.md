@@ -4,19 +4,21 @@ Proyecto escolar integrador: plataforma web para administrar una escuela formati
 inscripciones, entrenadores, cobranza, uniformes, portal para padres y reportes. Las historias de usuario están
 organizadas por épicas y responsables.
 
-> **Estado:** el frontend Angular funciona con **datos simulados** y el esquema PostgreSQL está listo, pero **todavía
-> no están conectados**: no hay backend ni autenticación real.
+> **Estado:** el frontend Angular implementa el backlog (HU-001…076) sobre **datos simulados** (`MockDb`) que siguen el
+> modelo **MariaDB** adoptado ([`docs/database/MARIADB.md`](docs/database/MARIADB.md)). Todavía **no hay backend**: la
+> autenticación y los datos viven en el navegador. Trazabilidad HU → código → pruebas: [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md).
 > Contexto completo, estado por área y quién hace qué: [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).
 
 ## Requisitos
 
-| Herramienta | Versión                                               | Para qué                      |
-| ----------- | ----------------------------------------------------- | ----------------------------- |
-| Node.js     | `^22.22.3`, `^24.15.0` o `>=26` (probado con 26.10.0) | Frontend                      |
-| npm         | 11 (probado con 11.19.1)                              | Dependencias y scripts        |
-| PostgreSQL  | 16, con `psql`, `createdb` y `dropdb` en el `PATH`    | Sólo para la BD y sus pruebas |
-| Git         | reciente                                              | —                             |
-| `sh`        | macOS/Linux; en Windows usa Git Bash o WSL            | Scripts de BD                 |
+| Herramienta | Versión                                               | Para qué                                                                   |
+| ----------- | ----------------------------------------------------- | -------------------------------------------------------------------------- |
+| Node.js     | `^22.22.3`, `^24.15.0` o `>=26` (probado con 26.10.0) | Frontend                                                                   |
+| npm         | 11 (probado con 11.19.1)                              | Dependencias y scripts                                                     |
+| MariaDB     | 10.6+, con `mariadb` y `mariadb-dump` en el `PATH`    | Modelo objetivo: checks del esquema y respaldo (opcional para el frontend) |
+| PostgreSQL  | 16, con `psql`, `createdb` y `dropdb` en el `PATH`    | Sólo el esquema histórico de `db/migrations`                               |
+| Git         | reciente                                              | —                                                                          |
+| `sh`        | macOS/Linux; en Windows usa Git Bash o WSL            | Scripts de BD                                                              |
 
 ## Empezar desde cero
 
@@ -26,10 +28,14 @@ npm install
 npm start                    # http://localhost:4200
 ```
 
-Usuarios de demostración (la contraseña **no se verifica**; escribe cualquiera): `admin@example.com`,
-`secretaria@example.com`, `coach@example.com`, `tutor@example.com`.
+Usuarios de demostración (contraseña `demo1234`, se verifica contra un hash con sal del mock): `admin@example.com`,
+`secretaria@example.com`, `coach@example.com`, `tutor@example.com` y `marta@example.com` (entrenadora y tutora en la
+misma cuenta). Los datos simulados se reinician al recargar la página.
 
-Base de datos local (opcional para el frontend):
+Modelo MariaDB (opcional para el frontend): `docs/escuela_futbol_mariadb.sql` + `db/mariadb/010_permisos_app.sql`;
+pruebas del esquema en `docs/escuela_futbol_mariadb_checks.sql` (ver su encabezado; sólo sobre una copia vacía).
+
+Esquema PostgreSQL anterior (historial; ya no es la fuente de verdad):
 
 ```bash
 npm run db:reset             # crea charales_dev: migraciones + seed ficticio
@@ -53,7 +59,7 @@ Todos están definidos en `package.json`.
 | `npm run ng -- <args>`                 | Angular CLI                                                                                |
 | `npm run db:migrate`                   | Aplica las migraciones pendientes a `$DATABASE_URL`                                        |
 | `npm run db:reset`                     | **Borra** y recrea `charales_dev` con migraciones + seed (sólo local)                      |
-| `npm run db:test`                      | Recrea `charales_test` y corre las 55 pruebas de integridad y las 21 consultas críticas    |
+| `npm run db:test`                      | Recrea `charales_test` y corre las 57 pruebas de integridad y las 21 consultas críticas    |
 | `npx prettier --check .` / `--write .` | Revisar / aplicar formato (no hay script `format`)                                         |
 
 No existen `db:seed` ni `lint`: el seed se carga con `db:reset` y no hay ESLint configurado.
@@ -65,7 +71,7 @@ No existen `db:seed` ni `lint`: el seed se carga con `db:reset` y no hay ESLint 
 **Recomendadas:**
 
 - Un editor con soporte de Angular y Prettier.
-- `psql` o un cliente gráfico de PostgreSQL (pgAdmin, DBeaver, TablePlus) para explorar la BD.
+- El cliente `mariadb` o uno gráfico (DBeaver, TablePlus) para explorar la BD.
 
 **Opcionales:** cualquier editor sirve. Si usas VS Code o Code OSS, `.vscode/extensions.json` recomienda:
 
@@ -80,8 +86,8 @@ También son útiles una extensión de PostgreSQL/SQL, `bierner.markdown-mermaid
 
 ```text
 src/app/     frontend Angular: core/ (modelos, auth, datos mock, servicios compartidos), features/, shared/, layout/
-db/          PostgreSQL: migrations/, seed/, tests/, queries/, scripts/
-docs/        documentación: ROADMAP, INTEGRATION_MAP, PLAN y database/ (contrato de datos)
+db/          mariadb/ (seed de permisos de la app) y el esquema PostgreSQL anterior: migrations/, seed/, tests/…
+docs/        documentación: TRACEABILITY, ROADMAP, INTEGRATION_MAP, PLAN, database/ (MARIADB.md = contrato vigente)
 ```
 
 ## Documentación

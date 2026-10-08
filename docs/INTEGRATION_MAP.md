@@ -1,5 +1,11 @@
 # Mapa de integración del equipo
 
+> **Documento histórico (diseño previo a MariaDB).** Los «cambios pendientes en TypeScript» de § 2 quedaron superados:
+> el modelo se rehízo sobre MariaDB (IDs numéricos, `pagos.motivo_cancelacion`, `tutor_jugador` con parentesco,
+> fechas `DATETIME` locales…). Lo vigente para conectar la API: [`database/MARIADB.md`](database/MARIADB.md) § 8,
+> [`AUTHORIZATION.md`](AUTHORIZATION.md) y [`DOMAIN_RULES.md`](DOMAIN_RULES.md). La regla de un solo servicio que
+> escribe cada tabla sigue vigente.
+
 Cómo se reparte el backend sin duplicar modelos, tablas ni reglas. **No hay backend implementado.**
 
 | Fuente                                                         | Manda sobre                       |

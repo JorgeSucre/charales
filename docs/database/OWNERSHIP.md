@@ -7,6 +7,10 @@ trabajo. Este documento manda sobre la **escritura** de datos. Las reglas de dat
 
 > En la tabla oficial HU-003 dice «Dany»; se trata como **Dani**. HU-073 es de «Todos».
 
+> **Nombres de tabla:** las tablas de abajo usan los nombres del esquema PostgreSQL histórico (`users`, `players`…).
+> El reparto de responsables sigue vigente; la correspondencia con las 39 tablas MariaDB y el servicio que escribe cada
+> una está en [`MARIADB.md`](MARIADB.md) § 2.
+
 ## Reglas
 
 1. **Owner de una tabla** = el integrante de la HU que **crea** esa entidad. Define y modifica su contrato (servicio,
@@ -19,7 +23,7 @@ trabajo. Este documento manda sobre la **escritura** de datos. Las reglas de dat
    escritura.
 4. Nada se reasigna aquí: si cambia un responsable, se cambia primero la tabla oficial.
 
-## Tablas existentes (8 migraciones, 24 tablas)
+## Tablas existentes (9 migraciones, 24 tablas)
 
 | Tabla                                   | Owner (HU)                       | Otras HU que escriben (vía el servicio owner)                                               | Lectores principales                                                      | Borrado                           |
 | --------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | --------------------------------- |

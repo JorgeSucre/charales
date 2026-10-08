@@ -1,6 +1,7 @@
 # Plan y decisiones del frontend — fases 1 y 2 (Borrayo)
 
-> **Documento histórico.** Registra cómo se decidió el frontend antes de tener la tabla oficial de historias. Lo
+> **Documento histórico** (modelo de IDs de texto y `Tutor.playerIds`, ya reemplazado por el modelo MariaDB de
+> [`database/MARIADB.md`](database/MARIADB.md)). Registra cómo se decidió el frontend antes de tener la tabla oficial de historias. Lo
 > vigente: responsables en [`requirements/USER_STORIES.md`](requirements/USER_STORIES.md), escritura de tablas y
 > fronteras C1–C6 en [`database/OWNERSHIP.md`](database/OWNERSHIP.md) y
 > [`database/DATA_CONTRACT.md`](database/DATA_CONTRACT.md). Desde la fase 6, el portal usa la participación explícita
