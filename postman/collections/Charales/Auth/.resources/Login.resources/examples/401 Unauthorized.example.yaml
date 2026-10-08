@@ -1,0 +1,14 @@
+$kind: http-example
+request:
+  url: '{{baseUrl}}/auth/login'
+  method: POST
+response:
+  statusCode: 401
+  statusText: Unauthorized
+  headers:
+    - key: Content-Type
+      value: application/json; charset=utf-8
+  body:
+    type: json
+    content: |-
+      { "error": "Correo o contraseña incorrectos." }

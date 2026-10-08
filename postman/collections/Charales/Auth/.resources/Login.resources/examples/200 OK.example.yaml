@@ -1,0 +1,29 @@
+$kind: http-example
+request:
+  url: '{{baseUrl}}/auth/login'
+  method: POST
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    - key: Set-Cookie
+      value: 'charales_sid=<token>; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800'
+    - key: Content-Type
+      value: application/json; charset=utf-8
+  body:
+    type: json
+    content: |-
+      {
+        "roles": ["ADMINISTRADOR"],
+        "permissions": ["usuarios.consultar", "usuarios.crear", "…56 en total"],
+        "officePermissions": ["usuarios.consultar", "usuarios.crear", "…56 en total"],
+        "tutorId": null,
+        "coachId": null,
+        "isStaff": true,
+        "displayName": "Ana Administradora",
+        "userId": 1,
+        "sessionId": 1,
+        "email": "admin@example.com",
+        "expiresAt": "2026-10-08T19:08:00",
+        "lastUsedAt": "2026-10-08T11:08:00"
+      }

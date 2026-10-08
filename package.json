@@ -7,10 +7,13 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
+    "api:start": "node --env-file-if-exists=.env api/server.ts",
+    "api:test": "node --env-file-if-exists=.env --test api/*.test.ts",
     "db:migrate": "sh db/scripts/migrate.sh",
     "db:reset": "sh db/scripts/reset.sh",
     "db:test": "sh db/scripts/test.sh",
-    "db:mariadb:test-backup": "sh db/mariadb/scripts/test-backup-restore.sh"
+    "db:mariadb:test-backup": "sh db/mariadb/scripts/test-backup-restore.sh",
+    "db:mariadb:dev-seed": "sh -c \"mariadb ${DB_NAME:-escuela_futbol} < db/mariadb/010_permisos_app.sql && mariadb ${DB_NAME:-escuela_futbol} < db/mariadb/020_dev_seed.sql\""
   },
   "private": true,
   "packageManager": "npm@11.19.1",
@@ -21,6 +24,7 @@
     "@angular/forms": "^22.2.0",
     "@angular/platform-browser": "^22.2.0",
     "@angular/router": "^22.2.0",
+    "mariadb": "^3.5.4",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },

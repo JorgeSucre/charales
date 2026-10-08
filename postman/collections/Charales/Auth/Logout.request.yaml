@@ -1,0 +1,14 @@
+$kind: http-request
+name: 'POST /auth/logout'
+method: POST
+url: '{{baseUrl}}/auth/logout'
+order: 6000
+examples: './.resources/Logout.resources/examples'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('204 y la cookie se borra', () => {
+        pm.response.to.have.status(204);
+        pm.expect(pm.response.headers.get('Set-Cookie')).to.match(/^charales_sid=;.*Max-Age=0/);
+      });

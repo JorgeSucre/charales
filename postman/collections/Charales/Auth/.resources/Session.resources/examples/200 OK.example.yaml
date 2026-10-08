@@ -1,0 +1,27 @@
+$kind: http-example
+request:
+  url: '{{baseUrl}}/auth/session'
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    - key: Content-Type
+      value: application/json; charset=utf-8
+  body:
+    type: json
+    content: |-
+      {
+        "roles": ["TUTOR", "ENTRENADOR"],
+        "permissions": ["asistencias.crear", "asistencias.editar", "portal.consultar", "portal.editar", "panel_entrenador.consultar"],
+        "officePermissions": [],
+        "tutorId": 2,
+        "coachId": 2,
+        "isStaff": false,
+        "displayName": "Marta Díaz",
+        "userId": 6,
+        "sessionId": 2,
+        "email": "marta@example.com",
+        "expiresAt": "2026-10-08T19:08:00",
+        "lastUsedAt": "2026-10-08T11:20:00"
+      }

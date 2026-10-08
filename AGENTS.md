@@ -3,7 +3,7 @@
 ## Antes de modificar código
 
 1. Lee [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md): qué es, estado, quién hace qué. Comandos y mapa del código:
-   [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) y [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). La API no existe todavía.
+   [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) y [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). La API está en `api/` (Milestone 1: salud y autenticación; contrato en [`docs/API.md`](docs/API.md)).
 2. Lee el contrato de lo que vas a tocar: modelo de datos → [`MARIADB.md`](docs/database/MARIADB.md) (vigente) y las
    reglas de dominio de [`DATA_CONTRACT.md`](docs/database/DATA_CONTRACT.md); reglas que la API debe garantizar →
    [`DOMAIN_RULES.md`](docs/DOMAIN_RULES.md); autorización → [`AUTHORIZATION.md`](docs/AUTHORIZATION.md); estado de
@@ -18,7 +18,8 @@
 8. Ejecuta las pruebas antes de decir que algo funciona:
    `npm run build`, `npx ng test --watch=false` y `npx prettier --check .`; si tocaste el modelo MariaDB o
    `db/mariadb`, también `npm run db:mariadb:test-backup` (checks del esquema + respaldo). `npm run db:test` sólo
-   aplica al esquema PostgreSQL histórico.
+   aplica al esquema PostgreSQL histórico. Si tocaste `api/`: `npm run api:test`, `postman collection lint postman/` y
+   `postman collection run` contra la API local ([`docs/API.md`](docs/API.md)).
 9. Toda operación de servicio verifica permiso y propiedad con `AuthorizationService`
    ([`docs/AUTHORIZATION.md`](docs/AUTHORIZATION.md)); no basta con la ruta.
 10. Si cambias un contrato (modelo, tabla, API, permiso), actualiza su documento fuente **en el mismo cambio**.

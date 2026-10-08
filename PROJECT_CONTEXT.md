@@ -35,9 +35,9 @@ Las historias de usuario se organizan por épicas (EP01–EP12) y cada una tiene
 | Arquitectura frontend | **COMPLETADO**  | Angular standalone por dominio, RBAC por permisos, capa de servicios                                                                                                             |
 | Frontend              | **EN REVISIÓN** | Las 76 HU implementadas sobre `MockDb` en `main` (`18178ba`, local) ([`TRACEABILITY.md`](docs/TRACEABILITY.md)); cada responsable revisa las suyas                               |
 | Base de datos         | **COMPLETADO**  | Modelo **MariaDB** adoptado ([`MARIADB.md`](docs/database/MARIADB.md)); 42/42 checks del esquema. El PostgreSQL de `db/` queda como historial                                    |
-| Backend               | **NO INICIADO** | —                                                                                                                                                                                |
-| API                   | **PENDIENTE**   | No existe. Contrato: [`MARIADB.md`](docs/database/MARIADB.md) § 1–3, § 7 y § 8 (pasos para conectar)                                                                             |
-| Autenticación         | **SIMULADA**    | Login con hash con sal (mock), sesiones con expiración, roles por perfil, permisos editables, recuperación con token. El hash real (argon2/bcrypt) va en el backend              |
+| Backend               | **EN PROGRESO** | Milestone 1 en `api/`: Node `node:http` + MariaDB, configuración por variables de entorno, pruebas `node:test`, colección Postman local                                          |
+| API                   | **EN PROGRESO** | `GET /health`, `POST /auth/login`, `GET /auth/session`, `POST /auth/logout` ([`API.md`](docs/API.md)). El frontend aún no la consume                                             |
+| Autenticación         | **EN PROGRESO** | API: argon2id, cookie HttpOnly, 8 h / 30 min, límite de intentos, auditoría. El frontend sigue con el mock (SHA-256); recuperación y cambio de contraseña aún sólo en el mock    |
 | Autorización          | **COMPLETADO**  | Permiso + alcance en cada servicio; matriz D12 (Administrador 56, Secretaría 45, Entrenador 3, Tutor 2); sin escalada por perfiles ([`AUTHORIZATION.md`](docs/AUTHORIZATION.md)) |
 | Cobranza              | **EN REVISIÓN** | Conceptos, cargos, mensualidades, pagos parciales, folios, cancelación, estado de cuenta, adeudos, descuentos/becas. Sin backend                                                 |
 | Uniformes             | **EN REVISIÓN** | Catálogo, pedidos con precio histórico, cargo vinculado (`cargo_id`), pagado derivado, entrega, cancelación. Sin backend                                                         |
@@ -75,7 +75,7 @@ el mismo `ROADMAP.md`.
 
 ### Fuera de alcance actual
 
-Backend, API, JWT/sesiones, correo real, pagos en línea, almacenamiento de archivos, Docker, CI/CD y deployment.
+Correo real, pagos en línea, almacenamiento de archivos, Docker, CI/CD y deployment.
 
 ## Historias de usuario
 
@@ -125,7 +125,7 @@ Detalle en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 ```text
 Angular (src/app)        páginas → servicios de dominio (+ AuthorizationService) → MockDb (en memoria)   ← HOY
                                              ↓ (siguiente fase: HttpClient)
-API / Backend            NO EXISTE todavía; contrato: docs/database/MARIADB.md, AUTHORIZATION.md, DOMAIN_RULES.md
+API / Backend            api/ (Milestone 1: salud + autenticación, docs/API.md); contrato: MARIADB.md, AUTHORIZATION.md, DOMAIN_RULES.md
                                              ↓
 MariaDB 10.6+            docs/escuela_futbol_mariadb.sql (39 tablas) + db/mariadb/   ← modelo probado, sin conectar
 (histórico) PostgreSQL 16 en db/migrations: diseño anterior, ya no es la fuente de verdad
@@ -189,6 +189,7 @@ histórico, a `psql`.
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)                           | Capas, autorización, `MockDb`, qué es temporal (pre-API)                           | Antes de tocar código                        |
 | [`docs/AUTHORIZATION.md`](docs/AUTHORIZATION.md)                         | Matriz de roles D12, perfiles vinculados, contrato por operación                   | Antes de tocar permisos o servicios          |
 | [`docs/TESTING.md`](docs/TESTING.md)                                     | Qué valida cada grupo de pruebas y cómo correrlas                                  | Antes de un PR                               |
+| [`docs/API.md`](docs/API.md)                                             | **API**: ejecutar, endpoints, sesión, Postman, decisiones                          | Antes de tocar `api/` o `postman/`           |
 | [`docs/DOMAIN_RULES.md`](docs/DOMAIN_RULES.md)                           | Reglas que el esquema no garantiza y la API debe repetir                           | Al diseñar la API                            |
 | [`AGENTS.md`](AGENTS.md)                                                 | Reglas de trabajo para cualquier IA                                                | Si eres una IA, antes de tocar nada          |
 | [`CLAUDE.md`](CLAUDE.md)                                                 | Notas específicas de Claude Code                                                   | Si usas Claude Code                          |

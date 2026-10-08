@@ -16,8 +16,8 @@ Navegador
     MockDb  src/app/core/data/mock-db.ts                   arreglos en memoria, uno por tabla MariaDB
 ```
 
-**La API/backend todavía NO existe.** No hay servidor, endpoints REST, autenticación del lado del servidor ni conexión
-de la aplicación a una base de datos. `MockDb` no es un backend: es estado en memoria del navegador que imita las tablas
+**La API está en construcción** (`api/`, [`API.md`](API.md)): Milestone 1 tiene salud y autenticación sobre MariaDB,
+pero la aplicación Angular **todavía no la consume**. `MockDb` no es un backend: es estado en memoria del navegador que imita las tablas
 del modelo MariaDB.
 
 **Persistencia actual:**

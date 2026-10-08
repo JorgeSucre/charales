@@ -176,6 +176,7 @@ de estados, transiciones, motivos, contactos…) están en [`DOMAIN_RULES.md`](.
 2. En cada servicio, sustituir las llamadas a `MockDb` por `HttpClient` devolviendo los mismos modelos; convertir
    `DECIMAL` con `parseMoney`/`toDecimal` en el borde. Las páginas no cambian (nunca inyectan `MockDb`).
 3. `AuthService`: login/logout/reset por HTTP con cookie HttpOnly; contraseñas con argon2id/bcrypt en el servidor;
-   limitar intentos. El hash SHA-256 de `core/auth/password.ts` es sólo del mock.
+   limitar intentos. **Hecho en la API** para login, sesión y logout ([`API.md`](../API.md)); falta reset/cambio de
+   contraseña y conectar el frontend. El hash SHA-256 de `core/auth/password.ts` es sólo del mock.
 4. Trabajo diario (EVENT) para pasar cargos a VENCIDO (D5) y sincronizar pedidos (D6) dentro de la transacción del pago.
 5. Mantener `integrityViolations` (o los `CHECK`/FK del esquema) como red de seguridad en las pruebas de la API.

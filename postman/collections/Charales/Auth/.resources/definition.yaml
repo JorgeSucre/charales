@@ -1,0 +1,5 @@
+$kind: collection
+order: 2000
+description: |-
+  Secuencia de HU-001/002 (orden importa): anónimo → credenciales inválidas → cuenta deshabilitada → login →
+  sesión → logout → sesión cerrada.

@@ -7,8 +7,9 @@ Contexto, equipo y estado por área: [`../PROJECT_CONTEXT.md`](../PROJECT_CONTEX
 
 - **Hay:** frontend Angular que implementa las 76 HU sobre datos simulados en memoria (`MockDb`), el modelo MariaDB
   probado (DDL, checks, permisos, respaldo) y 138 pruebas.
-- **No hay:** API, backend, servidor ni conexión de la app a una base de datos. Los datos se reinician al recargar la
-  página. La API es la siguiente fase ([`ROADMAP.md`](ROADMAP.md)).
+- **API (Milestone 1):** `api/` con `GET /health` y autenticación sobre MariaDB, más su colección Postman
+  ([`API.md`](API.md)).
+- **No hay todavía:** conexión del frontend a la API. Los datos de la app se reinician al recargar la página.
 
 > **Estado de `main` (2026-10-07):** el `main` local de quien integró está en `18178ba` (fast-forward desde
 > `jorgesucre/fix/audit-go-with-fixes`), **sin publicar**: `origin/main` sigue en `47b926c`, que no tiene el trabajo
@@ -21,12 +22,13 @@ Contexto, equipo y estado por área: [`../PROJECT_CONTEXT.md`](../PROJECT_CONTEX
 | ----------- | ------------------------------------------------------------------------------ | -------------------------------------------------- |
 | Node.js     | `^22.22.3`, `^24.15.0` o `>=26.0.0` (lo exige Angular 22; probado con 26.10.0) | Frontend y pruebas                                 |
 | npm         | 11 (fijado en `packageManager`: `npm@11.19.1`)                                 | Dependencias y scripts. No se usa pnpm ni yarn     |
-| MariaDB     | 10.6+ con `mariadb` y `mariadb-dump` en el `PATH` (probado con 13.0.2)         | Opcional: checks del esquema y respaldo            |
+| MariaDB     | 10.6+ con `mariadb` y `mariadb-dump` en el `PATH` (probado con 13.0.2)         | API, checks del esquema y respaldo                 |
+| Postman CLI | Opcional (probado con 1.71.0, sin iniciar sesión)                              | Correr la colección `postman/` contra la API       |
 | `sh`        | macOS/Linux; en Windows, Git Bash o WSL                                        | Scripts de base de datos                           |
 | PostgreSQL  | 16                                                                             | Sólo para el esquema **histórico** (no hace falta) |
 
-No hay `.env` ni secretos: el frontend no usa variables de entorno y los scripts de MariaDB usan las opciones estándar
-del cliente `mariadb`.
+El frontend no usa variables de entorno y los scripts de MariaDB usan las opciones estándar del cliente `mariadb`. La
+API lee `.env` (no versionado; copia [`.env.example`](../.env.example)): detalle en [`API.md`](API.md).
 
 ## 2. Instalar y ejecutar
 
@@ -59,6 +61,8 @@ Todos son los que usa el proyecto (`package.json`, [`CONTRIBUTING.md`](../CONTRI
 | Formato                    | `npx prettier --check .` (aplicar: `npx prettier --write .`)                       | Todo con formato                     |
 | Build de producción        | `npm run build` (salida en `dist/`)                                                | Sin errores                          |
 | Esquema MariaDB + respaldo | `npm run db:mariadb:test-backup`                                                   | 42/42 checks; 39/39 tablas idénticas |
+| Pruebas de la API          | `npm run api:test` (base temporal `ef_apitest_*`)                                  | 10/10                                |
+| Colección Postman          | `postman collection lint postman/` y `postman collection run …` (ver `API.md`)     | 8 requests, 9/9 aserciones           |
 | Lint                       | No hay ESLint configurado                                                          | —                                    |
 
 `npm run db:mariadb:test-backup` crea y borra sólo sus propias bases temporales `ef_bktest_*`. Los scripts
