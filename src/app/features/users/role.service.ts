@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../../core/auth/authorization.service';
 import { PROTECTED_PERMISSIONS, PermissionKey } from '../../core/auth/permissions';
-import { SessionStore } from '../../core/auth/session.store';
 import { MockDb } from '../../core/data/mock-db';
 import { BaseRole, Id, Permission, Role } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
@@ -17,10 +17,11 @@ export interface PermissionMatrix {
 @Injectable({ providedIn: 'root' })
 export class RoleService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
-  private session = inject(SessionStore);
 
-  matrix(): Promise<PermissionMatrix> {
+  async matrix(): Promise<PermissionMatrix> {
+    this.authz.require('roles.consultar');
     return this.db.respond({
       roles: this.db.roles.filter((r) => r.active),
       permissions: [...this.db.permissions].sort(
@@ -31,8 +32,7 @@ export class RoleService {
   }
 
   async setPermission(roleId: Id, permissionId: Id, granted: boolean): Promise<void> {
-    if (!this.session.user()?.permissions.includes('roles.editar'))
-      throw new Error('No tienes permiso para modificar permisos.');
+    this.authz.require('roles.editar');
     const role = this.db.get(this.db.roles, roleId, 'Rol');
     const permission = this.db.get(this.db.permissions, permissionId, 'Permiso');
     const key = `${permission.module}.${permission.action}` as PermissionKey;

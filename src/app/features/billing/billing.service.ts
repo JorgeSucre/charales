@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { SessionStore } from '../../core/auth/session.store';
+import { AuthorizationService } from '../../core/auth/authorization.service';
 import { MockDb } from '../../core/data/mock-db';
 import {
   Cents,
@@ -17,8 +17,8 @@ import {
 } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
 import { PlayerService } from '../../core/services/player.service';
-import { isISODate, nowDateTime, today } from '../../shared/dates';
-import { MAX_CENTS, assertCents } from '../../shared/money';
+import { isISODate, normalizeDateTime, nowDateTime, today } from '../../shared/dates';
+import { MAX_CENTS, assertCents, sumCents } from '../../shared/money';
 import { Page, matches, paginate } from '../../shared/page';
 import { optional, required } from '../../shared/validate';
 import {
@@ -110,13 +110,14 @@ export interface MonthlyDraft {
 @Injectable({ providedIn: 'root' })
 export class BillingService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
-  private session = inject(SessionStore);
   private players = inject(PlayerService);
 
   // ── HU-043 concepts ───────────────────────────────────────────────────
 
-  concepts(): Promise<(ChargeConcept & { used: number })[]> {
+  async concepts(): Promise<(ChargeConcept & { used: number })[]> {
+    this.authz.requireOffice();
     return this.db.respond(
       this.db.concepts
         .map((c) => ({ ...c, used: this.db.charges.filter((ch) => ch.conceptId === c.id).length }))
@@ -128,6 +129,7 @@ export class BillingService {
   async saveConcept(
     draft: Pick<ChargeConcept, 'name' | 'suggestedAmountCents' | 'recurring'> & { id?: Id },
   ): Promise<ChargeConcept> {
+    this.authz.require(draft.id ? 'cobranza.editar' : 'cobranza.crear');
     const name = required(draft.name, 'El nombre', 100);
     this.assertAmount(draft.suggestedAmountCents, true);
     if (
@@ -173,6 +175,7 @@ export class BillingService {
 
   /** HU-043.3: concepts are deactivated, never deleted (charges reference them). */
   async setConceptActive(id: Id, active: boolean): Promise<void> {
+    this.authz.require('cobranza.editar');
     this.db.get(this.db.concepts, id, 'Concepto');
     this.db.update(this.db.concepts, id, { active });
     this.audit.log(
@@ -187,7 +190,7 @@ export class BillingService {
 
   // ── HU-044 charges ────────────────────────────────────────────────────
 
-  charges(
+  async charges(
     filter: {
       playerId?: Id | null;
       status?: ChargeStatus | '';
@@ -197,7 +200,10 @@ export class BillingService {
       page?: number;
     } = {},
   ): Promise<Page<ChargeView>> {
+    this.authz.require('cobranza.consultar');
     this.syncStatuses();
+    const apps = this.effectiveApps();
+    const names = this.playerNames();
     const rows = this.db.charges
       .filter(
         (c) =>
@@ -206,19 +212,21 @@ export class BillingService {
           (filter.conceptId == null || c.conceptId === filter.conceptId) &&
           (!filter.period || c.period === filter.period),
       )
-      .map((c) => this.chargeView(c))
+      .map((c) => this.chargeView(c, apps, names))
       .filter((c) => !filter.query || matches(c.playerName, filter.query))
       .sort((a, b) => (b.dueDate ?? '').localeCompare(a.dueDate ?? '') || b.id - a.id);
     return this.db.respond(paginate(rows, filter.page));
   }
 
   /** Players the monthly generation would charge: active players with an ACTIVA enrollment in the current season. */
-  monthlyCandidates(): Promise<{ id: Id; name: string }[]> {
+  async monthlyCandidates(): Promise<{ id: Id; name: string }[]> {
+    this.authz.require('cobranza.crear');
     return this.db.respond(this.eligibleForMonthly().map((p) => ({ id: p.id, name: fullName(p) })));
   }
 
   /** HU-044: one charge per player/concept/period; re-running only adds what is missing. */
   async generateMonthlyFees(draft: MonthlyDraft): Promise<{ created: number; skipped: number }> {
+    this.authz.require('cobranza.crear');
     const concept = this.db.get(this.db.concepts, draft.conceptId, 'Concepto');
     if (!concept.active) throw new Error('El concepto está inactivo.');
     if (!PERIOD_PATTERN.test(draft.period))
@@ -310,6 +318,7 @@ export class BillingService {
     dueDate: ISODate | null;
     reference: string | null;
   }): Promise<Charge> {
+    this.authz.require('cobranza.crear');
     const reference = optional(draft.reference, 'La referencia', 100);
     const charge = this.db.transaction(() =>
       this.insertCharge({
@@ -348,26 +357,30 @@ export class BillingService {
   }
 
   async cancelCharge(id: Id, reason: string): Promise<void> {
+    this.authz.require('cobranza.cancelar');
     const motive = required(reason, 'El motivo');
     this.db.transaction(() => this.voidCharge(id, motive));
     await this.db.respond(null);
   }
 
-  openCharges(playerId: Id): Promise<ChargeView[]> {
+  async openCharges(playerId: Id): Promise<ChargeView[]> {
+    this.authz.require('pagos.crear', 'descuentos.crear');
     this.syncStatuses();
+    const apps = this.effectiveApps();
     return this.db.respond(
       this.db.charges
         .filter((c) => c.playerId === playerId)
-        .map((c) => this.chargeView(c))
+        .map((c) => this.chargeView(c, apps))
         .filter((c) => c.balanceCents > 0)
         .sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') || a.id - b.id),
     );
   }
 
   /** Tutors linked to the player: the only valid payers (fk_pago_tutor_jugador). */
-  payers(
+  async payers(
     playerId: Id,
   ): Promise<{ id: Id; name: string; relationship: string; isPrimary: boolean }[]> {
+    this.authz.require('pagos.crear');
     return this.db.respond(
       this.db.tutorPlayers
         .filter((tp) => tp.playerId === playerId)
@@ -389,6 +402,7 @@ export class BillingService {
    * charges of another player.
    */
   async registerPayment(draft: PaymentDraft): Promise<Payment> {
+    this.authz.require('pagos.crear');
     const player = this.db.get(this.db.players, draft.playerId, 'Jugador');
     if (!METHOD_LABELS[draft.method]) throw new Error('Forma de pago inválida.');
     this.assertAmount(draft.amountCents, false);
@@ -407,6 +421,8 @@ export class BillingService {
     );
     if (draft.chargeIds && charges.length !== new Set(draft.chargeIds).size)
       throw new Error('Algún cargo no existe, está cancelado o no pertenece al jugador.');
+    const paidAt = draft.paidAt ? normalizeDateTime(draft.paidAt) : nowDateTime();
+    if (paidAt > nowDateTime()) throw new Error('La fecha de pago no puede ser futura.');
     const payment = this.db.transaction(() => {
       const splits = allocatePayment(
         draft.amountCents,
@@ -419,7 +435,7 @@ export class BillingService {
         folio: nextFolio(this.db.payments),
         playerId: draft.playerId,
         tutorId: draft.tutorId,
-        paidAt: now,
+        paidAt,
         amountCents: draft.amountCents,
         method: draft.method,
         status: 'APLICADO',
@@ -452,8 +468,7 @@ export class BillingService {
 
   /** HU-049: authorized role, reason required; keeps the payment (CANCELADO) and its applications; balances reopen. */
   async cancelPayment(id: Id, reason: string): Promise<Payment> {
-    if (!this.session.user()?.permissions.includes('pagos.cancelar'))
-      throw new Error('No tienes permiso para cancelar pagos.');
+    this.authz.require('pagos.cancelar');
     const motive = required(reason, 'El motivo de cancelación');
     const before = this.db.get(this.db.payments, id, 'Pago');
     if (before.status === 'CANCELADO') throw new Error('El pago ya está cancelado.');
@@ -481,9 +496,10 @@ export class BillingService {
 
   // ── HU-048 receipts ───────────────────────────────────────────────────
 
-  receipts(
+  async receipts(
     filter: { query?: string; status?: 'APLICADO' | 'CANCELADO' | ''; page?: number } = {},
   ): Promise<Page<ReceiptView>> {
+    this.authz.require('pagos.consultar');
     const rows = [...this.db.payments]
       .filter((p) => !filter.status || p.status === filter.status)
       .sort((a, b) => b.paidAt.localeCompare(a.paidAt) || b.id - a.id)
@@ -492,12 +508,14 @@ export class BillingService {
     return this.db.respond(paginate(rows, filter.page));
   }
 
-  receipt(id: Id): Promise<ReceiptView> {
+  async receipt(id: Id): Promise<ReceiptView> {
+    this.authz.require('pagos.consultar');
     return this.db.respond(this.receiptView(this.db.get(this.db.payments, id, 'Recibo')));
   }
 
   /** HU-048.2: recover a receipt by folio. */
-  receiptByFolio(folio: string): Promise<ReceiptView> {
+  async receiptByFolio(folio: string): Promise<ReceiptView> {
+    this.authz.require('pagos.consultar');
     const payment = this.db.payments.find(
       (p) => p.folio.toLowerCase() === folio.trim().toLowerCase(),
     );
@@ -508,11 +526,13 @@ export class BillingService {
   // ── HU-046 / HU-047 statement ─────────────────────────────────────────
 
   /** Charges and payments of a player, with derived balances, optionally by date range (charge date / payment day) and concept. */
-  statement(
+  async statement(
     playerId: Id,
     filter: { from?: ISODate; to?: ISODate; conceptId?: Id | null } = {},
   ): Promise<StatementView> {
+    this.authz.assertPlayer(playerId, 'pagos.consultar', { tutor: true });
     this.syncStatuses();
+    const apps = this.effectiveApps();
     const player = this.db.get(this.db.players, playerId, 'Jugador');
     const inRange = (d: ISODate) =>
       (!filter.from || d >= filter.from) && (!filter.to || d <= filter.to);
@@ -523,7 +543,7 @@ export class BillingService {
           inRange(c.chargedOn) &&
           (filter.conceptId == null || c.conceptId === filter.conceptId),
       )
-      .map((c) => this.chargeView(c))
+      .map((c) => this.chargeView(c, apps))
       .sort((a, b) => a.chargedOn.localeCompare(b.chargedOn) || a.id - b.id);
     const payments = this.db.payments
       .filter((p) => p.playerId === playerId && inRange(p.paidAt.slice(0, 10)))
@@ -538,7 +558,7 @@ export class BillingService {
           })),
       }));
     const live = charges.filter((c) => c.status !== 'CANCELADO');
-    const sum = (f: (c: ChargeView) => Cents) => live.reduce((s, c) => s + f(c), 0);
+    const sum = (f: (c: ChargeView) => Cents) => sumCents(live.map(f));
     return this.db.respond({
       playerId,
       playerName: fullName(player),
@@ -549,9 +569,9 @@ export class BillingService {
         discountCents: sum((c) => c.discountCents),
         paidCents: sum((c) => c.paidCents),
         balanceCents: sum((c) => c.balanceCents),
-        overdueCents: live
-          .filter((c) => c.status === 'VENCIDO')
-          .reduce((s, c) => s + c.balanceCents, 0),
+        overdueCents: sumCents(
+          live.filter((c) => c.status === 'VENCIDO').map((c) => c.balanceCents),
+        ),
       },
     });
   }
@@ -559,9 +579,10 @@ export class BillingService {
   // ── HU-050 debts ──────────────────────────────────────────────────────
 
   /** Debts by player with primary tutor and contact; filter by charge period and current category. Cancelled charges never count. */
-  debts(
+  async debts(
     filter: { period?: string; categoryId?: Id | null; onlyOverdue?: boolean } = {},
   ): Promise<DebtView[]> {
+    this.authz.require('cobranza.consultar');
     this.syncStatuses();
     const on = today();
     const current = new Map(
@@ -569,19 +590,20 @@ export class BillingService {
         .filter((pc) => !pc.endDate)
         .map((pc) => [pc.playerId, pc.categoryId]),
     );
+    const names = this.playerNames();
     const charges = this.db.charges.filter(
       (c) =>
         (!filter.period || c.period === filter.period) &&
         (!filter.categoryId || current.get(c.playerId) === filter.categoryId),
     );
+    const primary = this.db.primaryTutors();
     const rows = debtsByPlayer(charges, this.effectiveApps(), this.db.discounts, on)
       .filter((d) => !filter.onlyOverdue || d.overdueCents > 0)
       .map((d) => {
-        const link = this.db.tutorPlayers.find((tp) => tp.playerId === d.playerId && tp.isPrimary);
-        const tutor = this.db.tutors.find((t) => t.id === link?.tutorId);
+        const tutor = primary.get(d.playerId);
         return {
           ...d,
-          playerName: fullName(this.db.get(this.db.players, d.playerId, 'Jugador')),
+          playerName: names.get(d.playerId) ?? '—',
           categoryName:
             this.db.categories.find((c) => c.id === current.get(d.playerId))?.name ?? null,
           tutorName: tutor ? fullName(tutor) : null,
@@ -595,9 +617,10 @@ export class BillingService {
 
   // ── HU-051 discounts / scholarships ──────────────────────────────────
 
-  discounts(): Promise<
+  async discounts(): Promise<
     (Discount & { label: string; playerName: string; authorizedByEmail: string | null })[]
   > {
+    this.authz.require('descuentos.consultar');
     return this.db.respond(
       [...this.db.discounts]
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -623,8 +646,7 @@ export class BillingService {
     reason: string;
     adjustmentCents: Cents;
   }): Promise<Discount> {
-    if (!this.session.user()?.permissions.includes('descuentos.crear'))
-      throw new Error('No tienes permiso para autorizar descuentos.');
+    this.authz.require('descuentos.crear');
     const reason = required(draft.reason, 'El motivo');
     this.assertAmount(draft.adjustmentCents, false);
     const charge = this.db.get(this.db.charges, draft.chargeId, 'Cargo');
@@ -689,13 +711,18 @@ export class BillingService {
     }
   }
 
-  private chargeView(c: Charge): ChargeView {
-    const apps = this.effectiveApps();
+  /** `apps`/`names` let list methods compute them once instead of per row (HU-075). */
+  private chargeView(
+    c: Charge,
+    apps: PaymentApplication[] = this.effectiveApps(),
+    names?: Map<Id, string>,
+  ): ChargeView {
     const discountCents = c.originalAmountCents - netAmount(c, this.db.discounts);
     return {
       ...c,
       label: this.players.chargeLabel(c),
-      playerName: fullName(this.db.get(this.db.players, c.playerId, 'Jugador')),
+      playerName:
+        names?.get(c.playerId) ?? fullName(this.db.get(this.db.players, c.playerId, 'Jugador')),
       netCents: c.originalAmountCents - discountCents,
       discountCents,
       paidCents: paidOn(c.id, apps),
@@ -729,6 +756,10 @@ export class BillingService {
     return this.db.players
       .filter((p) => p.status === 'ACTIVO' && enrolled.has(p.id))
       .sort((a, b) => fullName(a).localeCompare(fullName(b)));
+  }
+
+  private playerNames(): Map<Id, string> {
+    return new Map(this.db.players.map((p) => [p.id, fullName(p)]));
   }
 
   private effectiveApps(): PaymentApplication[] {

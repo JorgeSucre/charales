@@ -1,11 +1,11 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../../core/auth/authorization.service';
 import { SessionStore } from '../../core/auth/session.store';
 import { MockDb } from '../../core/data/mock-db';
 import { CompetitionStatus, Id, ISODate } from '../../core/models';
 import { CategoryMember, CategoryService } from '../../core/services/category.service';
 import { CompetitionService, ParticipationView } from '../../core/services/competition.service';
-import { overlaps, today } from '../../shared/dates';
-import { isCurrentAssignment } from '../coaches/coach.service';
+import { overlaps, today, isCurrentAssignment } from '../../shared/dates';
 import { MatchFilter, MatchService, MatchView } from '../matches/match.service';
 import { NoticeService, NoticeView } from '../notices/notice.service';
 import { ScheduleService, ScheduleView } from '../trainings/schedule.service';
@@ -33,6 +33,7 @@ export interface MyCompetition extends ParticipationView {
 @Injectable({ providedIn: 'root' })
 export class CoachPanelService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private session = inject(SessionStore);
   private categories = inject(CategoryService);
   private schedules = inject(ScheduleService);
@@ -43,6 +44,7 @@ export class CoachPanelService {
 
   /** HU-024: my current categories, with their active players and schedules. */
   async myCategories(): Promise<MyCategory[]> {
+    this.authz.require('panel_entrenador.consultar');
     const assignments = this.db.coachCategories.filter(
       (a) => a.coachId === this.coachId() && isCurrentAssignment(a),
     );
@@ -58,7 +60,8 @@ export class CoachPanelService {
   }
 
   /** HU-025: weekly calendar of my categories; `overlap` marks slots that clash on the same day. */
-  weeklySchedule(): Promise<(ScheduleView & { overlap: boolean })[]> {
+  async weeklySchedule(): Promise<(ScheduleView & { overlap: boolean })[]> {
+    this.authz.require('panel_entrenador.consultar');
     const rows = this.schedules.views({ categoryIds: this.myCategoryIds(), onlyActive: true });
     return this.db.respond(
       rows.map((r) => ({
@@ -77,7 +80,8 @@ export class CoachPanelService {
   }
 
   /** HU-029: my sessions (led by me or of my categories) in a date range. */
-  sessions(from?: ISODate, to?: ISODate): Promise<SessionView[]> {
+  async sessions(from?: ISODate, to?: ISODate): Promise<SessionView[]> {
+    this.authz.require('panel_entrenador.consultar');
     const coachId = this.coachId();
     const mine = new Set(this.myCategoryIds());
     return this.db.respond(
@@ -88,7 +92,8 @@ export class CoachPanelService {
   }
 
   /** HU-027: competitions where I'm currently assigned, with category, dates and next matches. */
-  myCompetitions(): Promise<MyCompetition[]> {
+  async myCompetitions(): Promise<MyCompetition[]> {
+    this.authz.require('panel_entrenador.consultar');
     const ids = this.db.coachCompetitions
       .filter((a) => a.coachId === this.coachId() && isCurrentAssignment(a))
       .map((a) => a.competitionCategoryId);
@@ -111,14 +116,16 @@ export class CoachPanelService {
   }
 
   /** HU-038 / HU-041: matches of my categories' participations (calendar or results). */
-  myMatches(filter: Omit<MatchFilter, 'participationIds'> = {}): Promise<MatchView[]> {
+  async myMatches(filter: Omit<MatchFilter, 'participationIds'> = {}): Promise<MatchView[]> {
+    this.authz.require('panel_entrenador.consultar');
     return this.db.respond(
       this.matches.views({ ...filter, participationIds: this.myParticipationIds() }),
     );
   }
 
   /** Competitions available as filter in my calendars. */
-  competitionOptions(): Promise<{ id: Id; name: string }[]> {
+  async competitionOptions(): Promise<{ id: Id; name: string }[]> {
+    this.authz.require('panel_entrenador.consultar');
     const ids = new Set(
       this.db.competitionCategories
         .filter((cc) => this.myParticipationIds().includes(cc.id))
@@ -129,8 +136,20 @@ export class CoachPanelService {
     );
   }
 
+  /** HU-041: categories available as filter (only the coach's current ones). */
+  async categoryOptions(): Promise<{ id: Id; name: string }[]> {
+    this.authz.require('panel_entrenador.consultar');
+    return this.db.respond(
+      this.myCategoryIds().map((id) => ({
+        id,
+        name: this.db.get(this.db.categories, id, 'Categoría').name,
+      })),
+    );
+  }
+
   /** HU-060 */
-  notices(): Promise<NoticeView[]> {
+  async notices(): Promise<NoticeView[]> {
+    this.authz.require('panel_entrenador.consultar');
     return this.db.respond(this.noticeService.forCoach(this.coachId()));
   }
 
@@ -141,21 +160,12 @@ export class CoachPanelService {
   }
 
   private myCategoryIds(): Id[] {
-    const coachId = this.coachId();
-    return this.db.coachCategories
-      .filter((a) => a.coachId === coachId && isCurrentAssignment(a))
-      .map((a) => a.categoryId);
+    this.coachId();
+    return this.authz.coachCategories();
   }
 
   private myParticipationIds(): Id[] {
-    const categories = new Set(this.myCategoryIds());
-    const assigned = new Set(
-      this.db.coachCompetitions
-        .filter((a) => a.coachId === this.coachId() && isCurrentAssignment(a))
-        .map((a) => a.competitionCategoryId),
-    );
-    return this.db.competitionCategories
-      .filter((cc) => categories.has(cc.categoryId) || assigned.has(cc.id))
-      .map((cc) => cc.id);
+    this.coachId();
+    return this.authz.coachParticipations();
   }
 }

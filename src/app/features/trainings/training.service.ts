@@ -1,4 +1,5 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService, ForbiddenError } from '../../core/auth/authorization.service';
 import { SessionStore } from '../../core/auth/session.store';
 import { MockDb } from '../../core/data/mock-db';
 import {
@@ -11,9 +12,16 @@ import {
   fullName,
 } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
-import { addDays, isISODate, isTime, nowDateTime, today, weekday } from '../../shared/dates';
+import {
+  addDays,
+  isISODate,
+  isTime,
+  nowDateTime,
+  today,
+  weekday,
+  isCurrentAssignment,
+} from '../../shared/dates';
 import { optional, required } from '../../shared/validate';
-import { isCurrentAssignment } from '../coaches/coach.service';
 
 export interface SessionView extends TrainingSession {
   categoryName: string;
@@ -53,10 +61,11 @@ export const TRAINING_STATUS_LABELS: Record<TrainingStatus, string> = {
 @Injectable({ providedIn: 'root' })
 export class TrainingService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
   private session = inject(SessionStore);
 
-  list(
+  async list(
     filter: {
       from?: ISODate;
       to?: ISODate;
@@ -65,6 +74,7 @@ export class TrainingService {
       status?: TrainingStatus | '';
     } = {},
   ): Promise<SessionView[]> {
+    this.authz.require('entrenamientos.consultar');
     return this.db.respond(this.views(filter));
   }
 
@@ -92,9 +102,9 @@ export class TrainingService {
   }
 
   /** HU-029/HU-030: the session with its group (active members of the category on that date) and their attendance. */
-  get(id: Id): Promise<SessionDetail> {
+  async get(id: Id): Promise<SessionDetail> {
     const s = this.db.get(this.db.trainingSessions, id, 'Sesión');
-    if (!this.inScope(s)) throw new Error('No tienes acceso a esta sesión.');
+    if (!this.inScope(s)) throw new ForbiddenError('No tienes acceso a esta sesión.');
     const recorded = new Map(
       this.db.attendance.filter((a) => a.sessionId === id).map((a) => [a.playerId, a]),
     );
@@ -119,6 +129,7 @@ export class TrainingService {
 
   /** HU-028: category, date, schedule, venue and coach; a schedule must be of the same category. */
   async program(draft: SessionDraft): Promise<TrainingSession> {
+    this.authz.require('entrenamientos.crear');
     this.validate(draft);
     const now = nowDateTime();
     const session = this.db.insert(this.db.trainingSessions, {
@@ -150,6 +161,7 @@ export class TrainingService {
     to: ISODate,
     categoryId: Id | null = null,
   ): Promise<{ created: number; skipped: number }> {
+    this.authz.require('entrenamientos.crear');
     if (!isISODate(from) || !isISODate(to) || to < from)
       throw new Error('Rango de fechas inválido.');
     if (addDays(from, 62) < to) throw new Error('Genera como máximo dos meses a la vez.');
@@ -200,6 +212,7 @@ export class TrainingService {
   }
 
   async setStatus(id: Id, status: TrainingStatus, reason = ''): Promise<void> {
+    this.authz.require('entrenamientos.editar');
     const before = this.db.get(this.db.trainingSessions, id, 'Sesión');
     if (before.status === status) return this.db.respond(undefined);
     if (status === 'REALIZADO' && before.date > today())
@@ -262,12 +275,15 @@ export class TrainingService {
       .filter((pid) => this.db.players.find((p) => p.id === pid)?.status === 'ACTIVO');
   }
 
-  /** Staff see every session; a coach (no staff role) only sessions they lead or of categories they currently coach. */
+  /**
+   * Office users with entrenamientos.consultar see every session; a coach only the sessions they lead or of the
+   * categories they currently coach (on the session date).
+   */
   inScope(s: TrainingSession): boolean {
     const user = this.session.user();
     if (!user) return false;
-    if (user.isStaff) return true;
-    if (!user.coachId) return false;
+    if (user.permissions.includes('entrenamientos.consultar')) return true;
+    if (!user.coachId || !user.permissions.includes('panel_entrenador.consultar')) return false;
     return s.coachId === user.coachId || this.coachesCategory(user.coachId, s.categoryId, s.date);
   }
 

@@ -1,4 +1,5 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService, ForbiddenError } from '../../core/auth/authorization.service';
 import { AuthService } from '../../core/auth/auth.service';
 import { randomToken, hashPassword } from '../../core/auth/password';
 import { SessionStore } from '../../core/auth/session.store';
@@ -35,11 +36,13 @@ export function publicUser({ passwordHash: _, ...user }: UserRow): User {
 @Injectable({ providedIn: 'root' })
 export class UserService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private auth = inject(AuthService);
   private audit = inject(AuditService);
   private session = inject(SessionStore);
 
-  list(filter: { query?: string; active?: boolean } = {}): Promise<UserView[]> {
+  async list(filter: { query?: string; active?: boolean } = {}): Promise<UserView[]> {
+    this.authz.require('usuarios.consultar', 'auditoria.consultar');
     const rows = this.db.users
       .map((u) => this.view(u))
       .filter(
@@ -51,12 +54,15 @@ export class UserService {
     return this.db.respond(rows);
   }
 
-  securityRoles(): Promise<Role[]> {
+  async securityRoles(): Promise<Role[]> {
+    this.authz.require('usuarios.consultar');
     return this.db.respond(this.db.roles.filter((r) => r.kind === 'SEGURIDAD' && r.active));
   }
 
   /** Creates or edits a staff account. New accounts get an e-mail to set their password (no password typed here). */
   async save(draft: StaffDraft): Promise<UserView> {
+    this.authz.require(draft.id ? 'usuarios.editar' : 'usuarios.crear');
+    if (draft.id) this.authz.assertCanManageAccount(draft.id);
     const email = required(draft.email, 'El correo', 150).toLowerCase();
     if (!EMAIL_PATTERN.test(email)) throw new Error('Correo inválido.');
     const firstName = required(draft.firstName, 'El nombre', 100);
@@ -65,6 +71,7 @@ export class UserService {
       (r) => r.id === draft.roleId && r.kind === 'SEGURIDAD' && r.active,
     );
     if (!role) throw new Error('Selecciona un rol de seguridad válido.');
+    this.authz.assertCanGrantRole(role.id);
     if (this.db.users.some((u) => u.email.toLowerCase() === email && u.id !== draft.id))
       throw new Error('Ya existe un usuario con ese correo.');
     const now = nowDateTime();
@@ -94,7 +101,8 @@ export class UserService {
         firstName,
         lastName,
         email,
-        passwordHash: await hashPassword(randomToken()), // unusable until the invitation link is used
+        passwordHash: await hashPassword(randomToken()),
+        roleKind: 'SEGURIDAD', // unusable until the invitation link is used
         active: true,
         createdAt: now,
         updatedAt: now,
@@ -115,6 +123,8 @@ export class UserService {
 
   /** HU-004.3: a deactivated account can't log in; its open sessions are closed. */
   async setActive(id: Id, active: boolean): Promise<void> {
+    this.authz.require(active ? 'usuarios.editar' : 'usuarios.cancelar');
+    this.authz.assertCanManageAccount(id);
     const before = this.db.get(this.db.users, id, 'Usuario');
     if (!active) {
       if (id === this.session.user()?.userId)
@@ -146,10 +156,14 @@ export class UserService {
    * (chk_usuario_nombre_personal) and e-mails the initial-access link. Never sets a password here.
    */
   async profileAccount(email: string): Promise<{ user: UserRow; created: boolean }> {
+    this.authz.require('tutores.editar', 'entrenadores.editar');
     const normalized = required(email, 'El correo', 150).toLowerCase();
     if (!EMAIL_PATTERN.test(normalized)) throw new Error('Correo inválido.');
     const existing = this.db.users.find((u) => u.email.toLowerCase() === normalized);
     if (existing) {
+      // Linking your own login to a profile would grant you that profile's permissions (self-escalation).
+      if (existing.id === this.authz.user().userId)
+        throw new ForbiddenError('No puedes vincular tu propia cuenta a un perfil.');
       if (!existing.active) throw new Error('La cuenta con ese correo está desactivada.');
       return { user: existing, created: false };
     }
@@ -160,6 +174,7 @@ export class UserService {
       lastName: null,
       email: normalized,
       passwordHash: await hashPassword(randomToken()),
+      roleKind: 'SEGURIDAD',
       active: true,
       createdAt: now,
       updatedAt: now,

@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { SessionStore } from '../../core/auth/session.store';
+import { AuthorizationService } from '../../core/auth/authorization.service';
 import { MockDb } from '../../core/data/mock-db';
 import { Category, Id, ISODate, Player, PlayerCategory, fullName } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
@@ -31,11 +31,12 @@ export interface MembershipDraft {
 @Injectable({ providedIn: 'root' })
 export class PlayerCategoryService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
-  private session = inject(SessionStore);
   private categories = inject(CategoryService);
 
-  current(playerId: Id): Promise<(PlayerCategory & { categoryName: string }) | null> {
+  async current(playerId: Id): Promise<(PlayerCategory & { categoryName: string }) | null> {
+    this.authz.require('inscripciones.consultar', 'jugadores.consultar');
     const pc = this.db.playerCategories.find((r) => r.playerId === playerId && !r.endDate);
     return this.db.respond(
       pc
@@ -45,7 +46,8 @@ export class PlayerCategoryService {
   }
 
   /** Age and capacity check for the UI before saving (HU-017.2, HU-021.2). */
-  eligibility(playerId: Id, categoryId: Id, date: ISODate): Promise<Eligibility> {
+  async eligibility(playerId: Id, categoryId: Id, date: ISODate): Promise<Eligibility> {
+    this.authz.require('inscripciones.crear');
     const player = this.db.get(this.db.players, playerId, 'Jugador');
     const category = this.db.get(this.db.categories, categoryId, 'Categoría');
     return this.db.respond(this.check(player, category, date));
@@ -53,6 +55,7 @@ export class PlayerCategoryService {
 
   /** HU-017: active player, no current category, age in range (or authorized exception), capacity respected. */
   async assign(draft: MembershipDraft): Promise<PlayerCategory> {
+    this.authz.require('inscripciones.crear');
     const { player, category, exception } = this.validate(draft);
     if (this.db.playerCategories.some((pc) => pc.playerId === player.id && !pc.endDate))
       throw new Error(
@@ -81,6 +84,7 @@ export class PlayerCategoryService {
    * category are closed too, since a roster only admits players of its category (HU-036.1).
    */
   async change(draft: MembershipDraft & { reason: string }): Promise<PlayerCategory> {
+    this.authz.require('inscripciones.editar');
     const reason = required(draft.reason, 'El motivo del cambio');
     const { player, category, exception } = this.validate(draft);
     const current = this.db.playerCategories.find((pc) => pc.playerId === player.id && !pc.endDate);
@@ -144,7 +148,7 @@ export class PlayerCategoryService {
           ? `La edad (${check.age}) está fuera del rango ${category.minAge}–${category.maxAge}; registra una excepción autorizada.`
           : `La categoría está llena (${check.occupancy}/${check.capacity}); registra una excepción autorizada.`,
       );
-    if (exception && !this.session.user()?.permissions.includes('inscripciones.editar'))
+    if (exception && !this.authz.has('inscripciones.editar'))
       throw new Error('No tienes permiso para autorizar excepciones.');
     return { player, category, exception: !check.ageOk || check.full ? exception : null };
   }

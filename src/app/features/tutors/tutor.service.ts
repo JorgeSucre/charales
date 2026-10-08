@@ -1,4 +1,5 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../../core/auth/authorization.service';
 import { MockDb } from '../../core/data/mock-db';
 import { Id, Tutor, fullName } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
@@ -35,10 +36,12 @@ export type ContactDraft = Pick<Tutor, 'phone' | 'email' | 'address'>;
 @Injectable({ providedIn: 'root' })
 export class TutorService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
   private users = inject(UserService);
 
-  list(query = ''): Promise<TutorView[]> {
+  async list(query = ''): Promise<TutorView[]> {
+    this.authz.require('tutores.consultar', 'avisos.crear', 'avisos.editar');
     return this.db.respond(
       this.db.tutors
         .map((t) => this.view(t))
@@ -47,7 +50,8 @@ export class TutorService {
     );
   }
 
-  get(id: Id): Promise<TutorView> {
+  async get(id: Id): Promise<TutorView> {
+    this.authz.require('tutores.consultar');
     return this.db.respond(this.view(this.db.get(this.db.tutors, id, 'Tutor')));
   }
 
@@ -57,6 +61,7 @@ export class TutorService {
    * (fk_pago_tutor_jugador); phone/e-mail validated when given.
    */
   async save(draft: TutorDraft & { id?: Id }): Promise<TutorView> {
+    this.authz.require(draft.id ? 'tutores.editar' : 'tutores.crear');
     const data = {
       firstName: required(draft.firstName, 'El nombre', 100),
       lastName1: required(draft.lastName1, 'El apellido paterno', 100),
@@ -154,6 +159,7 @@ export class TutorService {
    * the account is reused if the e-mail already logs in (e.g. a coach), otherwise created and invited by e-mail.
    */
   async linkAccount(tutorId: Id, email: string): Promise<{ email: string; created: boolean }> {
+    this.authz.require('tutores.editar');
     const tutor = this.db.get(this.db.tutors, tutorId, 'Tutor');
     if (tutor.userId) throw new Error('El tutor ya tiene una cuenta vinculada.');
     const { user, created } = await this.users.profileAccount(email);
@@ -173,6 +179,7 @@ export class TutorService {
   }
 
   async unlinkAccount(tutorId: Id): Promise<void> {
+    this.authz.require('tutores.editar');
     const tutor = this.db.get(this.db.tutors, tutorId, 'Tutor');
     if (!tutor.userId) return;
     this.db.update(this.db.tutors, tutorId, { userId: null, updatedAt: nowDateTime() });
@@ -190,6 +197,8 @@ export class TutorService {
 
   /** HU-064: contact fields only (never identity or children). Called by the portal for the logged-in tutor. */
   async updateContact(tutorId: Id, draft: ContactDraft): Promise<Tutor> {
+    if (this.authz.user().tutorId !== tutorId || !this.authz.has('portal.editar'))
+      this.authz.require('tutores.editar');
     const before = this.db.get(this.db.tutors, tutorId, 'Tutor');
     const data = {
       phone: optionalPhone(draft.phone),

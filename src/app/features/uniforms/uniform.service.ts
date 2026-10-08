@@ -1,4 +1,5 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../../core/auth/authorization.service';
 import { MockDb } from '../../core/data/mock-db';
 import {
   Cents,
@@ -13,7 +14,7 @@ import {
 } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
 import { isISODate, nowDateTime, today } from '../../shared/dates';
-import { assertCents } from '../../shared/money';
+import { assertCents, multiplyCents, sumCents } from '../../shared/money';
 import { optional, required } from '../../shared/validate';
 import { BillingService } from '../billing/billing.service';
 
@@ -51,18 +52,21 @@ export const ORDER_STATUS_LABELS: Record<UniformOrderStatus, string> = {
 @Injectable({ providedIn: 'root' })
 export class UniformService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
   private billing = inject(BillingService);
 
   // ── HU-052 catalog ────────────────────────────────────────────────────
 
-  products(): Promise<UniformProduct[]> {
+  async products(): Promise<UniformProduct[]> {
+    this.authz.require('uniformes.consultar');
     return this.db.respond(
       [...this.db.uniformProducts].sort((a, b) => a.name.localeCompare(b.name)),
     );
   }
 
-  variants(onlyActive = false): Promise<VariantView[]> {
+  async variants(onlyActive = false): Promise<VariantView[]> {
+    this.authz.require('uniformes.consultar');
     return this.db.respond(
       this.db.uniformVariants
         .filter(
@@ -84,6 +88,7 @@ export class UniformService {
     name: string;
     description: string | null;
   }): Promise<UniformProduct> {
+    this.authz.require(draft.id ? 'uniformes.editar' : 'uniformes.crear');
     const name = required(draft.name, 'El nombre', 150);
     if (
       this.db.uniformProducts.some(
@@ -110,6 +115,7 @@ export class UniformService {
   }
 
   async setProductActive(id: Id, active: boolean): Promise<void> {
+    this.authz.require('uniformes.editar');
     this.db.update(this.db.uniformProducts, id, { active });
     this.audit.log(
       'EDITAR',
@@ -128,6 +134,7 @@ export class UniformService {
     size: string;
     priceCents: Cents;
   }): Promise<UniformVariant> {
+    this.authz.require(draft.id ? 'uniformes.editar' : 'uniformes.crear');
     this.db.get(this.db.uniformProducts, draft.productId, 'Producto');
     const size = required(draft.size, 'La talla', 30).toUpperCase();
     assertCents(draft.priceCents);
@@ -172,6 +179,7 @@ export class UniformService {
   }
 
   async setVariantActive(id: Id, active: boolean): Promise<void> {
+    this.authz.require('uniformes.editar');
     this.db.update(this.db.uniformVariants, id, { active });
     this.audit.log(
       'EDITAR',
@@ -194,6 +202,7 @@ export class UniformService {
     items: { variantId: Id; quantity: number }[],
     conceptId: Id,
   ): Promise<UniformOrder> {
+    this.authz.require('uniformes.crear');
     const player = this.db.get(this.db.players, playerId, 'Jugador');
     if (player.status !== 'ACTIVO')
       throw new Error('Sólo jugadores activos pueden pedir uniforme.');
@@ -205,7 +214,7 @@ export class UniformService {
         throw new Error('Cantidad inválida.');
       return { variantId, quantity, unitPriceCents: variant.priceCents };
     });
-    const total = lines.reduce((sum, l) => sum + l.quantity * l.unitPriceCents, 0);
+    const total = sumCents(lines.map((l) => multiplyCents(l.unitPriceCents, l.quantity)));
     const order = this.db.transaction(() => {
       const now = nowDateTime();
       const created = this.db.insert(this.db.uniformOrders, {
@@ -248,9 +257,10 @@ export class UniformService {
     return this.db.respond(order);
   }
 
-  orders(
+  async orders(
     filter: { playerIds?: Id[]; status?: UniformOrderStatus | '' } = {},
   ): Promise<OrderView[]> {
+    this.authz.require('uniformes.consultar');
     return this.db.respond(this.views(filter));
   }
 
@@ -281,7 +291,7 @@ export class UniformService {
           ...o,
           playerName: fullName(this.db.get(this.db.players, o.playerId, 'Jugador')),
           lines,
-          totalCents: lines.reduce((s, l) => s + l.quantity * l.unitPriceCents, 0),
+          totalCents: sumCents(lines.map((l) => multiplyCents(l.unitPriceCents, l.quantity))),
           charge: o.chargeId === null ? null : (balances.get(o.chargeId) ?? null),
         };
       });
@@ -289,6 +299,7 @@ export class UniformService {
 
   /** HU-055: only non-cancelled, not yet delivered orders; records date and who received it. */
   async deliver(orderId: Id, receivedBy: string, deliveredOn: ISODate = today()): Promise<void> {
+    this.authz.require('uniformes.editar');
     const order = this.db.get(this.db.uniformOrders, orderId, 'Pedido');
     if (order.status === 'CANCELADO') throw new Error('El pedido está cancelado.');
     if (order.status === 'ENTREGADO') throw new Error('El pedido ya fue entregado.');
@@ -315,6 +326,7 @@ export class UniformService {
 
   /** HU-054.3: cancelling keeps the order and cancels its charge; refused if payments were applied (cancel them first). */
   async cancelOrder(orderId: Id, reason: string): Promise<void> {
+    this.authz.require('uniformes.editar');
     const order = this.db.get(this.db.uniformOrders, orderId, 'Pedido');
     if (order.status === 'ENTREGADO') throw new Error('Un pedido entregado no se cancela.');
     if (order.status === 'CANCELADO') throw new Error('El pedido ya está cancelado.');

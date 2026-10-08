@@ -1,4 +1,5 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../../core/auth/authorization.service';
 import { MockDb } from '../../core/data/mock-db';
 import { AttendanceStatus, Id, ISODate, fullName } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
@@ -55,6 +56,7 @@ export function summarize(statuses: AttendanceStatus[]): AttendanceSummary {
 @Injectable({ providedIn: 'root' })
 export class AttendanceService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
   private trainings = inject(TrainingService);
 
@@ -133,9 +135,10 @@ export class AttendanceService {
   }
 
   /** HU-032: by player, filtered by dates/category/player; % present and distinguishing justified absences. */
-  report(
+  async report(
     filter: { from?: ISODate; to?: ISODate; categoryId?: Id | null; playerId?: Id | null } = {},
   ): Promise<AttendanceReportRow[]> {
+    this.authz.require('asistencias.consultar');
     const sessions = new Map(
       this.db.trainingSessions
         .filter(
@@ -167,7 +170,7 @@ export class AttendanceService {
     );
   }
 
-  /** HU-033 data for one player (the portal checks the tutor ↔ player relation before calling). */
+  /** HU-033: one player's attendance; office permission or the player's tutor. */
   history(
     playerId: Id,
     from?: ISODate,
@@ -176,6 +179,7 @@ export class AttendanceService {
     rows: { date: ISODate; categoryName: string; status: AttendanceStatus; notes: string | null }[];
     summary: AttendanceSummary;
   } {
+    this.authz.assertPlayer(playerId, 'asistencias.consultar', { tutor: true });
     const rows = this.db.attendance
       .filter((a) => a.playerId === playerId)
       .map((a) => ({ a, s: this.db.get(this.db.trainingSessions, a.sessionId, 'Sesión') }))

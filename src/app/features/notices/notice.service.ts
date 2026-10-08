@@ -1,10 +1,10 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../../core/auth/authorization.service';
 import { MockDb } from '../../core/data/mock-db';
 import { DateTime, Id, Notice, NoticeAudience, NoticeRecipient, fullName } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
-import { nowDateTime } from '../../shared/dates';
+import { nowDateTime, isCurrentAssignment } from '../../shared/dates';
 import { required } from '../../shared/validate';
-import { isCurrentAssignment } from '../coaches/coach.service';
 
 export interface NoticeDraft {
   title: string;
@@ -34,10 +34,12 @@ export function isCurrentNotice(n: Notice, now: DateTime): boolean {
 @Injectable({ providedIn: 'root' })
 export class NoticeService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
 
   /** Office list: every notice, newest first (HU-057.4). */
-  list(): Promise<NoticeView[]> {
+  async list(): Promise<NoticeView[]> {
+    this.authz.require('avisos.consultar');
     const now = nowDateTime();
     return this.db.respond(
       [...this.db.notices]
@@ -47,6 +49,7 @@ export class NoticeService {
   }
 
   async save(draft: NoticeDraft & { id?: Id }): Promise<Notice> {
+    this.authz.require(draft.id ? 'avisos.editar' : 'avisos.crear');
     const title = required(draft.title, 'El título', 200);
     const message = required(draft.message, 'El mensaje', 10000);
     const startsAt = draft.startsAt || null;
@@ -100,6 +103,7 @@ export class NoticeService {
 
   /** HU-057.3: publish / unpublish without deleting. */
   async setPublished(id: Id, published: boolean): Promise<void> {
+    this.authz.require('avisos.editar');
     this.db.get(this.db.notices, id, 'Aviso');
     this.db.update(this.db.notices, id, { published, updatedAt: nowDateTime() });
     this.audit.log('EDITAR', 'avisos', 'avisos', id, published ? 'Publicado' : 'Despublicado');
@@ -108,6 +112,7 @@ export class NoticeService {
 
   /** HU-059: current notices for a tutor — general + categories of their children + addressed to them. */
   forTutor(tutorId: Id): NoticeView[] {
+    if (this.authz.user().tutorId !== tutorId) this.authz.require('avisos.consultar');
     const children = this.db.tutorPlayers
       .filter((tp) => tp.tutorId === tutorId)
       .map((tp) => tp.playerId);
@@ -124,6 +129,7 @@ export class NoticeService {
 
   /** HU-060: current notices for a coach — general + categories currently assigned + addressed to them. */
   forCoach(coachId: Id): NoticeView[] {
+    if (this.authz.user().coachId !== coachId) this.authz.require('avisos.consultar');
     const categories = this.db.coachCategories
       .filter((a) => a.coachId === coachId && isCurrentAssignment(a))
       .map((a) => a.categoryId);

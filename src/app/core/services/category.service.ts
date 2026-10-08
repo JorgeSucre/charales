@@ -1,4 +1,5 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../auth/authorization.service';
 import { MockDb } from '../data/mock-db';
 import { Category, Id, ISODate, fullName } from '../models';
 import { AuditService } from './audit.service';
@@ -33,9 +34,11 @@ export interface CategoryMember {
 @Injectable({ providedIn: 'root' })
 export class CategoryService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
 
-  list(filter: { seasonId?: Id | null; onlyActive?: boolean } = {}): Promise<CategoryView[]> {
+  async list(filter: { seasonId?: Id | null; onlyActive?: boolean } = {}): Promise<CategoryView[]> {
+    this.authz.requireOffice();
     return this.db.respond(
       this.db.categories
         .filter(
@@ -50,12 +53,14 @@ export class CategoryService {
     );
   }
 
-  get(id: Id): Promise<CategoryView> {
+  async get(id: Id): Promise<CategoryView> {
+    this.authz.assertCategory(id, 'categorias.consultar');
     return this.db.respond(this.view(this.db.get(this.db.categories, id, 'Categoría')));
   }
 
   /** HU-015 + HU-021: unique name per season, valid non-inverted age range, optional capacity. */
   async save(draft: CategoryDraft & { id?: Id }): Promise<Category> {
+    this.authz.require(draft.id ? 'categorias.editar' : 'categorias.crear');
     const name = required(draft.name, 'El nombre', 100);
     const ages = [draft.minAge, draft.maxAge];
     if (ages.some((a) => !Number.isInteger(a) || a < 0 || a > 99))
@@ -116,6 +121,7 @@ export class CategoryService {
 
   /** Inactive categories keep their history but accept no new players (HU-015.3). */
   async setActive(id: Id, active: boolean): Promise<void> {
+    this.authz.require('categorias.editar');
     const before = this.db.get(this.db.categories, id, 'Categoría');
     this.db.update(this.db.categories, id, { active, updatedAt: nowDateTime() });
     this.audit.log(
@@ -131,19 +137,21 @@ export class CategoryService {
   }
 
   /** HU-018: active players currently in the category, with age, primary tutor and contact. */
-  members(categoryId: Id, query = ''): Promise<CategoryMember[]> {
+  async members(categoryId: Id, query = ''): Promise<CategoryMember[]> {
+    this.authz.assertCategory(categoryId, 'categorias.consultar');
     const on = today();
+    const primary = this.db.primaryTutors();
+    const players = new Map(this.db.players.map((p) => [p.id, p]));
     return this.db.respond(
       this.db.playerCategories
         .filter((pc) => pc.categoryId === categoryId && !pc.endDate)
-        .map((pc) => ({ pc, player: this.db.get(this.db.players, pc.playerId, 'Jugador') }))
+        .map((pc) => ({ pc, player: players.get(pc.playerId)! }))
         .filter(
           ({ player }) =>
             player.status === 'ACTIVO' && (!query || matches(fullName(player), query)),
         )
         .map(({ pc, player }) => {
-          const link = this.db.tutorPlayers.find((tp) => tp.playerId === player.id && tp.isPrimary);
-          const tutor = this.db.tutors.find((t) => t.id === link?.tutorId);
+          const tutor = primary.get(player.id);
           return {
             playerId: player.id,
             name: fullName(player),
@@ -160,9 +168,10 @@ export class CategoryService {
   }
 
   /** Coaches currently assigned (entrenador_categoria vigente). */
-  coaches(
+  async coaches(
     categoryId: Id,
   ): Promise<{ coachId: Id; name: string; responsibility: string | null; since: ISODate }[]> {
+    this.authz.require('categorias.consultar');
     return this.db.respond(
       this.db.coachCategories
         .filter((cc) => cc.categoryId === categoryId && cc.active && !cc.endDate)

@@ -9,7 +9,7 @@ import {
   Payment,
   PaymentApplication,
 } from '../../core/models';
-import { assertCents, sumCents } from '../../shared/money';
+import { addCents, assertCents, sumCents } from '../../shared/money';
 
 /**
  * Pure billing rules (no Angular, no I/O). All amounts are integer cents. The API must enforce the same rules
@@ -28,8 +28,23 @@ export function effectiveApplications(
 }
 
 /** Pass effectiveApplications(...) as `apps`. */
+/**
+ * Paid per charge, indexed once per applications array (HU-075: avoids charges × applications scans).
+ * The arrays passed here (effectiveApplications results, test literals) are never mutated after creation;
+ * the length check rebuilds the index if one ever is.
+ */
+const paidIndex = new WeakMap<PaymentApplication[], { length: number; byCharge: Map<Id, Cents> }>();
+
 export function paidOn(chargeId: Id, apps: PaymentApplication[]): Cents {
-  return sumCents(apps.filter((a) => a.chargeId === chargeId).map((a) => a.amountCents));
+  let index = paidIndex.get(apps);
+  if (!index || index.length !== apps.length) {
+    const byCharge = new Map<Id, Cents>();
+    for (const a of apps)
+      byCharge.set(a.chargeId, addCents(byCharge.get(a.chargeId) ?? 0, a.amountCents));
+    index = { length: apps.length, byCharge };
+    paidIndex.set(apps, index);
+  }
+  return index.byCharge.get(chargeId) ?? 0;
 }
 
 export function discountOn(chargeId: Id, discounts: Discount[]): Cents {
@@ -168,8 +183,8 @@ export function debtsByPlayer(
       openCharges: 0,
       oldestDueDate: null,
     };
-    row.balanceCents += balance;
-    if (isOverdue(charge, balance, today)) row.overdueCents += balance;
+    row.balanceCents = addCents(row.balanceCents, balance);
+    if (isOverdue(charge, balance, today)) row.overdueCents = addCents(row.overdueCents, balance);
     row.openCharges++;
     if (charge.dueDate && (!row.oldestDueDate || charge.dueDate < row.oldestDueDate))
       row.oldestDueDate = charge.dueDate;
@@ -211,7 +226,7 @@ export function incomeByMonthAndConcept(
     const month = date.slice(0, 7);
     const key = `${month}|${conceptId}`;
     const row = rows.get(key) ?? { month, conceptId, totalCents: 0 };
-    row.totalCents += app.amountCents;
+    row.totalCents = addCents(row.totalCents, app.amountCents);
     rows.set(key, row);
   }
   return [...rows.values()].sort(

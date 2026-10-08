@@ -131,6 +131,7 @@ export class MockDb {
       lastName: 'Administradora',
       email: 'admin@example.com',
       passwordHash: DEMO_HASH,
+      roleKind: 'SEGURIDAD',
       active: true,
       createdAt: T0,
       updatedAt: T0,
@@ -142,6 +143,7 @@ export class MockDb {
       lastName: 'Secretaria',
       email: 'secretaria@example.com',
       passwordHash: DEMO_HASH,
+      roleKind: 'SEGURIDAD',
       active: true,
       createdAt: T0,
       updatedAt: T0,
@@ -153,6 +155,7 @@ export class MockDb {
       lastName: null,
       email: 'coach@example.com',
       passwordHash: DEMO_HASH,
+      roleKind: 'SEGURIDAD',
       active: true,
       createdAt: T0,
       updatedAt: T0,
@@ -164,6 +167,7 @@ export class MockDb {
       lastName: null,
       email: 'tutor@example.com',
       passwordHash: DEMO_HASH,
+      roleKind: 'SEGURIDAD',
       active: true,
       createdAt: T0,
       updatedAt: T0,
@@ -175,6 +179,7 @@ export class MockDb {
       lastName: 'Inactivo',
       email: 'baja@example.com',
       passwordHash: DEMO_HASH,
+      roleKind: 'SEGURIDAD',
       active: false,
       createdAt: T0,
       updatedAt: T0,
@@ -187,6 +192,7 @@ export class MockDb {
       lastName: null,
       email: 'marta@example.com',
       passwordHash: DEMO_HASH,
+      roleKind: 'SEGURIDAD',
       active: true,
       createdAt: T0,
       updatedAt: T0,
@@ -1287,6 +1293,16 @@ export class MockDb {
       for (const [k, v] of snapshot) (this as Record<string, unknown>)[k] = v;
       throw e;
     }
+  }
+
+  /** Primary contact of every player (tutor_jugador.es_contacto_principal JOIN tutores), indexed by player id. */
+  primaryTutors(): Map<Id, Tutor> {
+    const tutors = new Map(this.tutors.map((t) => [t.id, t]));
+    return new Map(
+      this.tutorPlayers
+        .filter((tp) => tp.isPrimary)
+        .map((tp) => [tp.playerId, tutors.get(tp.tutorId)!]),
+    );
   }
 
   /** Simulates network latency and returns a copy, so callers can't mutate the "server" state. */

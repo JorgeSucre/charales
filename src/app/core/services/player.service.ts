@@ -1,4 +1,6 @@
+import { multiplyCents, sumCents } from '../../shared/money';
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../auth/authorization.service';
 import { MockDb } from '../data/mock-db';
 import {
   Cents,
@@ -135,10 +137,12 @@ export const SEX_LABELS: Record<Sex, string> = {
 @Injectable({ providedIn: 'root' })
 export class PlayerService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
 
   /** HU-014: partial name search + combinable filters + pagination. */
-  search(filter: PlayerSearch = {}): Promise<Page<PlayerListItem>> {
+  async search(filter: PlayerSearch = {}): Promise<Page<PlayerListItem>> {
+    this.authz.require('jugadores.consultar');
     const on = today();
     const current = new Map(
       this.db.playerCategories
@@ -171,7 +175,8 @@ export class PlayerService {
   }
 
   /** For selects. `onlyActive` hides players in BAJA (they can't join new categories, competitions, etc.). */
-  options(onlyActive = false): Promise<PlayerOption[]> {
+  async options(onlyActive = false): Promise<PlayerOption[]> {
+    this.authz.requireOffice();
     return this.db.respond(
       this.db.players
         .filter((p) => !onlyActive || p.status === 'ACTIVO')
@@ -180,12 +185,14 @@ export class PlayerService {
     );
   }
 
-  get(id: Id): Promise<Player> {
+  async get(id: Id): Promise<Player> {
+    this.authz.require('jugadores.consultar');
     return this.db.respond(this.db.get(this.db.players, id, 'Jugador'));
   }
 
   /** HU-008: validates, rejects evident duplicates (same name + birth date) and generates the identifier. */
   async create(draft: PlayerDraft, status: PlayerStatus = 'ACTIVO'): Promise<Player> {
+    this.authz.require('jugadores.crear');
     const data = this.validate(draft);
     const duplicate = this.db.players.find(
       (p) => p.birthDate === data.birthDate && sameName(fullName(p), fullName(data)),
@@ -227,6 +234,7 @@ export class PlayerService {
 
   /** HU-009: keeps id/identifier/status; updates actualizado_en; audits before/after. */
   async update(id: Id, draft: PlayerDraft): Promise<Player> {
+    this.authz.require('jugadores.editar');
     const before = this.db.get(this.db.players, id, 'Jugador');
     const data = this.validate(draft);
     const duplicate = this.db.players.find(
@@ -249,6 +257,7 @@ export class PlayerService {
 
   /** HU-010: status change with history; nothing is deleted (payments, matches, categories stay). */
   async changeStatus(id: Id, status: PlayerStatus, reason: string): Promise<Player> {
+    this.authz.require('jugadores.editar');
     const before = this.db.get(this.db.players, id, 'Jugador');
     if (before.status === status) throw new Error('El jugador ya tiene ese estatus.');
     const motive = required(reason, 'El motivo');
@@ -278,7 +287,8 @@ export class PlayerService {
   }
 
   /** HU-013: integrated record (data, categories, payments, uniforms, competitions, attendance). */
-  record(id: Id): Promise<PlayerRecord> {
+  async record(id: Id): Promise<PlayerRecord> {
+    this.authz.assertPlayer(id, 'jugadores.consultar');
     const { db } = this;
     const player = db.get(db.players, id, 'Jugador');
     const on = today();
@@ -365,10 +375,10 @@ export class PlayerService {
           method: p.method,
           status: p.status,
         })),
-      balanceCents: chargeRows.reduce((s, c) => s + c.balanceCents, 0),
-      overdueCents: chargeRows
-        .filter((c) => c.status === 'VENCIDO')
-        .reduce((s, c) => s + c.balanceCents, 0),
+      balanceCents: sumCents(chargeRows.map((c) => c.balanceCents)),
+      overdueCents: sumCents(
+        chargeRows.filter((c) => c.status === 'VENCIDO').map((c) => c.balanceCents),
+      ),
       uniforms: db.uniformOrders
         .filter((o) => o.playerId === id)
         .map((o) => {
@@ -382,7 +392,7 @@ export class PlayerService {
               const p = db.uniformProducts.find((x) => x.id === v?.productId);
               return `${l.quantity} × ${p?.name ?? '—'} ${v?.size ?? ''}`.trim();
             }),
-            totalCents: lines.reduce((s, l) => s + l.quantity * l.unitPriceCents, 0),
+            totalCents: sumCents(lines.map((l) => multiplyCents(l.unitPriceCents, l.quantity))),
           };
         }),
       competitions: db.rosters

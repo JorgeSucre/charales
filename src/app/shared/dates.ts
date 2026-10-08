@@ -73,3 +73,42 @@ export const WEEKDAYS = [
 export function overlaps(a: { start: Time; end: Time }, b: { start: Time; end: Time }): boolean {
   return a.start < b.end && b.start < a.end;
 }
+
+/** A dated assignment (entrenador_categoria, entrenador_competencia_categoria) is current: active and not ended. */
+export function isCurrentAssignment(
+  r: { active: boolean; endDate: ISODate | null },
+  on: ISODate = today(),
+): boolean {
+  return r.active && (!r.endDate || r.endDate >= on);
+}
+
+/** 'YYYY-MM-DDTHH:MM[:SS]' (e.g. from <input type="datetime-local">) → DATETIME 'YYYY-MM-DDTHH:MM:SS'. Throws if invalid. */
+export function normalizeDateTime(value: string): DateTime {
+  const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(:\d{2})?$/.exec(value.trim());
+  if (!m || !isISODate(m[1]) || !isTime(m[2])) throw new Error('Fecha y hora inválidas.');
+  return `${m[1]}T${m[2]}${m[3] ?? ':00'}`;
+}
+
+/**
+ * Month calendar grid (HU-068): full weeks Monday→Sunday covering the month 'YYYY-MM'.
+ * Days outside the month are included so every row has 7 cells.
+ */
+export function monthGrid(month: string): ISODate[][] {
+  const first = `${month}-01`;
+  const [y, m] = month.split('-').map(Number);
+  const last = today(new Date(y, m, 0));
+  let day = addDays(first, 1 - weekday(first));
+  const weeks: ISODate[][] = [];
+  while (day <= last) {
+    const week: ISODate[] = [];
+    for (let i = 0; i < 7; i++, day = addDays(day, 1)) week.push(day);
+    weeks.push(week);
+  }
+  return weeks;
+}
+
+/** 'YYYY-MM' shifted by n months. */
+export function addMonths(month: string, n: number): string {
+  const [y, m] = month.split('-').map(Number);
+  return today(new Date(y, m - 1 + n, 1)).slice(0, 7);
+}

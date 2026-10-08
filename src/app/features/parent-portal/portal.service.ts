@@ -1,4 +1,5 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService, ForbiddenError } from '../../core/auth/authorization.service';
 import { SessionStore } from '../../core/auth/session.store';
 import { MockDb } from '../../core/data/mock-db';
 import {
@@ -11,9 +12,8 @@ import {
   Tutor,
   fullName,
 } from '../../core/models';
-import { ageOn, today } from '../../shared/dates';
+import { ageOn, today, isCurrentAssignment } from '../../shared/dates';
 import { BillingService, StatementView } from '../billing/billing.service';
-import { isCurrentAssignment } from '../coaches/coach.service';
 import { MatchService, MatchView } from '../matches/match.service';
 import { NoticeService, NoticeView } from '../notices/notice.service';
 import { ContactDraft, TutorService } from '../tutors/tutor.service';
@@ -68,17 +68,19 @@ export interface ChildDetail {
 @Injectable({ providedIn: 'root' })
 export class PortalService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private session = inject(SessionStore);
   private billing = inject(BillingService);
   private matches = inject(MatchService);
   private notices = inject(NoticeService);
   private tutors = inject(TutorService);
-  private attendance = inject(AttendanceService);
+  private attendanceService = inject(AttendanceService);
   private schedules = inject(ScheduleService);
   private uniforms = inject(UniformService);
 
   /** HU-061: one card per child with category, next match and balance. */
   async overview(): Promise<ChildCard[]> {
+    this.authz.require('portal.consultar');
     const on = today();
     const statements = await Promise.all(this.childIds().map((id) => this.billing.statement(id)));
     return statements.map((st) => {
@@ -101,6 +103,7 @@ export class PortalService {
 
   /** Everything about one child; rejects players that aren't the tutor's. */
   async child(playerId: Id): Promise<ChildDetail> {
+    this.authz.require('portal.consultar');
     this.assertChild(playerId);
     const on = today();
     const player = this.db.get(this.db.players, playerId, 'Jugador');
@@ -147,26 +150,39 @@ export class PortalService {
       upcoming: matches.filter((m) => m.date >= on && m.status !== 'JUGADO'),
       results: matches.filter((m) => m.status === 'JUGADO').reverse(),
       statement, // HU-047
-      attendance: this.attendance.history(playerId), // HU-033
+      attendance: this.attendanceService.history(playerId), // HU-033
       uniforms: this.uniforms.views({ playerIds: [playerId] }), // HU-056
     });
   }
 
   /** HU-059 */
-  noticeList(): Promise<NoticeView[]> {
+  /** HU-033: one child's attendance in a period (inclusive DATEs), with the % for that period. */
+  async attendance(playerId: Id, from?: ISODate, to?: ISODate): Promise<ChildDetail['attendance']> {
+    this.authz.require('portal.consultar');
+    this.assertChild(playerId);
+    return this.db.respond(
+      this.attendanceService.history(playerId, from || undefined, to || undefined),
+    );
+  }
+
+  async noticeList(): Promise<NoticeView[]> {
+    this.authz.require('portal.consultar');
     return this.db.respond(this.notices.forTutor(this.tutorId()));
   }
 
   /** HU-064 */
-  profile(): Promise<Tutor> {
+  async profile(): Promise<Tutor> {
+    this.authz.require('portal.consultar');
     return this.db.respond(this.db.get(this.db.tutors, this.tutorId(), 'Tutor'));
   }
 
-  updateProfile(draft: ContactDraft): Promise<Tutor> {
+  async updateProfile(draft: ContactDraft): Promise<Tutor> {
+    this.authz.require('portal.editar');
     return this.tutors.updateContact(this.tutorId(), draft);
   }
 
-  childOptions(): Promise<{ id: Id; name: string }[]> {
+  async childOptions(): Promise<{ id: Id; name: string }[]> {
+    this.authz.require('portal.consultar');
     return this.db.respond(
       this.childIds().map((id) => ({
         id,
@@ -182,15 +198,13 @@ export class PortalService {
   }
 
   private childIds(): Id[] {
-    const tutorId = this.session.user()?.tutorId;
-    if (!tutorId) return [];
-    return this.db.tutorPlayers.filter((tp) => tp.tutorId === tutorId).map((tp) => tp.playerId);
+    return this.authz.tutorChildren();
   }
 
   /** Authorization by relation, never by the id the client sends (HU-003.2, HU-072). */
   private assertChild(playerId: Id): void {
     if (!this.childIds().includes(playerId))
-      throw new Error('No tienes acceso a la información de este jugador.');
+      throw new ForbiddenError('No tienes acceso a la información de este jugador.');
   }
 
   private currentCategory(playerId: Id) {

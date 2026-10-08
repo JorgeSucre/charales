@@ -81,7 +81,7 @@ export interface Discount {
   createdAt: DateTime;
 }
 
-/** Input of BillingService.registerPayment (HU-045). The server assigns id, folio and paidAt. */
+/** Input of BillingService.registerPayment (HU-045). The server assigns id, folio, recordedBy and createdAt. */
 export interface PaymentDraft {
   playerId: Id;
   tutorId: Id | null;
@@ -89,4 +89,9 @@ export interface PaymentDraft {
   method: PaymentMethod;
   /** Charges to pay, oldest due first. Omitted = all of the player's open charges. */
   chargeIds?: Id[];
+  /**
+   * HU-045.1: date/time the money was received (pagos.fecha_pago). Omitted = now. Never in the future;
+   * creado_en keeps the capture moment, so back-dated payments stay traceable.
+   */
+  paidAt?: DateTime;
 }

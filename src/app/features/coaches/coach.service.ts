@@ -1,8 +1,14 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../../core/auth/authorization.service';
 import { MockDb } from '../../core/data/mock-db';
 import { Coach, CoachCategory, CoachCompetition, Id, ISODate, fullName } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
-import { isISODate, nowDateTime, today } from '../../shared/dates';
+import {
+  isCurrentAssignment as isCurrent,
+  isISODate,
+  nowDateTime,
+  today,
+} from '../../shared/dates';
 import { matches } from '../../shared/page';
 import { optional, optionalEmail, optionalPhone, required, sameName } from '../../shared/validate';
 import { UserService } from '../users/user.service';
@@ -28,10 +34,6 @@ export interface CoachCompetitionView extends CoachCompetition {
   current: boolean;
 }
 
-/** Current = active and not ended (fecha_fin NULL or in the future). */
-const isCurrent = (r: { active: boolean; endDate: ISODate | null }, on = today()) =>
-  r.active && (!r.endDate || r.endDate >= on);
-
 /**
  * Coaches (entrenadores) and their assignments:
  * - HU-022: CRUD, sporting status, optional login account.
@@ -42,10 +44,12 @@ const isCurrent = (r: { active: boolean; endDate: ISODate | null }, on = today()
 @Injectable({ providedIn: 'root' })
 export class CoachService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
   private users = inject(UserService);
 
-  list(filter: { query?: string; onlyActive?: boolean } = {}): Promise<CoachView[]> {
+  async list(filter: { query?: string; onlyActive?: boolean } = {}): Promise<CoachView[]> {
+    this.authz.requireOffice();
     return this.db.respond(
       this.db.coaches
         .filter((c) => !filter.onlyActive || c.active)
@@ -57,6 +61,7 @@ export class CoachService {
 
   /** HU-022: name + contact; evident duplicates (same full name or same e-mail) are rejected. */
   async save(draft: CoachDraft & { id?: Id }): Promise<Coach> {
+    this.authz.require(draft.id ? 'entrenadores.editar' : 'entrenadores.crear');
     const data = {
       firstName: required(draft.firstName, 'El nombre', 100),
       lastName1: required(draft.lastName1, 'El apellido paterno', 100),
@@ -108,6 +113,7 @@ export class CoachService {
 
   /** Sporting status. An inactive coach loses the ENTRENADOR profile at next login but keeps history. */
   async setActive(id: Id, active: boolean): Promise<void> {
+    this.authz.require('entrenadores.editar');
     const before = this.db.get(this.db.coaches, id, 'Entrenador');
     this.db.update(this.db.coaches, id, { active, updatedAt: nowDateTime() });
     this.audit.log(
@@ -124,6 +130,7 @@ export class CoachService {
 
   /** HU-022.3: link a login account (reused if the e-mail already logs in, e.g. a tutor). */
   async linkAccount(coachId: Id, email: string): Promise<{ email: string; created: boolean }> {
+    this.authz.require('entrenadores.editar');
     const coach = this.db.get(this.db.coaches, coachId, 'Entrenador');
     if (coach.userId) throw new Error('El entrenador ya tiene una cuenta vinculada.');
     const { user, created } = await this.users.profileAccount(email);
@@ -143,6 +150,7 @@ export class CoachService {
   }
 
   async unlinkAccount(coachId: Id): Promise<void> {
+    this.authz.require('entrenadores.editar');
     const coach = this.db.get(this.db.coaches, coachId, 'Entrenador');
     if (!coach.userId) return;
     this.db.update(this.db.coaches, coachId, { userId: null, updatedAt: nowDateTime() });
@@ -160,9 +168,10 @@ export class CoachService {
 
   // ── HU-023 coach ↔ category ───────────────────────────────────────────
 
-  categoryAssignments(
+  async categoryAssignments(
     filter: { categoryId?: Id | null; onlyCurrent?: boolean } = {},
   ): Promise<CoachCategoryView[]> {
+    this.authz.require('entrenadores.consultar');
     return this.db.respond(
       this.db.coachCategories
         .filter(
@@ -190,6 +199,7 @@ export class CoachService {
     responsibility: string | null;
     startDate: ISODate;
   }): Promise<CoachCategory> {
+    this.authz.require('entrenadores.editar');
     const coach = this.db.get(this.db.coaches, draft.coachId, 'Entrenador');
     const category = this.db.get(this.db.categories, draft.categoryId, 'Categoría');
     if (!coach.active) throw new Error('El entrenador está inactivo.');
@@ -225,6 +235,7 @@ export class CoachService {
 
   /** Ends an assignment (validity), keeping it as history (chk_ent_cat_activo: inactive ⇒ fecha_fin). */
   async endCategoryAssignment(id: Id, endDate: ISODate = today()): Promise<void> {
+    this.authz.require('entrenadores.editar');
     const row = this.db.get(this.db.coachCategories, id, 'Asignación');
     if (!isISODate(endDate) || endDate < row.startDate)
       throw new Error('La fecha de fin no puede ser anterior al inicio.');
@@ -243,9 +254,10 @@ export class CoachService {
 
   // ── HU-026 coach ↔ participation (competition + category) ────────────
 
-  competitionAssignments(
+  async competitionAssignments(
     filter: { competitionId?: Id | null } = {},
   ): Promise<CoachCompetitionView[]> {
+    this.authz.require('competencias.consultar');
     return this.db.respond(
       this.db.coachCompetitions
         .map((a) => {
@@ -284,6 +296,7 @@ export class CoachService {
     competitionCategoryId: Id;
     startDate: ISODate;
   }): Promise<CoachCompetition> {
+    this.authz.require('competencias.editar');
     const coach = this.db.get(this.db.coaches, draft.coachId, 'Entrenador');
     const cc = this.db.get(
       this.db.competitionCategories,
@@ -347,6 +360,7 @@ export class CoachService {
   }
 
   async endCompetitionAssignment(id: Id, endDate: ISODate = today()): Promise<void> {
+    this.authz.require('competencias.editar');
     const row = this.db.get(this.db.coachCompetitions, id, 'Asignación');
     if (!isISODate(endDate) || endDate < row.startDate)
       throw new Error('La fecha de fin no puede ser anterior al inicio.');
@@ -374,5 +388,3 @@ export class CoachService {
     };
   }
 }
-
-export { isCurrent as isCurrentAssignment };

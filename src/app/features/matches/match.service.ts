@@ -1,4 +1,5 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../../core/auth/authorization.service';
 import { MockDb } from '../../core/data/mock-db';
 import {
   CompetitionType,
@@ -52,9 +53,11 @@ export const MATCH_STATUS_LABELS: Record<MatchStatus, string> = {
 @Injectable({ providedIn: 'root' })
 export class MatchService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
 
-  list(filter: MatchFilter = {}): Promise<MatchView[]> {
+  async list(filter: MatchFilter = {}): Promise<MatchView[]> {
+    this.authz.require('partidos.consultar');
     return this.db.respond(this.views(filter));
   }
 
@@ -81,6 +84,7 @@ export class MatchService {
 
   /** HU-037: competition + registered category, opponent, date, time and venue are validated. */
   async schedule(draft: MatchDraft): Promise<Match> {
+    this.authz.require('partidos.crear');
     this.validate(draft);
     const now = nowDateTime();
     const match = this.db.insert(this.db.matches, {
@@ -110,6 +114,7 @@ export class MatchService {
     id: Id,
     change: { date: ISODate; time: Time; venueId: Id | null; reason: string },
   ): Promise<Match> {
+    this.authz.require('partidos.editar');
     const before = this.db.get(this.db.matches, id, 'Partido');
     if (before.status === 'JUGADO' || before.status === 'CANCELADO')
       throw new Error('Ese partido ya no se puede reprogramar.');
@@ -128,6 +133,7 @@ export class MatchService {
   }
 
   async cancel(id: Id, reason: string): Promise<void> {
+    this.authz.require('partidos.editar');
     const before = this.db.get(this.db.matches, id, 'Partido');
     if (before.status === 'JUGADO')
       throw new Error('Un partido con resultado no se cancela (chk_partido_goles).');
@@ -147,6 +153,7 @@ export class MatchService {
     id: Id,
     result: { goalsFor: number; goalsAgainst: number; notes: string | null },
   ): Promise<Match> {
+    this.authz.require('partidos.editar');
     const before = this.db.get(this.db.matches, id, 'Partido');
     if (before.status === 'CANCELADO') throw new Error('El partido está cancelado.');
     if (before.date > today()) throw new Error('No se registra resultado de un partido futuro.');
@@ -174,7 +181,8 @@ export class MatchService {
 
   // ── opponents ─────────────────────────────────────────────────────────
 
-  opponents(onlyActive = false): Promise<Opponent[]> {
+  async opponents(onlyActive = false): Promise<Opponent[]> {
+    this.authz.require('partidos.consultar');
     return this.db.respond(
       this.db.opponents
         .filter((o) => !onlyActive || o.active)
@@ -185,6 +193,7 @@ export class MatchService {
   async saveOpponent(
     draft: Pick<Opponent, 'name' | 'contact' | 'notes'> & { id?: Id },
   ): Promise<Opponent> {
+    this.authz.require(draft.id ? 'partidos.editar' : 'partidos.crear');
     const data = {
       name: required(draft.name, 'El nombre', 150),
       contact: optional(draft.contact, 'El contacto', 150),
@@ -210,6 +219,7 @@ export class MatchService {
   }
 
   async setOpponentActive(id: Id, active: boolean): Promise<void> {
+    this.authz.require('partidos.editar');
     this.db.update(this.db.opponents, id, { active });
     await this.db.respond(null);
   }

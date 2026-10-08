@@ -76,9 +76,10 @@ export function splitPermission(key: PermissionKey): { module: string; action: P
   return { module, action };
 }
 
-const all = PERMISSION_CATALOG.filter(
-  (p) => !['portal', 'panel_entrenador'].includes(p.split('.')[0]),
-);
+/** Modules granted by a profile (TUTOR / ENTRENADOR), not by office roles. */
+export const PROFILE_MODULES: readonly string[] = ['portal', 'panel_entrenador'];
+
+const all = PERMISSION_CATALOG.filter((p) => !PROFILE_MODULES.includes(p.split('.')[0]));
 
 /**
  * Initial rol_permiso (Matriz Roles of the backlog). Editable afterwards from the permissions screen (HU-006).

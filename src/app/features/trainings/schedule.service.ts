@@ -1,4 +1,5 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../../core/auth/authorization.service';
 import { MockDb } from '../../core/data/mock-db';
 import { Id, TrainingSchedule } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
@@ -18,9 +19,11 @@ export interface ScheduleView extends TrainingSchedule {
 @Injectable({ providedIn: 'root' })
 export class ScheduleService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
 
-  list(filter: { categoryIds?: Id[]; onlyActive?: boolean } = {}): Promise<ScheduleView[]> {
+  async list(filter: { categoryIds?: Id[]; onlyActive?: boolean } = {}): Promise<ScheduleView[]> {
+    this.authz.requireOffice();
     return this.db.respond(this.views(filter));
   }
 
@@ -41,6 +44,7 @@ export class ScheduleService {
   }
 
   async save(draft: ScheduleDraft & { id?: Id }): Promise<TrainingSchedule> {
+    this.authz.require('categorias.editar');
     const category = this.db.get(this.db.categories, draft.categoryId, 'Categoría');
     const venue = this.db.get(this.db.venues, draft.venueId, 'Sede');
     if (!venue.active) throw new Error('La sede está inactiva.');
@@ -83,6 +87,7 @@ export class ScheduleService {
 
   /** HU-016.4: deactivate instead of delete (past sessions may point to it). */
   async setActive(id: Id, active: boolean): Promise<void> {
+    this.authz.require('categorias.editar');
     this.db.get(this.db.schedules, id, 'Horario');
     this.db.update(this.db.schedules, id, { active });
     this.audit.log(

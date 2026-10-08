@@ -1,4 +1,5 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../../core/auth/authorization.service';
 import { MockDb } from '../../core/data/mock-db';
 import { Id, Season } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
@@ -20,9 +21,11 @@ export interface SeasonView extends Season {
 @Injectable({ providedIn: 'root' })
 export class SeasonService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
 
-  list(): Promise<SeasonView[]> {
+  async list(): Promise<SeasonView[]> {
+    this.authz.requireOffice();
     return this.db.respond(
       [...this.db.seasons]
         .sort((a, b) => b.startDate.localeCompare(a.startDate))
@@ -35,12 +38,14 @@ export class SeasonService {
     );
   }
 
-  current(): Promise<Season | null> {
+  async current(): Promise<Season | null> {
+    this.authz.requireOffice();
     return this.db.respond(this.db.seasons.find((s) => s.isCurrent) ?? null);
   }
 
   /** Marking a season current unmarks the previous one in the same transaction (the DB requires that order). */
   async save(draft: SeasonDraft & { id?: Id }): Promise<Season> {
+    this.authz.require(draft.id ? 'temporadas.editar' : 'temporadas.crear');
     const name = required(draft.name, 'El nombre', 100);
     if (!isISODate(draft.startDate) || !isISODate(draft.endDate))
       throw new Error('Fechas inválidas.');

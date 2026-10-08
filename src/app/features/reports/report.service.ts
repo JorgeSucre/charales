@@ -1,14 +1,15 @@
+import { sumCents } from '../../shared/money';
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../../core/auth/authorization.service';
 import { MockDb } from '../../core/data/mock-db';
 import { Cents, Id, ISODate, PlayerStatus, Time, fullName } from '../../core/models';
-import { addDays, ageOn, today } from '../../shared/dates';
+import { addDays, ageOn, today, isCurrentAssignment } from '../../shared/dates';
 import {
   debtsByPlayer,
   effectiveApplications,
   incomeByMonthAndConcept,
 } from '../billing/billing.rules';
 import { BillingService } from '../billing/billing.service';
-import { isCurrentAssignment } from '../coaches/coach.service';
 import { MatchService } from '../matches/match.service';
 
 /** A KPI always says where it comes from (HU-065.2): table(s) and rule. */
@@ -69,14 +70,16 @@ export interface AgendaItem {
 @Injectable({ providedIn: 'root' })
 export class ReportService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private billing = inject(BillingService);
   private matches = inject(MatchService);
 
   /** HU-065: KPIs for a period (default: current month) with their sources and links. */
-  dashboard(
+  async dashboard(
     from: ISODate = `${today().slice(0, 7)}-01`,
     to: ISODate = today(),
   ): Promise<Dashboard> {
+    this.authz.require('reportes.consultar');
     this.billing.syncStatuses();
     const on = today();
     const apps = effectiveApplications(this.db.payments, this.db.paymentApplications);
@@ -109,7 +112,7 @@ export class ReportService {
         },
         {
           label: 'Adeudo vencido',
-          value: debts.reduce((s, d) => s + d.overdueCents, 0),
+          value: sumCents(debts.map((d) => d.overdueCents)),
           money: true,
           source: 'cargos vencidos − descuentos − pagos aplicados',
           link: '/admin/billing/debts',
@@ -122,7 +125,7 @@ export class ReportService {
         },
         {
           label: `Ingresos ${from} a ${to}`,
-          value: income.reduce((s, r) => s + r.totalCents, 0),
+          value: sumCents(income.map((r) => r.totalCents)),
           money: true,
           source: 'pago_aplicacion de pagos APLICADO',
           link: '/admin/reports/income',
@@ -146,9 +149,10 @@ export class ReportService {
   }
 
   /** HU-066: players by current category with primary tutor and contact; filter by category and status. */
-  playersByCategory(
+  async playersByCategory(
     filter: { categoryId?: Id | null; status?: PlayerStatus | '' } = {},
   ): Promise<PlayersByCategoryRow[]> {
+    this.authz.require('reportes.consultar');
     const on = today();
     const current = new Map(
       this.db.playerCategories
@@ -185,7 +189,8 @@ export class ReportService {
   }
 
   /** HU-067: payments received in the range (cancelled excluded), grouped by month and concept. */
-  income(from: ISODate, to: ISODate): Promise<IncomeView[]> {
+  async income(from: ISODate, to: ISODate): Promise<IncomeView[]> {
+    this.authz.require('reportes.consultar');
     const rows = incomeByMonthAndConcept(
       this.db.payments,
       this.db.paymentApplications,
@@ -203,7 +208,8 @@ export class ReportService {
   }
 
   /** HU-068: trainings and matches together, by date; the page filters by type, category and coach. */
-  agenda(from: ISODate, to: ISODate): Promise<AgendaItem[]> {
+  async agenda(from: ISODate, to: ISODate): Promise<AgendaItem[]> {
+    this.authz.require('reportes.consultar');
     const { db } = this;
     const category = (id: Id) => db.categories.find((c) => c.id === id)?.name ?? '—';
     const venue = (id: Id | null) => db.venues.find((v) => v.id === id)?.name ?? '—';

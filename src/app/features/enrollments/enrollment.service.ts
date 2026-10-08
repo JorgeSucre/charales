@@ -1,4 +1,5 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../../core/auth/authorization.service';
 import { MockDb } from '../../core/data/mock-db';
 import {
   Cents,
@@ -47,12 +48,14 @@ export const ENROLLMENT_LABELS: Record<EnrollmentStatus, string> = {
 @Injectable({ providedIn: 'root' })
 export class EnrollmentService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
   private billing = inject(BillingService);
 
-  list(
+  async list(
     filter: { seasonId?: Id | null; status?: EnrollmentStatus | ''; query?: string } = {},
   ): Promise<EnrollmentView[]> {
+    this.authz.require('inscripciones.consultar');
     const balances = this.billing.balancesById();
     return this.db.respond(
       this.db.enrollments
@@ -79,6 +82,7 @@ export class EnrollmentService {
   }
 
   async enroll(draft: EnrollmentDraft): Promise<Enrollment> {
+    this.authz.require('inscripciones.crear');
     const player = this.db.get(this.db.players, draft.playerId, 'Jugador');
     const season = this.db.get(this.db.seasons, draft.seasonId, 'Temporada');
     if (player.status !== 'ACTIVO') throw new Error('Sólo se inscriben jugadores activos.');
@@ -134,6 +138,7 @@ export class EnrollmentService {
    * it is refused (cancel the payment first, HU-049) so the financial trail stays consistent.
    */
   async setStatus(id: Id, status: EnrollmentStatus, reason = ''): Promise<void> {
+    this.authz.require('inscripciones.editar');
     const before = this.db.get(this.db.enrollments, id, 'Inscripción');
     if (before.status === status) return this.db.respond(undefined);
     const allowed: Record<EnrollmentStatus, EnrollmentStatus[]> = {

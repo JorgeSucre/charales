@@ -1,4 +1,5 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../../core/auth/authorization.service';
 import { MockDb } from '../../core/data/mock-db';
 import { Id, Venue } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
@@ -16,9 +17,11 @@ export interface VenueView extends Venue {
 @Injectable({ providedIn: 'root' })
 export class VenueService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
 
-  list(onlyActive = false): Promise<VenueView[]> {
+  async list(onlyActive = false): Promise<VenueView[]> {
+    this.authz.requireOffice();
     return this.db.respond(
       this.db.venues
         .filter((v) => !onlyActive || v.active)
@@ -34,6 +37,7 @@ export class VenueService {
   }
 
   async save(draft: VenueDraft & { id?: Id }): Promise<Venue> {
+    this.authz.require(draft.id ? 'sedes.editar' : 'sedes.crear');
     const data = {
       name: required(draft.name, 'El nombre', 100),
       location: optional(draft.location, 'La ubicación'),
@@ -66,6 +70,7 @@ export class VenueService {
   }
 
   async setActive(id: Id, active: boolean): Promise<void> {
+    this.authz.require('sedes.editar');
     const before = this.db.get(this.db.venues, id, 'Sede');
     this.db.update(this.db.venues, id, { active });
     this.audit.log(

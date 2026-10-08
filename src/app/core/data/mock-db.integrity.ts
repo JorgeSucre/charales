@@ -1,3 +1,4 @@
+import { addCents, multiplyCents } from '../../shared/money';
 import { MockDb } from './mock-db';
 import { chargeBalance, effectiveApplications } from '../../features/billing/billing.rules';
 
@@ -250,7 +251,7 @@ export function integrityViolations(db: MockDb): string[] {
     );
     const applied = db.paymentApplications
       .filter((a) => a.paymentId === p.id)
-      .reduce((s, a) => s + a.amountCents, 0);
+      .reduce((s, a) => addCents(s, a.amountCents), 0);
     check(`pago aplicado por su importe (${p.folio})`, applied === p.amountCents);
   }
   for (const a of db.paymentApplications) {
@@ -306,7 +307,7 @@ export function integrityViolations(db: MockDb): string[] {
     );
     const total = db.uniformOrderLines
       .filter((l) => l.orderId === o.id)
-      .reduce((s, l) => s + l.quantity * l.unitPriceCents, 0);
+      .reduce((s, l) => addCents(s, multiplyCents(l.unitPriceCents, l.quantity)), 0);
     const charge = db.charges.find((c) => c.id === o.chargeId);
     check(`importe del pedido = cargo (${o.id})`, !charge || charge.originalAmountCents === total);
   }
@@ -327,5 +328,53 @@ export function integrityViolations(db: MockDb): string[] {
     );
   for (const n of db.notices)
     check(`chk_aviso_vigencia (${n.id})`, !n.startsAt || !n.endsAt || n.endsAt >= n.startsAt);
+  // ── Constraints added after the 2026-10-07 audit (were missing from this checker) ──
+  const rows = <T>(xs: T[]) => xs.map((x) => ({ ...x, id: 0 }));
+  fk('rol_permiso', rows(db.rolePermissions), 'roleId', db.roles);
+  fk('rol_permiso', rows(db.rolePermissions), 'permissionId', db.permissions);
+  unique('roles.nombre', db.roles, (r: { name: string }) => r.name);
+  unique('uq_permiso_modulo_accion', db.permissions, (p: { module: string; action: string }) => [
+    p.module,
+    p.action,
+  ]);
+  for (const u of db.users)
+    check(`chk_usuario_rol_seguridad (${u.id})`, u.roleKind === 'SEGURIDAD');
+  unique('sesiones.token_hash', db.sessions, (x: { tokenHash: string }) => x.tokenHash || null);
+  unique(
+    'tokens_recuperacion.token_hash',
+    db.resetTokens,
+    (x: { tokenHash: string }) => x.tokenHash,
+  );
+  for (const x of db.sessions) check(`chk_sesion_expira (${x.id})`, x.expiresAt > x.startedAt);
+  for (const x of db.resetTokens) check(`chk_token_expira (${x.id})`, x.expiresAt > x.createdAt);
+  fk('historial_estatus', db.statusHistory, 'changedBy', db.users, true);
+  fk('historial_categoria', db.categoryHistory, 'playerId', db.players);
+  fk('historial_categoria', db.categoryHistory, 'changedBy', db.users, true);
+  fk('entrenador_competencia_categoria', db.coachCompetitions, 'coachId', db.coaches);
+  fk('asistencias', db.attendance, 'recordedBy', db.users, true);
+  fk('pagos', db.payments, 'recordedBy', db.users, true);
+  fk('descuentos', db.discounts, 'authorizedBy', db.users, true);
+  fk('aviso_destinatario', db.noticeRecipients, 'categoryId', db.categories, true);
+  fk('aviso_destinatario', db.noticeRecipients, 'tutorId', db.tutors, true);
+  fk('aviso_destinatario', db.noticeRecipients, 'coachId', db.coaches, true);
+  unique('temporadas.nombre', db.seasons, (x: { name: string }) => x.name.toLowerCase());
+  unique('productos_uniforme.nombre', db.uniformProducts, (x: { name: string }) =>
+    x.name.toLowerCase(),
+  );
+  for (const a of db.coachCategories)
+    check(`chk_ent_cat_fechas (${a.id})`, !a.endDate || a.endDate >= a.startDate);
+  for (const a of db.coachCompetitions)
+    check(`chk_ecc_fechas (${a.id})`, !a.endDate || a.endDate >= a.startDate);
+  for (const r of db.rosters)
+    check(`chk_jcc_fechas (${r.id})`, !r.leftOn || r.leftOn >= r.joinedOn);
+  for (const c of db.competitions)
+    check(
+      `chk_competencia_fechas (${c.id})`,
+      !c.startDate || !c.endDate || c.endDate >= c.startDate,
+    );
+  for (const c of db.concepts) check(`chk_concepto_importe (${c.id})`, c.suggestedAmountCents >= 0);
+  for (const c of db.competitionCategories)
+    check(`chk_comp_cat_costo (${c.id})`, c.costCents === null || c.costCents >= 0);
+  for (const v of db.uniformVariants) check(`chk_variante_precio (${v.id})`, v.priceCents >= 0);
   return out;
 }

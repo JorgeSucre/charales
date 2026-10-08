@@ -39,3 +39,16 @@ export function sumCents(values: Cents[]): Cents {
 
 /** DECIMAL(12,2) upper bound: 9,999,999,999.99. */
 export const MAX_CENTS: Cents = 999_999_999_999;
+
+export function addCents(a: Cents, b: Cents): Cents {
+  assertCents(a);
+  assertCents(b);
+  return a + b;
+}
+
+/** Unit price × quantity (order lines). The quantity must be a whole number. */
+export function multiplyCents(unit: Cents, quantity: number): Cents {
+  assertCents(unit);
+  if (!Number.isInteger(quantity)) throw new Error('La cantidad debe ser un número entero.');
+  return unit * quantity;
+}

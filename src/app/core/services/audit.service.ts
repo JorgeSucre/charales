@@ -1,4 +1,5 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../auth/authorization.service';
 import { SessionStore } from '../auth/session.store';
 import { MockDb } from '../data/mock-db';
 import { AuditAction, AuditEntry, DateTime, Id } from '../models';
@@ -24,6 +25,7 @@ export interface AuditView extends AuditEntry {
 @Injectable({ providedIn: 'root' })
 export class AuditService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private session = inject(SessionStore);
 
   /** usuarios.id of the logged-in user, for *_por columns (cambiado_por, registrado_por…). */
@@ -56,7 +58,8 @@ export class AuditService {
   }
 
   /** Newest first, filtered by user, module and date range, paginated. */
-  list(filter: AuditFilter = {}): Promise<Page<AuditView>> {
+  async list(filter: AuditFilter = {}): Promise<Page<AuditView>> {
+    this.authz.require('auditoria.consultar');
     const inRange = (at: DateTime) =>
       (!filter.from || at.slice(0, 10) >= filter.from) &&
       (!filter.to || at.slice(0, 10) <= filter.to);
@@ -75,7 +78,8 @@ export class AuditService {
     return this.db.respond(paginate(rows, filter.page));
   }
 
-  modules(): Promise<string[]> {
+  async modules(): Promise<string[]> {
+    this.authz.require('auditoria.consultar');
     return this.db.respond(
       [...new Set(this.db.audit.map((a) => a.module ?? ''))].filter(Boolean).sort(),
     );

@@ -1,6 +1,6 @@
 import { Injectable, computed, inject } from '@angular/core';
 import { MockDb, UserRow } from '../data/mock-db';
-import { Id, fullName } from '../models';
+import { fullName } from '../models';
 import { AuditService } from '../services/audit.service';
 import { MailerService } from '../services/mailer.service';
 import { dateTimeIn, nowDateTime } from '../../shared/dates';

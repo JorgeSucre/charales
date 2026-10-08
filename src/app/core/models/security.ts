@@ -38,6 +38,8 @@ export interface RolePermission {
 export interface User {
   id: Id;
   roleId: Id | null;
+  /** usuarios.rol_tipo: always 'SEGURIDAD' (chk_usuario_rol_seguridad); part of the composite FK to roles(id, tipo). */
+  roleKind: 'SEGURIDAD';
   firstName: string | null;
   lastName: string | null;
   email: string;

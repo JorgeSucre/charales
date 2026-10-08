@@ -1,4 +1,5 @@
 import { Injectable, inject } from '@angular/core';
+import { AuthorizationService } from '../auth/authorization.service';
 import { MockDb } from '../data/mock-db';
 import {
   Cents,
@@ -75,11 +76,13 @@ export const PARTICIPATION_LABELS: Record<ParticipationStatus, string> = {
 @Injectable({ providedIn: 'root' })
 export class CompetitionService {
   private db = inject(MockDb);
+  private authz = inject(AuthorizationService);
   private audit = inject(AuditService);
 
-  list(
+  async list(
     filter: { seasonId?: Id | null; status?: CompetitionStatus | '' } = {},
   ): Promise<CompetitionView[]> {
+    this.authz.require('competencias.consultar', 'partidos.consultar');
     return this.db.respond(
       this.db.competitions
         .filter(
@@ -95,12 +98,14 @@ export class CompetitionService {
     );
   }
 
-  get(id: Id): Promise<CompetitionView> {
+  async get(id: Id): Promise<CompetitionView> {
+    this.authz.require('competencias.consultar');
     return this.db.respond(this.view(this.db.get(this.db.competitions, id, 'Competencia')));
   }
 
   /** HU-034: name, type, season, organizer, status, valid dates, contact/notes. Never deleted (cancel instead). */
   async save(draft: CompetitionDraft & { id?: Id }): Promise<Competition> {
+    this.authz.require(draft.id ? 'competencias.editar' : 'competencias.crear');
     const data: CompetitionDraft = {
       seasonId: draft.seasonId,
       name: required(draft.name, 'El nombre', 150),
@@ -152,9 +157,10 @@ export class CompetitionService {
 
   // ── HU-035 participations ─────────────────────────────────────────────
 
-  participations(
+  async participations(
     filter: { competitionId?: Id | null; categoryId?: Id | null } = {},
   ): Promise<ParticipationView[]> {
+    this.authz.require('competencias.consultar', 'partidos.consultar');
     return this.db.respond(this.participationViews(filter));
   }
 
@@ -204,6 +210,7 @@ export class CompetitionService {
     costCents: Cents | null;
     status: ParticipationStatus;
   }): Promise<CompetitionCategory> {
+    this.authz.require('competencias.editar');
     const competition = this.db.get(this.db.competitions, draft.competitionId, 'Competencia');
     const category = this.db.get(this.db.categories, draft.categoryId, 'Categoría');
     if (competition.status === 'CANCELADA' || competition.status === 'FINALIZADA')
@@ -247,6 +254,7 @@ export class CompetitionService {
   }
 
   async setParticipationStatus(id: Id, status: ParticipationStatus): Promise<void> {
+    this.authz.require('competencias.editar');
     const before = this.db.get(this.db.competitionCategories, id, 'Participación');
     this.db.update(this.db.competitionCategories, id, { status });
     this.audit.log(
@@ -263,7 +271,8 @@ export class CompetitionService {
 
   // ── HU-036 roster ─────────────────────────────────────────────────────
 
-  roster(competitionCategoryId: Id): Promise<RosterView[]> {
+  async roster(competitionCategoryId: Id): Promise<RosterView[]> {
+    this.authz.require('competencias.consultar');
     return this.db.respond(
       this.db.rosters
         .filter((r) => r.competitionCategoryId === competitionCategoryId)
@@ -283,7 +292,8 @@ export class CompetitionService {
   }
 
   /** Players that can join: active and currently in the participation's category, not already in the roster. */
-  eligiblePlayers(competitionCategoryId: Id): Promise<{ id: Id; name: string }[]> {
+  async eligiblePlayers(competitionCategoryId: Id): Promise<{ id: Id; name: string }[]> {
+    this.authz.require('competencias.consultar');
     const cc = this.db.get(this.db.competitionCategories, competitionCategoryId, 'Participación');
     const inRoster = new Set(
       this.db.rosters
@@ -311,6 +321,7 @@ export class CompetitionService {
     playerId: Id,
     joinedOn: ISODate = today(),
   ): Promise<RosterEntry> {
+    this.authz.require('competencias.editar');
     const cc = this.db.get(this.db.competitionCategories, competitionCategoryId, 'Participación');
     const player = this.db.get(this.db.players, playerId, 'Jugador');
     if (cc.status === 'BAJA' || cc.status === 'FINALIZADA')
@@ -352,6 +363,7 @@ export class CompetitionService {
 
   /** Leaves the roster (fecha_baja, activo = false); the row is kept as history. */
   async removeFromRoster(entryId: Id, leftOn: ISODate = today()): Promise<void> {
+    this.authz.require('competencias.editar');
     const row = this.db.get(this.db.rosters, entryId, 'Registro de plantel');
     if (!row.active) throw new Error('El jugador ya fue dado de baja del plantel.');
     if (!isISODate(leftOn) || leftOn < row.joinedOn)
