@@ -35,7 +35,8 @@ API lee `.env` (no versionado; copia [`.env.example`](../.env.example)): detalle
 ```bash
 git clone <url-del-repo> charales && cd charales
 npm install
-npm start                       # ng serve → http://localhost:4200
+npm start                       # ng serve → http://localhost:4200 (proxy de /api, /auth y /health a :3000)
+npm run api:start               # opcional, otra terminal: API en :3000 para /admin/api (ver docs/API.md)
 ```
 
 Cuentas de demostración (contraseña `demo1234`):
@@ -55,7 +56,7 @@ Todos son los que usa el proyecto (`package.json`, [`CONTRIBUTING.md`](../CONTRI
 
 | Qué                        | Comando                                                                            | Resultado actual                     |
 | -------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------ |
-| Pruebas (una corrida)      | `npx ng test --watch=false`                                                        | 138/138                              |
+| Pruebas (una corrida)      | `npx ng test --watch=false`                                                        | 146/146                              |
 | Pruebas en modo watch      | `npm test` (no termina solo)                                                       | —                                    |
 | Typecheck                  | `npx tsc -p tsconfig.app.json --noEmit` y `npx tsc -p tsconfig.spec.json --noEmit` | Sin errores                          |
 | Formato                    | `npx prettier --check .` (aplicar: `npx prettier --write .`)                       | Todo con formato                     |
@@ -98,6 +99,7 @@ Al terminar: `mariadb -e 'DROP DATABASE ef_checks'`. Contrato completo: [`databa
 | Servicios de dominio            | `src/app/features/<dominio>/*.service.ts`, lecturas compartidas en `src/app/core/services/`       |
 | Páginas                         | `src/app/features/<dominio>/*.page.ts` / `*.pages.ts`                                             |
 | Modelos                         | `src/app/core/models/`                                                                            |
+| Capa HTTP a la API              | `src/app/core/api/charales-api.service.ts`; proxy en `proxy.conf.json`                            |
 | Datos simulados                 | `src/app/core/data/mock-db.ts` (+ verificador `mock-db.integrity.ts`)                             |
 | Pruebas                         | `src/**/*.spec.ts` ([`TESTING.md`](TESTING.md))                                                   |
 | Esquema MariaDB                 | `docs/escuela_futbol_mariadb.sql`, `docs/escuela_futbol_mariadb_checks.sql`                       |

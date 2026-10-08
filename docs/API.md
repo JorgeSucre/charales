@@ -97,6 +97,36 @@ curl -s -b jar localhost:3000/api/categorias
 Cada fila de la tabla es un objeto del arreglo, en el mismo orden (`id`), con las mismas columnas y valores; `NULL` es
 `null`. Las pruebas de `api/api.test.ts` hacen esa comparación automáticamente (`deepEqual` contra el `SELECT *`).
 
+## Frontend (Angular)
+
+Capa HTTP: [`src/app/core/api/charales-api.service.ts`](../src/app/core/api/charales-api.service.ts) (`CharalesApi`),
+registrada con `provideHttpClient(withFetch())` en `app.config.ts`. Página de demostración: **`/admin/api`** («Datos
+desde la API», menú Sistema, permiso `jugadores.consultar`).
+
+```text
+Angular :4200 ──/api, /auth, /health──▶ proxy de ng serve (proxy.conf.json) ──▶ API :3000 ──▶ MariaDB escuela_futbol
+```
+
+- **Mismo origen:** el navegador sólo habla con `:4200`; el proxy de `ng serve` reenvía esos prefijos a la API. Por eso
+  la cookie `charales_sid` viaja sola: sin CORS y sin `withCredentials`. Angular nunca lee ni guarda la cookie
+  (`HttpOnly`); sabe si hay sesión con `GET /auth/session` (401 = no hay).
+- **Sesión separada:** el login de la app todavía es el mock (`AuthService` + `MockDb`); la API tiene su propia sesión.
+  La página pide iniciar sesión en la API cuando no hay una. Se unifican al migrar `AuthService`.
+- `CharalesApi` devuelve `Promise` de los modelos existentes (`Player`, `Category`): convierte las filas `snake_case`
+  de la práctica, `DATETIME` → `"YYYY-MM-DDTHH:MM:SS"` y `activo` 0/1 → `boolean`. Los errores son `Error` con el
+  mensaje de la API (401, 403…), o «No se pudo conectar con la API» si no responde (estado 0, o 502/504 del proxy), así
+  que `Submission` y `<app-load-state>` los muestran sin cambios.
+- **Producción:** el proxy sólo existe en `ng serve`; el build debe servirse en el mismo origen que la API (proxy
+  inverso). Detrás de un proxy, la API ve la IP del proxy: el límite de intentos de login necesitará
+  `X-Forwarded-For` de confianza.
+- `PlayerService`, `CategoryService` y el resto siguen sobre `MockDb`; pasarlos a la API es la fase de integración
+  ([`ROADMAP.md`](ROADMAP.md)).
+
+```bash
+npm run api:start   # terminal 1: API en :3000
+npm start           # terminal 2: Angular en :4200 con el proxy → /admin/api
+```
+
 ## Postman
 
 Colección local versionada: [`postman/collections/Charales`](../postman/collections/Charales) (formato v3, un YAML por

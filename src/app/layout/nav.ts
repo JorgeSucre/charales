@@ -191,6 +191,12 @@ export const NAV_ITEMS: NavItem[] = [
     permission: 'reportes.consultar',
   },
 
+  {
+    section: 'Sistema',
+    label: 'Datos desde la API',
+    path: '/admin/api',
+    permission: 'jugadores.consultar',
+  },
   { section: 'Sistema', label: 'Usuarios', path: '/admin/users', permission: 'usuarios.consultar' },
   {
     section: 'Sistema',

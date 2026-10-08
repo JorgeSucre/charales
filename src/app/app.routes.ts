@@ -52,6 +52,9 @@ export const routes: Routes = [
         children: [
           { path: '', pathMatch: 'full', redirectTo: '/' },
           page('dashboard', 'reportes.consultar', () => reports().then((m) => m.DashboardPage)),
+          page('api', 'jugadores.consultar', () =>
+            import('./features/api-demo/api-demo.page').then((m) => m.ApiDemoPage),
+          ),
           page('players', 'jugadores.consultar', () => players().then((m) => m.PlayersPage)),
           page('players/new', 'jugadores.crear', () => players().then((m) => m.PlayerFormPage)),
           page('players/:id', 'jugadores.consultar', () =>
