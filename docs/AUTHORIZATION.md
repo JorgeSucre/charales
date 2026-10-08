@@ -1,7 +1,7 @@
 # Autorización — contrato por operación
 
-Estado al 2026-10-07 (rama `jorgesucre/fix/audit-go-with-fixes`). Corrige el hallazgo principal de la auditoría:
-la autorización existía casi sólo en las rutas.
+Estado de `main` en `18178ba` (2026-10-07). Toda esta autorización corre en el navegador sobre `MockDb`: **no hay API**
+todavía; cuando exista, debe repetir esta matriz (barrera 3).
 
 ## Tres barreras
 
@@ -16,7 +16,8 @@ la autorización existía casi sólo en las rutas.
 - Un solo servicio, `AuthorizationService`, lee la identidad **sólo de la sesión** (`SessionStore`), nunca de un id
   enviado por quien llama. Ofrece:
   - `require(...permisos)`: al menos uno de los permisos (`modulo.accion`, filas de `permisos`);
-  - `requireOffice()`: catálogos de oficina (selects) — cualquier permiso que no sea de perfil;
+  - `requireOffice()`: catálogos de oficina (selects) — cualquier permiso **del rol de seguridad** («cualquier permiso
+    de oficina» en la matriz de abajo); un perfil solo no basta;
   - `assertPlayer(id, permisoOficina, { tutor, coach })`: permiso de oficina, **o** ser tutor del jugador
     (`tutor_jugador`), **o** su entrenador (categoría vigente), según lo permita la operación;
   - `assertCategory(id, permisoOficina)`: permiso de oficina o entrenador asignado (vigente) a la categoría;
@@ -30,6 +31,30 @@ la autorización existía casi sólo en las rutas.
   verificaciones y no deben exponerse como endpoints. Excepción: `AttendanceService.history`,
   `NoticeService.forTutor/forCoach` reciben una identidad y por eso también verifican.
 - No se puede vincular la **propia** cuenta a un perfil de tutor o entrenador (evita autoescalarse a ENTRENADOR).
+- **Permisos de rol frente a permisos de perfil (sin escalada lateral).** La sesión guarda `permissions` (rol de
+  seguridad + perfiles, para menús y áreas de perfil) y `officePermissions` (sólo el rol de seguridad). `grants()`
+  (`session.store.ts`) es la regla única de rutas, menús y servicios: un permiso de módulo de perfil (`portal`,
+  `panel_entrenador`) sale del perfil; cualquier otro módulo cuenta **sólo si lo da el rol de seguridad**. Los permisos
+  de oficina que trae un perfil (ENTRENADOR → `asistencias.*`) valen únicamente dentro del alcance de ese perfil
+  (`TrainingService.canRecord`). Así una persona puede ser SECRETARIA y ENTRENADORA a la vez, pero captura asistencia
+  sólo en sus sesiones, nunca en todas; el perfil tampoco le da jugadores globales, catálogos de oficina (`requireOffice()`
+  exige un rol de seguridad) ni permisos administrativos adicionales. Prueba: «SECRETARIA + linked ENTRENADOR profile». `assertCanGrantRole` también compara sólo contra el rol de seguridad.
+
+## Matriz de roles (D12)
+
+**Administrador administra el sistema; Secretaría administra la operación de la escuela**
+([`MARIADB.md` § 4, D12](database/MARIADB.md)). Fuente: `DEFAULT_ROLE_PERMISSIONS` en `core/auth/permissions.ts`,
+replicada en `db/mariadb/010_permisos_app.sql` (ADMINISTRADOR 56, SECRETARIA 45, ENTRENADOR 3, TUTOR 2).
+
+| Rol           | Puede                                                                                                                                                                                                                                                                                                                                 | No puede                                                                                                         |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Administrador | Todo lo de oficina: usuarios, roles y permisos, auditoría, cancelar pagos, descuentos y becas, capturar asistencia en cualquier sesión, más toda la operación                                                                                                                                                                         | Áreas de perfil (portal, panel) sin un perfil ligado                                                             |
+| Secretaría    | Operación completa: jugadores, tutores (y sus cuentas), entrenadores (y sus cuentas), categorías, **temporadas** (incluida la actual), inscripciones, sedes, sesiones, competencias, partidos, cobranza (incluido **cancelar cargos sin pagos**), registrar pagos, uniformes, avisos, reportes; **consultar** asistencia y descuentos | `usuarios.*`, `roles.*`, `auditoria.consultar`, `pagos.cancelar`, `descuentos.crear`, `asistencias.crear/editar` |
+| Entrenador    | Su panel: sus categorías, jugadores, horarios, sesiones, competencias y partidos; capturar y corregir asistencia y observaciones de **sus** sesiones (completarlas)                                                                                                                                                                   | Catálogos de oficina y cualquier dato fuera de sus asignaciones                                                  |
+| Padre/Tutor   | Su portal: sus hijos (categoría, horarios, sedes, entrenadores, partidos, resultados, asistencia, estado de cuenta, uniformes) y su perfil de contacto                                                                                                                                                                                | Pedir uniformes, listados globales, datos de otras familias                                                      |
+
+Cancelar un **cargo** (`cobranza.cancelar`) sólo procede si no tiene pagos aplicados (`BillingService.voidCharge`) y
+exige motivo y queda en `auditoria`; revertir un **pago** (`pagos.cancelar`, HU-049) es exclusivo del Administrador.
 
 ## Pruebas
 
@@ -37,7 +62,10 @@ la autorización existía casi sólo en las rutas.
   servicios: tutor A → hijo A permitido; tutor A → hijo B denegado en portal, estado de cuenta, expediente,
   asistencia, uniformes y partidos; entrenador → categoría ajena, sesión ajena, asistencia ajena, plantel ajeno y
   partidos ajenos denegados; secretaría → registrar pago permitido, permisos/cancelación/escalada denegados;
-  administrador → todo lo de oficina; sin sesión → todo denegado.
+  administrador → todo lo de oficina; sin sesión → todo denegado. Bloque «role matrix (D12)»: los 45 permisos exactos
+  de Secretaría (allow/deny), temporadas, descuentos en consulta, cancelar cargo sin pagos (y rechazo con pagos),
+  control total del Administrador, alcance del entrenador y del tutor, y la prueba de **escalada lateral**
+  (SECRETARIA + perfil ENTRENADOR captura sólo en sus sesiones).
 - `src/app/app.routes.spec.ts`: tabla de seguridad de las **50** rutas protegidas con las 5 cuentas de demostración
   (comprueba la coherencia guard ↔ permisos; las expectativas independientes están en `authorization.spec.ts`).
 

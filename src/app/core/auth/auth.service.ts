@@ -6,7 +6,7 @@ import { MailerService } from '../services/mailer.service';
 import { dateTimeIn, nowDateTime } from '../../shared/dates';
 import { hashPassword, passwordProblem, randomToken, sha256Hex, verifyPassword } from './password';
 import { PERMISSION_CATALOG, PermissionKey } from './permissions';
-import { AuthUser, SessionStore } from './session.store';
+import { AuthUser, SessionStore, grants } from './session.store';
 
 /** Session policy (HU-002): absolute lifetime and idle timeout. */
 export const SESSION_HOURS = 8;
@@ -50,11 +50,13 @@ export class AuthService {
         userAgent: null,
       });
     }
-    if (!this.sessionRowValid(restored)) this.store.set(null);
+    // Snapshots from before officePermissions existed are dropped: the user logs in again.
+    if (!restored.officePermissions || !this.sessionRowValid(restored)) this.store.set(null);
   }
 
+  /** Same rule as the services (`grants`), so routes and menus never promise what the service refuses. */
   can(permission: PermissionKey): boolean {
-    return !!this.store.user()?.permissions.includes(permission);
+    return grants(this.store.user(), permission);
   }
 
   hasRole(role: string): boolean {
@@ -242,7 +244,16 @@ export class AuthService {
   /** Roles and permissions an account gets right now (security role + active profiles). */
   accessOf(
     row: UserRow,
-  ): Pick<AuthUser, 'roles' | 'permissions' | 'tutorId' | 'coachId' | 'isStaff' | 'displayName'> {
+  ): Pick<
+    AuthUser,
+    | 'roles'
+    | 'permissions'
+    | 'officePermissions'
+    | 'tutorId'
+    | 'coachId'
+    | 'isStaff'
+    | 'displayName'
+  > {
     const roleByName = (name: string) => this.db.roles.find((r) => r.name === name && r.active);
     const security = this.db.roles.find(
       (r) => r.id === row.roleId && r.active && r.kind === 'SEGURIDAD',
@@ -254,18 +265,20 @@ export class AuthService {
       tutor && roleByName('TUTOR'),
       coach && roleByName('ENTRENADOR'),
     ].filter((r) => !!r);
-    const roleIds = new Set(roles.map((r) => r.id));
-    const permissionIds = new Set(
-      this.db.rolePermissions.filter((rp) => roleIds.has(rp.roleId)).map((rp) => rp.permissionId),
-    );
-    const permissions = this.db.permissions
-      .filter((p) => permissionIds.has(p.id))
-      .map((p) => `${p.module}.${p.action}`)
-      .filter((k): k is PermissionKey => (PERMISSION_CATALOG as readonly string[]).includes(k));
+    const permissionsOf = (roleIds: Set<number>): PermissionKey[] => {
+      const permissionIds = new Set(
+        this.db.rolePermissions.filter((rp) => roleIds.has(rp.roleId)).map((rp) => rp.permissionId),
+      );
+      return this.db.permissions
+        .filter((p) => permissionIds.has(p.id))
+        .map((p) => `${p.module}.${p.action}`)
+        .filter((k): k is PermissionKey => (PERMISSION_CATALOG as readonly string[]).includes(k));
+    };
     const profile = coach ?? tutor;
     return {
       roles: roles.map((r) => r.name),
-      permissions,
+      permissions: permissionsOf(new Set(roles.map((r) => r.id))),
+      officePermissions: security ? permissionsOf(new Set([security.id])) : [],
       tutorId: tutor?.id ?? null,
       coachId: coach?.id ?? null,
       isStaff: !!security,

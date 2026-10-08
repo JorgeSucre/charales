@@ -41,8 +41,9 @@ db/
   scripts/     migrate.sh · reset.sh · test.sh
 ```
 
-**Nueva migración:** crear `db/migrations/009_descripcion.sql` (siguiente número; proceso completo en `DATA_CONTRACT.md`). Nunca editar una migración ya aplicada en una BD
-compartida.
+**Migraciones nuevas:** ya no se agregan a `db/migrations` (esquema histórico). Los cambios de modelo van en
+`docs/escuela_futbol_mariadb.sql` con su caso en `docs/escuela_futbol_mariadb_checks.sql`, y los datos de la app en
+`db/mariadb/NNN_*.sql` ([`CONTRIBUTING.md` § 4](../../CONTRIBUTING.md)). Nunca editar una migración ya aplicada.
 
 ## Convenciones
 

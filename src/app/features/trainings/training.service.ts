@@ -280,17 +280,27 @@ export class TrainingService {
    * categories they currently coach (on the session date).
    */
   inScope(s: TrainingSession): boolean {
-    const user = this.session.user();
-    if (!user) return false;
-    if (user.permissions.includes('entrenamientos.consultar')) return true;
-    if (!user.coachId || !user.permissions.includes('panel_entrenador.consultar')) return false;
-    return s.coachId === user.coachId || this.coachesCategory(user.coachId, s.categoryId, s.date);
+    return this.authz.has('entrenamientos.consultar') || this.coachesSession(s);
   }
 
-  /** Recording attendance / notes: asistencias.editar AND (staff, or the coach in scope). Secretaría only reads. */
+  /**
+   * Recording attendance / notes (HU-030, HU-031): office-wide only with asistencias.editar from the security role
+   * (Administrador); otherwise the coach profile's asistencias.editar, and only in their own sessions. So
+   * SECRETARIA + ENTRENADOR captures only where she coaches, never everywhere (D12, no lateral escalation).
+   */
   canRecord(s: TrainingSession): boolean {
+    if (this.authz.has('asistencias.editar') && this.authz.has('entrenamientos.consultar'))
+      return true;
+    return (
+      !!this.session.user()?.permissions.includes('asistencias.editar') && this.coachesSession(s)
+    );
+  }
+
+  /** The session is led by the logged-in coach or belongs to a category they coach on its date. */
+  private coachesSession(s: TrainingSession): boolean {
     const user = this.session.user();
-    return !!user && user.permissions.includes('asistencias.editar') && this.inScope(s);
+    if (!user?.coachId || !this.authz.has('panel_entrenador.consultar')) return false;
+    return s.coachId === user.coachId || this.coachesCategory(user.coachId, s.categoryId, s.date);
   }
 
   private coachesCategory(coachId: Id, categoryId: Id, on: ISODate): boolean {

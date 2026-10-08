@@ -5,6 +5,7 @@ import { appConfig } from './app.config';
 import { AuthService } from './core/auth/auth.service';
 import { MockDb } from './core/data/mock-db';
 import { CategoryService } from './core/services/category.service';
+import { AuditService } from './core/services/audit.service';
 import { CompetitionService } from './core/services/competition.service';
 import { PlayerService } from './core/services/player.service';
 import { BillingService } from './features/billing/billing.service';
@@ -14,6 +15,7 @@ import { MatchService } from './features/matches/match.service';
 import { NoticeService } from './features/notices/notice.service';
 import { PortalService } from './features/parent-portal/portal.service';
 import { AttendanceService } from './features/trainings/attendance.service';
+import { SeasonService } from './features/seasons/season.service';
 import { TrainingService } from './features/trainings/training.service';
 import { TutorService } from './features/tutors/tutor.service';
 import { UniformService } from './features/uniforms/uniform.service';
@@ -60,7 +62,8 @@ describe('authorization (independent expectations)', () => {
       ['secretaria', '/admin/permissions', 'DENY'],
       ['secretaria', '/admin/users', 'DENY'],
       ['secretaria', '/admin/audit', 'DENY'],
-      ['secretaria', '/admin/billing/discounts', 'DENY'],
+      ['secretaria', '/admin/billing/discounts', 'ALLOW'],
+      ['secretaria', '/admin/seasons', 'ALLOW'],
       ['secretaria', '/sports/attendance', 'ALLOW'],
       ['secretaria', '/portal', 'DENY'],
       ['admin', '/admin/permissions', 'ALLOW'],
@@ -221,6 +224,171 @@ describe('authorization (independent expectations)', () => {
       await expect(get(PlayerService).search()).rejects.toThrow('Sesión no iniciada');
       await expect(get(BillingService).statement(1)).rejects.toThrow('Sesión no iniciada');
       await expect(get(PortalService).overview()).rejects.toThrow('Sesión no iniciada');
+    });
+  });
+
+  /** D12 (MARIADB.md): Administrador administra el sistema; Secretaría administra la operación de la escuela. */
+  describe('role matrix (D12)', () => {
+    const SECRETARIA_ALLOW = [
+      'temporadas.consultar',
+      'temporadas.crear',
+      'temporadas.editar',
+      'descuentos.consultar',
+      'cobranza.consultar',
+      'cobranza.crear',
+      'cobranza.editar',
+      'cobranza.cancelar',
+      'pagos.consultar',
+      'pagos.crear',
+      'asistencias.consultar',
+      'entrenamientos.crear',
+      'entrenamientos.editar',
+    ];
+    const SECRETARIA_DENY = [
+      'descuentos.crear',
+      'pagos.cancelar',
+      'usuarios.consultar',
+      'usuarios.crear',
+      'usuarios.editar',
+      'usuarios.cancelar',
+      'roles.consultar',
+      'roles.editar',
+      'auditoria.consultar',
+      'asistencias.crear',
+      'asistencias.editar',
+    ];
+    const session = () => get(AuthService).user()!;
+
+    it('secretaría: exactly the 45 operational permissions', async () => {
+      await login('secretaria');
+      const granted = session().permissions as string[];
+      for (const p of SECRETARIA_ALLOW) expect(granted, p).toContain(p);
+      for (const p of SECRETARIA_DENY) expect(granted, p).not.toContain(p);
+      expect(granted).toHaveLength(45);
+    });
+
+    it('secretaría: manages seasons, reads discounts, voids unpaid charges only', async () => {
+      await login('secretaria');
+      const seasons = get(SeasonService);
+      await expect(
+        seasons.save({
+          name: 'Temporada 2027-2028',
+          startDate: '2027-08-01',
+          endDate: '2028-07-31',
+          active: true,
+          isCurrent: false,
+        }),
+      ).resolves.toBeTruthy();
+      await expect(
+        seasons.save({
+          id: 1,
+          name: 'Temporada 2025-2026',
+          startDate: '2025-08-01',
+          endDate: '2026-07-31',
+          active: false,
+          isCurrent: false,
+        }),
+      ).resolves.toBeTruthy();
+      const billing = get(BillingService);
+      await expect(billing.discounts()).resolves.toBeTruthy();
+      await expect(billing.cancelCharge(2, 'Cargo capturado por error')).resolves.toBeUndefined();
+      expect(get(MockDb).audit.some((a) => a.entity === 'cargos' && a.entityId === 2)).toBe(true);
+      await expect(billing.cancelCharge(1, 'x')).rejects.toThrow('pagos aplicados');
+    });
+
+    it('secretaría: no payment cancellation, discounts, users, roles, audit or attendance capture', async () => {
+      await login('secretaria');
+      const billing = get(BillingService);
+      await expect(billing.cancelPayment(1, 'x')).rejects.toThrow(DENIED);
+      await expect(
+        billing.addDiscount({ chargeId: 2, type: 'BECA', reason: 'x', adjustmentCents: 100 }),
+      ).rejects.toThrow(DENIED);
+      await expect(get(UserService).list()).rejects.toThrow(DENIED);
+      await expect(get(UserService).securityRoles()).rejects.toThrow(DENIED);
+      await expect(get(RoleService).matrix()).rejects.toThrow(DENIED);
+      await expect(get(AuditService).list()).rejects.toThrow(DENIED);
+      await expect(get(AttendanceService).record(1, [])).rejects.toThrow();
+      await expect(
+        get(TrainingService).saveNotes(1, { objective: 'x', notes: null }),
+      ).rejects.toThrow();
+      expect((await get(TrainingService).get(1)).canRecord).toBe(false);
+    });
+
+    it('administrador: full system control', async () => {
+      await login('admin');
+      expect(session().permissions).toHaveLength(56);
+      await expect(get(AuditService).list()).resolves.toBeTruthy();
+      await expect(get(UserService).securityRoles()).resolves.toBeTruthy();
+      await expect(
+        get(BillingService).addDiscount({
+          chargeId: 2,
+          type: 'BECA',
+          reason: 'Beca deportiva',
+          adjustmentCents: 100,
+        }),
+      ).resolves.toBeTruthy();
+      await expect(get(AttendanceService).record(2, [])).resolves.toBeUndefined();
+      await expect(get(BillingService).cancelPayment(1, 'Error')).resolves.toBeTruthy();
+    });
+
+    it('entrenador: own sessions only, no office catalogs', async () => {
+      await login('coach');
+      const members = await get(CategoryService).members(1);
+      await get(AttendanceService).record(
+        3,
+        members.map((m) => ({ playerId: m.playerId, status: 'PRESENTE' as const, notes: null })),
+      );
+      await get(AttendanceService).record(3, [
+        { playerId: members[0].playerId, status: 'JUSTIFICADO', notes: null },
+      ]); // correction
+      await get(TrainingService).saveNotes(3, { objective: 'Pases cortos', notes: null });
+      expect(get(MockDb).trainingSessions.find((s) => s.id === 3)?.status).toBe('REALIZADO');
+      await expect(get(AttendanceService).record(2, [])).rejects.toThrow();
+      // Profile permissions (asistencias.*) never open office-wide catalogs.
+      await expect(get(PlayerService).options()).rejects.toThrow(DENIED);
+      await expect(get(SeasonService).list()).rejects.toThrow(DENIED);
+      await expect(get(BillingService).concepts()).rejects.toThrow(DENIED);
+      await expect(get(TrainingService).list()).rejects.toThrow(DENIED);
+    });
+
+    it('tutor: own children, their coaches and uniforms; never orders or global lists', async () => {
+      await login('tutor');
+      const child = await get(PortalService).child(1);
+      expect(child.coaches.length).toBeGreaterThan(0); // HU-062.4
+      expect(child.uniforms).toBeDefined(); // HU-056: read-only through the portal
+      await expect(get(UniformService).orders({ playerIds: [1] })).rejects.toThrow(DENIED);
+      await expect(
+        get(UniformService).createOrder(1, [{ variantId: 1, quantity: 1 }], 1),
+      ).rejects.toThrow(DENIED);
+      await expect(get(PlayerService).options()).rejects.toThrow(DENIED);
+      await expect(get(TutorService).get(2)).rejects.toThrow(DENIED);
+      await expect(get(CoachService).list()).rejects.toThrow(DENIED);
+    });
+
+    it('SECRETARIA + linked ENTRENADOR profile: coach rights only inside the coach scope (no lateral escalation)', async () => {
+      // Luis (coach 3, no account) is assistant of Sub-10 (category 1): sessions 1 and 3. Sessions 2 and 4 are Sub-12.
+      await login('admin');
+      await get(CoachService).linkAccount(3, 'secretaria@example.com');
+      get(AuthService).logout();
+      await login('secretaria');
+      expect(session().roles).toEqual(expect.arrayContaining(['SECRETARIA', 'ENTRENADOR']));
+      const trainings = get(TrainingService);
+      const attendance = get(AttendanceService);
+      // Inside the coach scope: may capture and annotate.
+      expect((await trainings.get(1)).canRecord).toBe(true);
+      await expect(
+        attendance.record(1, [{ playerId: 1, status: 'AUSENTE', notes: null }]),
+      ).resolves.toBeUndefined();
+      await expect(
+        trainings.saveNotes(1, { objective: 'x', notes: null }),
+      ).resolves.toBeUndefined();
+      // Outside it: the office role still reads every session but the profile grants no capture there.
+      expect((await trainings.get(2)).canRecord).toBe(false);
+      await expect(attendance.record(2, [])).rejects.toThrow();
+      await expect(trainings.saveNotes(2, { objective: 'x', notes: null })).rejects.toThrow();
+      // And the profile never adds office permissions on top of the security role.
+      await expect(get(BillingService).cancelPayment(1, 'x')).rejects.toThrow(DENIED);
+      await expect(get(AuditService).list()).rejects.toThrow(DENIED);
     });
   });
 });

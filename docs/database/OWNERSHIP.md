@@ -52,28 +52,28 @@ trabajo. Este documento manda sobre la **escritura** de datos. Las reglas de dat
 | `schema_migrations`                     | Equipo (infraestructura)         | `migrate.sh`                                                                                | —                                                                         | —                                 |
 | Vista `charge_balances`                 | Borrayo                          | —                                                                                           | Todos                                                                     | —                                 |
 
-## Tablas y columnas que pide el backlog y todavía no existen
+## Tablas que agregó el modelo MariaDB (owner por HU)
 
-No se crearon; cada owner las agrega con **su** migración, siguiendo `DATA_CONTRACT.md`. Se listan para que nadie las
-cree dos veces.
+Antes del modelo MariaDB no existían en `db/migrations`. Hoy **existen** en `docs/escuela_futbol_mariadb.sql` y tienen
+modelo TS, arreglo en `MockDb` y servicio que las escribe ([`MARIADB.md` § 2](MARIADB.md)). Se conserva el owner por HU.
 
-| Falta                                     | HU (owner)                      | Nota                                                                                                            |
-| ----------------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `roles`, `permisos`, `rol_permiso`        | HU-006 (Joss)                   | **Reemplaza** a `permissions.ts`; no conviven dos mecanismos (**C5**)                                           |
-| `auditoria`                               | HU-007 (Joss)                   | La usan HU-009, HU-049, HU-064                                                                                  |
-| `sesiones`                                | HU-001 (Joss)                   | Sesión del lado del servidor (**C5**)                                                                           |
-| `historial_estatus` + estatus de jugador  | HU-010 (Dani)                   | `players.active` hoy es booleano; el backlog pide activo, baja temporal y baja definitiva                       |
-| Motivo del cambio de categoría            | HU-019 (Dani)                   | Columna en `player_categories`                                                                                  |
-| `categories.active`, `categories.cupo`    | HU-015 (Armando), HU-021 (Joss) | —                                                                                                               |
-| `horarios_entrenamiento`                  | HU-016 (Joss)                   | Horario recurrente; `training_sessions` es la sesión concreta                                                   |
-| `entrenador_categoria`                    | HU-023 (Armando)                | HU-026 exige «sólo asignaciones vigentes»: cuando exista, `coach_assignments` debe referenciarla                |
-| `asistencias`                             | HU-030 (Joss)                   | —                                                                                                               |
-| `jugador_competencia_categoria` (plantel) | HU-036 (Joss)                   | HU-063 (Borrayo) pide «sólo torneos donde el hijo está en plantel». Hoy se usa la participación de su categoría |
-| `rivales`, estatus y marcador de partidos | HU-037 (Joss), HU-040 (Dani)    | —                                                                                                               |
-| Organizador y estatus de competencias     | HU-034 (Dani)                   | —                                                                                                               |
-| `descuentos`                              | HU-051 (Joss)                   | Debe conservar el monto original del cargo. Se diseña con el owner de cobranza                                  |
-| `avisos`, `aviso_destinatario`            | HU-057 (Dani), HU-058 (Joss)    | —                                                                                                               |
-| Cancelación de pedido de uniforme         | HU-053, HU-055 (Borrayo)        | El backlog pide estado «cancelado»; hoy no existe                                                               |
+| Tabla(s) MariaDB                              | HU (owner)                      | Nota                                                                                                     |
+| --------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `roles`, `permisos`, `rol_permiso`            | HU-006 (Joss)                   | `RoleService`. Catálogo y matriz inicial en `permissions.ts`, replicada por `010_permisos_app.sql` (D12) |
+| `auditoria`                                   | HU-007 (Joss)                   | `AuditService`; la escriben todos los servicios                                                          |
+| `sesiones`                                    | HU-001 (Joss)                   | `AuthService`; hoy en `MockDb`, del lado del servidor cuando exista la API                               |
+| `historial_estatus` + `jugadores.estatus`     | HU-010 (Dani)                   | ACTIVO / BAJA_TEMPORAL / BAJA_DEFINITIVA (`PlayerService.changeStatus`)                                  |
+| `historial_categoria` (motivo del cambio)     | HU-019 (Dani)                   | `PlayerCategoryService.change`                                                                           |
+| `categorias.activo`, `categorias.cupo_maximo` | HU-015 (Armando), HU-021 (Joss) | `CategoryService`                                                                                        |
+| `horarios_entrenamiento`                      | HU-016 (Joss)                   | `ScheduleService`; `sesiones_entrenamiento` es la sesión concreta                                        |
+| `entrenador_categoria`                        | HU-023 (Armando)                | `CoachService.assignCategory`; HU-026 exige asignación vigente (R14)                                     |
+| `asistencias`                                 | HU-030 (Joss)                   | `AttendanceService`                                                                                      |
+| `jugador_competencia_categoria` (plantel)     | HU-036 (Joss)                   | `CompetitionService.addToRoster/removeFromRoster`; HU-063 ya filtra por plantel                          |
+| `rivales`, estatus y marcador de `partidos`   | HU-037 (Joss), HU-040 (Dani)    | `MatchService`                                                                                           |
+| Organizador y estatus de `competencias`       | HU-034 (Dani)                   | `CompetitionService`                                                                                     |
+| `descuentos`                                  | HU-051 (Joss)                   | `BillingService.addDiscount`; conserva el monto original                                                 |
+| `avisos`, `aviso_destinatario`                | HU-057 (Dani), HU-058 (Joss)    | `NoticeService`                                                                                          |
+| Estado CANCELADO de `pedidos_uniforme`        | HU-053, HU-055 (Borrayo)        | `UniformService.cancelOrder`                                                                             |
 
 ## Contratos de frontera (C1–C6)
 

@@ -8,6 +8,9 @@ organizadas por épicas y responsables.
 > modelo **MariaDB** adoptado ([`docs/database/MARIADB.md`](docs/database/MARIADB.md)). Todavía **no hay backend**: la
 > autenticación y los datos viven en el navegador. Trazabilidad HU → código → pruebas: [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md).
 > Contexto completo, estado por área y quién hace qué: [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).
+>
+> **Para empezar a trabajar:** [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) (onboarding) y
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). La API/backend es la siguiente fase y **todavía no existe**.
 
 ## Requisitos
 
@@ -50,17 +53,19 @@ npm run db:test              # crea charales_test desde cero y corre las pruebas
 
 Todos están definidos en `package.json`.
 
-| Comando                                | Qué hace                                                                                   |
-| -------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `npm start`                            | Servidor de desarrollo (`ng serve`)                                                        |
-| `npm run build`                        | Build de producción en `dist/`                                                             |
-| `npm run watch`                        | Build de desarrollo en modo watch                                                          |
-| `npm test`                             | Pruebas Angular (Vitest) en modo watch. Para una sola corrida: `npx ng test --watch=false` |
-| `npm run ng -- <args>`                 | Angular CLI                                                                                |
-| `npm run db:migrate`                   | Aplica las migraciones pendientes a `$DATABASE_URL`                                        |
-| `npm run db:reset`                     | **Borra** y recrea `charales_dev` con migraciones + seed (sólo local)                      |
-| `npm run db:test`                      | Recrea `charales_test` y corre las 57 pruebas de integridad y las 21 consultas críticas    |
-| `npx prettier --check .` / `--write .` | Revisar / aplicar formato (no hay script `format`)                                         |
+| Comando                                 | Qué hace                                                                                   |
+| --------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `npm start`                             | Servidor de desarrollo (`ng serve`)                                                        |
+| `npm run build`                         | Build de producción en `dist/`                                                             |
+| `npm run watch`                         | Build de desarrollo en modo watch                                                          |
+| `npm test`                              | Pruebas Angular (Vitest) en modo watch. Para una sola corrida: `npx ng test --watch=false` |
+| `npm run ng -- <args>`                  | Angular CLI                                                                                |
+| `npm run db:mariadb:test-backup`        | MariaDB: 42 checks del esquema + respaldo/restauración en bases temporales `ef_bktest_*`   |
+| `npx prettier --check .` / `--write .`  | Revisar / aplicar formato (no hay script `format`)                                         |
+| `npx tsc -p tsconfig.app.json --noEmit` | Typecheck de la app (igual con `tsconfig.spec.json` para las pruebas)                      |
+| `npm run db:migrate`                    | Histórico (PostgreSQL): aplica las migraciones pendientes a `$DATABASE_URL`                |
+| `npm run db:reset`                      | Histórico (PostgreSQL): **borra** y recrea `charales_dev` con migraciones + seed           |
+| `npm run db:test`                       | Histórico (PostgreSQL): recrea `charales_test`, 57 pruebas de integridad y 21 consultas    |
 
 No existen `db:seed` ni `lint`: el seed se carga con `db:reset` y no hay ESLint configurado.
 
@@ -87,12 +92,18 @@ También son útiles una extensión de PostgreSQL/SQL, `bierner.markdown-mermaid
 ```text
 src/app/     frontend Angular: core/ (modelos, auth, datos mock, servicios compartidos), features/, shared/, layout/
 db/          mariadb/ (seed de permisos de la app) y el esquema PostgreSQL anterior: migrations/, seed/, tests/…
-docs/        documentación: TRACEABILITY, ROADMAP, INTEGRATION_MAP, PLAN, database/ (MARIADB.md = contrato vigente)
+docs/        documentación: DEVELOPMENT, ARCHITECTURE, AUTHORIZATION, TESTING, TRACEABILITY, ROADMAP, DOMAIN_RULES,
+             requirements/USER_STORIES.md (76 HU), database/ (MARIADB.md = contrato vigente), escuela_futbol_mariadb*.sql
+             (INTEGRATION_MAP y PLAN son históricos)
 ```
 
 ## Documentación
 
 - [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md): qué es, estado e índice de toda la documentación.
+- [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md): onboarding (comandos, dónde está cada cosa, antes del PR).
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): capas, `MockDb`, autorización y qué es temporal.
+- [`docs/AUTHORIZATION.md`](docs/AUTHORIZATION.md): matriz de roles y perfiles vinculados.
+- [`docs/TESTING.md`](docs/TESTING.md): qué valida cada grupo de pruebas.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): branches, commits, PRs y migraciones.
 - [`AGENTS.md`](AGENTS.md) y [`CLAUDE.md`](CLAUDE.md): reglas para IAs.
-- [`docs/database/README.md`](docs/database/README.md): la base de datos en detalle.
+- [`docs/database/MARIADB.md`](docs/database/MARIADB.md): el modelo MariaDB vigente y las decisiones D1–D12.

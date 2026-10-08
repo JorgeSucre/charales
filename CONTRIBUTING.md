@@ -41,8 +41,11 @@ Commits pequeños y con un solo propósito. **Nunca** subas `.env`, credenciales
 npm run build
 npx ng test --watch=false
 npx prettier --check .
+npx tsc -p tsconfig.app.json --noEmit && npx tsc -p tsconfig.spec.json --noEmit
 npm run db:mariadb:test-backup   # si tocaste el modelo MariaDB o db/mariadb (requiere MariaDB local)
 ```
+
+Guía completa de comandos y de dónde está cada cosa: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
 ## 4. Cambios en la base de datos
 
@@ -60,13 +63,18 @@ El modelo vigente es MariaDB ([`MARIADB.md`](docs/database/MARIADB.md)). En cort
 
 Si cambias un contrato, actualiza su **fuente de verdad** en el mismo PR:
 
-| Si cambia…        | Actualiza          |
-| ----------------- | ------------------ |
-| Reglas de datos   | `DATA_CONTRACT.md` |
-| Quién escribe qué | `OWNERSHIP.md`     |
-| Tablas            | `schema.md`        |
-| Mapeo de API o TS | `api-contract.md`  |
-| Fases             | `docs/ROADMAP.md`  |
+| Si cambia…                                 | Actualiza                                                                           |
+| ------------------------------------------ | ----------------------------------------------------------------------------------- |
+| Tablas, convenciones o decisiones (D1–D12) | `docs/database/MARIADB.md`                                                          |
+| Permisos, matriz de roles o alcance        | `docs/AUTHORIZATION.md` (+ `permissions.ts` y `010_permisos_app.sql` sincronizados) |
+| Reglas que la API debe garantizar          | `docs/DOMAIN_RULES.md`                                                              |
+| Estado de una HU                           | `docs/TRACEABILITY.md` (nunca `USER_STORIES.md`, que es la tabla oficial)           |
+| Reglas de dominio de datos                 | `DATA_CONTRACT.md`                                                                  |
+| Quién escribe qué                          | `OWNERSHIP.md`                                                                      |
+| Fases y pendientes                         | `docs/ROADMAP.md`                                                                   |
+
+`schema.md`, `relationships.md`, `api-contract.md`, `queries.md` y `decisions.md` describen el esquema PostgreSQL
+histórico y ya no se actualizan.
 
 No copies reglas a otros documentos: enlázalas.
 
