@@ -41,17 +41,20 @@ Commits pequeños y con un solo propósito. **Nunca** subas `.env`, credenciales
 npm run build
 npx ng test --watch=false
 npx prettier --check .
-npm run db:test              # si tocaste db/ o contratos de datos
+npm run db:mariadb:test-backup   # si tocaste el modelo MariaDB o db/mariadb (requiere MariaDB local)
 ```
 
 ## 4. Cambios en la base de datos
 
-Sigue [«¿Cómo modificar la BD?» en `DATA_CONTRACT.md`](docs/database/DATA_CONTRACT.md#cómo-modificar-la-bd). En corto:
+El modelo vigente es MariaDB ([`MARIADB.md`](docs/database/MARIADB.md)). En corto:
 
-- migración **nueva** `db/migrations/NNN_*.sql`; nunca edites una ya aplicada;
-- una prueba en `db/tests/integrity.sql`;
-- documentación actualizada;
-- `npm run db:test` en verde.
+- el esquema es `docs/escuela_futbol_mariadb.sql`; un cambio de esquema se acuerda con el equipo y se acompaña de su caso
+  en `docs/escuela_futbol_mariadb_checks.sql`; los datos de la app (permisos) van en `db/mariadb/NNN_*.sql`;
+- si cambia una tabla, actualiza su modelo en `core/models`, `MockDb` y `core/data/mock-db.integrity.ts`;
+- documentación actualizada (`MARIADB.md`, `DOMAIN_RULES.md`, `AUTHORIZATION.md` si aplica);
+- `npm run db:mariadb:test-backup` en verde.
+
+`db/migrations` (PostgreSQL) es histórico: no se le agregan migraciones nuevas.
 
 ## 5. Documentación
 

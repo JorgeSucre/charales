@@ -3,8 +3,10 @@
 ## Antes de modificar código
 
 1. Lee [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md): qué es, estado, quién hace qué.
-2. Lee el contrato de lo que vas a tocar: datos → [`DATA_CONTRACT.md`](docs/database/DATA_CONTRACT.md); integración →
-   [`INTEGRATION_MAP.md`](docs/INTEGRATION_MAP.md); frontend existente → [`docs/PLAN.md`](docs/PLAN.md).
+2. Lee el contrato de lo que vas a tocar: modelo de datos → [`MARIADB.md`](docs/database/MARIADB.md) (vigente) y las
+   reglas de dominio de [`DATA_CONTRACT.md`](docs/database/DATA_CONTRACT.md); reglas que la API debe garantizar →
+   [`DOMAIN_RULES.md`](docs/DOMAIN_RULES.md); autorización → [`AUTHORIZATION.md`](docs/AUTHORIZATION.md); estado de
+   cada HU → [`TRACEABILITY.md`](docs/TRACEABILITY.md). `INTEGRATION_MAP.md` y `PLAN.md` son históricos.
 3. Identifica al **responsable de la HU** ([`USER_STORIES.md`](docs/requirements/USER_STORIES.md), la tabla oficial) y
    al **owner de cada tabla** ([`OWNERSHIP.md`](docs/database/OWNERSHIP.md)). Trabaja sólo en lo que te pidieron; no
    reasignes historias; para lo ajeno, usa los contratos del owner.
@@ -13,9 +15,13 @@
 6. **No modifiques migraciones ya aplicadas**; crea una nueva (`db/migrations/NNN_*.sql`) con su prueba.
 7. **No escribas en tablas de otro owner.** Llama a su servicio.
 8. Ejecuta las pruebas antes de decir que algo funciona:
-   `npm run db:test`, `npm run build`, `npx ng test --watch=false` y `npx prettier --check .`.
-9. Si cambias un contrato (modelo, tabla, API, permiso), actualiza su documento fuente **en el mismo cambio**.
-10. **Nunca hagas push a `main`.** Trabaja en una rama y abre un PR (ver [`CONTRIBUTING.md`](CONTRIBUTING.md)).
+   `npm run build`, `npx ng test --watch=false` y `npx prettier --check .`; si tocaste el modelo MariaDB o
+   `db/mariadb`, también `npm run db:mariadb:test-backup` (checks del esquema + respaldo). `npm run db:test` sólo
+   aplica al esquema PostgreSQL histórico.
+9. Toda operación de servicio verifica permiso y propiedad con `AuthorizationService`
+   ([`docs/AUTHORIZATION.md`](docs/AUTHORIZATION.md)); no basta con la ruta.
+10. Si cambias un contrato (modelo, tabla, API, permiso), actualiza su documento fuente **en el mismo cambio**.
+11. **Nunca hagas push a `main`.** Trabaja en una rama y abre un PR (ver [`CONTRIBUTING.md`](CONTRIBUTING.md)).
 
 ## Siempre
 

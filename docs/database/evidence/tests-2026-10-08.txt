@@ -1,0 +1,145 @@
+❯ Building...
+✔ Building...
+Application bundle generation complete. [3.159 seconds] - 2026-10-08T01:59:50.383Z
+ RUN  v5.0.3 /Users/jorgesucre/Projects/6A/ingenieria_software/charales/project
+ ✓  project  src/app/app.routes.spec.ts > routes & RBAC > every protected route is declared in the security table 3ms
+ ✓  project  src/app/app.routes.spec.ts > routes & RBAC > the menu uses the same permissions as the routes 1ms
+stdout | src/app/domain-rules.spec.ts > domain rules by HU > A · security > HU-004: staff account by e-mail invitation, unique e-mail, deactivation closes sessions; last admin protected
+ ✓  project  src/app/app.routes.spec.ts > routes & RBAC > anonymous users are sent to login from every protected URL 208ms
+ ✓  project  src/app/authorization.spec.ts > authorization (independent expectations) > routes (explicit table) > tutor: explicit allow/deny 305ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > A · security > HU-004: staff account by e-mail invitation, unique e-mail, deactivation closes sessions; last admin protected 394ms
+ ✓  project  src/app/core/auth/auth.spec.ts > auth, sessions & RBAC > valid credentials log in; wrong password, unknown and inactive get the same message (HU-001.1/2, HU-004.3) 512ms
+ ✓  project  src/app/critical-flows.spec.ts > critical flows (HU-074) > 1. login: valid access by role, invalid rejected without details 402ms
+ ✓  project  src/app/authorization.spec.ts > authorization (independent expectations) > routes (explicit table) > coach: explicit allow/deny 169ms
+ ✓  project  src/app/core/auth/auth.spec.ts > auth, sessions & RBAC > records the access with date/time (sesiones + auditoría LOGIN) and closes it on logout (HU-001.3) 126ms
+ ✓  project  src/app/performance.spec.ts > performance (HU-075) > main queries over 5000 players stay under 300 ms each 781ms
+ ✓  project  src/app/authorization.spec.ts > authorization (independent expectations) > routes (explicit table) > marta: explicit allow/deny 141ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > the seed is consistent 3ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects tutor_jugador: two primaries for one player 2ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects tutor_jugador: duplicate PK 2ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects tutor_jugador: FK to a missing player 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects jugador_categoria: two current rows 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects jugador_categoria: end before start 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects competencia_categoria: duplicate pair 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects jugador_competencia_categoria: duplicate 2ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects jugador_competencia_categoria: leave before join 2ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects entrenador_categoria: end before start 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects entrenador_competencia_categoria: FK to a missing coach 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects entrenador_competencia_categoria: duplicate 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects pago_aplicacion: charge of another player 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects pago_aplicacion: sum != payment amount 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects descuentos: adjustment > original 2ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects conceptos_cobro: negative amount 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects detalle_uniforme: FK to a missing variant 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects detalle_uniforme: quantity 0 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects aviso_destinatario: CATEGORIA without category 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects aviso_destinatario: FK to a missing category 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects rol_permiso: FK to a missing permission 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > detects temporadas: duplicate name 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > covers 21 injected violations 1ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > rollback: a valid write followed by a failing one leaves every table exactly as before 3ms
+ ✓  project  src/app/core/data/mock-db.integrity.spec.ts > MockDb integrity checker > commit: without errors the writes stay 2ms
+ ✓  project  src/app/core/auth/auth.spec.ts > auth, sessions & RBAC > roles come from the account role AND linked profiles (coach + tutor on one account) 124ms
+ ✓  project  src/app/features/billing/billing.rules.spec.ts > billing rules > generates monthly fees once per player/concept/period and only with recurring concepts (HU-044) 1ms
+ ✓  project  src/app/features/billing/billing.rules.spec.ts > billing rules > applies a partial payment to the oldest due charge first (HU-045.2) 0ms
+ ✓  project  src/app/features/billing/billing.rules.spec.ts > billing rules > rejects zero, fractional cents, overpayment and paying when nothing is owed 0ms
+ ✓  project  src/app/features/billing/billing.rules.spec.ts > billing rules > balance = original − discounts − non-cancelled applications; status derived from it (HU-044.3, HU-051) 0ms
+ ✓  project  src/app/features/billing/billing.rules.spec.ts > billing rules > cancelled payments stop counting for balances and income, but stay as history (HU-049, HU-067.3) 0ms
+ ✓  project  src/app/features/billing/billing.rules.spec.ts > billing rules > income compares the calendar day of DATETIME paid_at (inclusive range) and groups by concept 0ms
+ ✓  project  src/app/features/billing/billing.rules.spec.ts > billing rules > debts by player separate overdue from total balance and skip cancelled charges (HU-050) 0ms
+ ✓  project  src/app/features/billing/billing.rules.spec.ts > billing rules > folios are consecutive and unique 0ms
+ ✓  project  src/app/shared/shared.spec.ts > money (DECIMAL(12,2) ↔ integer cents) > never does float arithmetic: 0.10 + 0.20 is exactly 0.30 0ms
+ ✓  project  src/app/shared/shared.spec.ts > money (DECIMAL(12,2) ↔ integer cents) > parses API decimals and form values, and serializes back 1ms
+ ✓  project  src/app/shared/shared.spec.ts > dates (DATE / TIME / DATETIME as strings) > uses the local calendar, not UTC 0ms
+ ✓  project  src/app/shared/shared.spec.ts > dates (DATE / TIME / DATETIME as strings) > validates DATE and TIME and computes age, weekday and overlaps 0ms
+ ✓  project  src/app/shared/shared.spec.ts > search, pagination and validation helpers > paginates and searches ignoring accents/case (HU-014) 0ms
+ ✓  project  src/app/shared/shared.spec.ts > search, pagination and validation helpers > normalizes contact data and detects evident duplicates 0ms
+ ✓  project  src/app/services.spec.ts > service rules > BillingService — money > charge 1000, pay 600 → balance 400; cancel the payment → balance 1000 780ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > A · security > HU-006: permission matrix edits are audited and protected permissions cannot be removed 380ms
+ ✓  project  src/app/core/auth/auth.spec.ts > auth, sessions & RBAC > a deactivated coach profile no longer grants ENTRENADOR at the next login 123ms
+ ✓  project  src/app/app.routes.spec.ts > routes & RBAC > admin@example.com: typing any URL reaches it only with the right permission (HU-002.3) 677ms
+ ✓  project  src/app/critical-flows.spec.ts > critical flows (HU-074) > 2. player registration: identifier, age, evident duplicate rejected 377ms
+ ✓  project  src/app/authorization.spec.ts > authorization (independent expectations) > routes (explicit table) > secretaria: explicit allow/deny 202ms
+ ✓  project  src/app/authorization.spec.ts > authorization (independent expectations) > routes (explicit table) > admin: explicit allow/deny 169ms
+ ✓  project  src/app/core/auth/auth.spec.ts > auth, sessions & RBAC > permissions are a snapshot: rol_permiso changes apply to NEW sessions (HU-006.2) 252ms
+ ✓  project  src/app/services.spec.ts > service rules > BillingService — money > charge 1000, pay 1001 → DENIED (no over-payment), nothing written 254ms
+ ✓  project  src/app/app.routes.spec.ts > routes & RBAC > secretaria@example.com: typing any URL reaches it only with the right permission (HU-002.3) 266ms
+ ✓  project  src/app/core/auth/auth.spec.ts > auth, sessions & RBAC > session expires after idle time and the guard sends to login with expired=1 (HU-002.4) 132ms
+ ✓  project  src/app/app.routes.spec.ts > routes & RBAC > coach@example.com: typing any URL reaches it only with the right permission (HU-002.3) 161ms
+ ✓  project  src/app/critical-flows.spec.ts > critical flows (HU-074) > 3. enrollment: annual enrollment with fee charge + category membership with age rule 496ms
+ ✓  project  src/app/core/auth/auth.spec.ts > auth, sessions & RBAC > guard: anonymous → /login; tutor → /forbidden on office routes, allowed on the portal (HU-003) 126ms
+ ✓  project  src/app/services.spec.ts > service rules > BillingService — money > payment amount == SUM(pago_aplicacion) when split over several charges 261ms
+ ✓  project  src/app/app.routes.spec.ts > routes & RBAC > tutor@example.com: typing any URL reaches it only with the right permission (HU-002.3) 149ms
+ ✓  project  src/app/app.routes.spec.ts > routes & RBAC > marta@example.com: typing any URL reaches it only with the right permission (HU-002.3) 167ms
+stdout | src/app/core/auth/auth.spec.ts > auth, sessions & RBAC > reset token works once, expires, and closes open sessions (HU-005.3)
+ ✓  project  src/app/authorization.spec.ts > authorization (independent expectations) > tutor isolation in services (tutor → tutor_jugador → jugador) > own child: ALLOW 609ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > A · security > HU-007: audit log records who/what/when on players, payments, enrollments and users; filterable, read-only 868ms
+ ✓  project  src/app/authorization.spec.ts > authorization (independent expectations) > tutor isolation in services (tutor → tutor_jugador → jugador) > another family's child (by id): DENY everywhere 127ms
+ ✓  project  src/app/app.routes.spec.ts > routes & RBAC > tutor-only and coach-only accounts get exclusive menus (HU-003.4, HU-002.2) 244ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > B · players and tutors > HU-009: edit keeps id/identifier, updates actualizado_en and audits before/after 253ms
+ ✓  project  src/app/services.spec.ts > service rules > BillingService — money > discount then partial payment: expected = original − discount; balance = expected − paid 613ms
+ ✓  project  src/app/authorization.spec.ts > authorization (independent expectations) > tutor isolation in services (tutor → tutor_jugador → jugador) > cannot write or list office data 250ms
+stdout | src/app/core/auth/auth.spec.ts > auth, sessions & RBAC > reset token works once, expires, and closes open sessions (HU-005.3)
+ ✓  project  src/app/core/auth/auth.spec.ts > auth, sessions & RBAC > change password requires the current one and the policy (HU-005.1/2); never stored in plain text 247ms
+ ✓  project  src/app/core/auth/auth.spec.ts > auth, sessions & RBAC > reset token works once, expires, and closes open sessions (HU-005.3) 740ms
+ ✓  project  src/app/critical-flows.spec.ts > critical flows (HU-074) > 4. payment and balance: partial payment, folio, derived status, cancellation reopens the balance 998ms
+ ✓  project  src/app/services.spec.ts > service rules > BillingService — money > overdue: after the due date the open charge becomes VENCIDO 375ms
+ ✓  project  src/app/authorization.spec.ts > authorization (independent expectations) > coach scope in services (entrenador → entrenador_categoria / _competencia_categoria) > own category, sessions and competitions: ALLOW 494ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > B · players and tutors > HU-010: status change needs a reason, keeps history; inactive players cannot join categories/rosters/enrollments 620ms
+ ✓  project  src/app/services.spec.ts > service rules > BillingService — money > HU-045: payment date is captured (back-dated allowed, future rejected); creado_en keeps the capture time 373ms
+ ✓  project  src/app/critical-flows.spec.ts > critical flows (HU-074) > 5. match scheduling: only registered categories, reschedule with reason, result only when played 375ms
+stdout | src/app/services.spec.ts > service rules > UserService > last active administrator cannot be deactivated or demoted
+ ✓  project  src/app/authorization.spec.ts > authorization (independent expectations) > coach scope in services (entrenador → entrenador_categoria / _competencia_categoria) > foreign category, session, attendance, competition and matches: DENY 249ms
+stdout | src/app/domain-rules.spec.ts > domain rules by HU > B · players and tutors > HU-011/012: N:M with relationship per pair, one primary per player, links with payments kept; account linking
+ ✓  project  src/app/authorization.spec.ts > authorization (independent expectations) > office roles > secretaría: registers payments, cannot edit permissions, cancel payments or escalate 253ms
+stdout | src/app/authorization.spec.ts > authorization (independent expectations) > office roles > secretaría granted usuarios.* still cannot create or manage an administrator (role superset rule)
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > B · players and tutors > HU-011/012: N:M with relationship per pair, one primary per player, links with payments kept; account linking 620ms
+ ✓  project  src/app/critical-flows.spec.ts > critical flows (HU-074) > 6. tutor access is restricted to their own children (tutor → tutor_jugador → jugadores) 624ms
+ ✓  project  src/app/authorization.spec.ts > authorization (independent expectations) > office roles > secretaría granted usuarios.* still cannot create or manage an administrator (role superset rule) 251ms
+ ✓  project  src/app/services.spec.ts > service rules > UserService > last active administrator cannot be deactivated or demoted 626ms
+ ✓  project  src/app/services.spec.ts > service rules > PlayerService > search requires jugadores.consultar; options are an office catalog 373ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > B · players and tutors > HU-014: partial search + combinable filters + pagination 615ms
+ ✓  project  src/app/authorization.spec.ts > authorization (independent expectations) > office roles > nobody links their own account to a profile (self-escalation) 126ms
+ ✓  project  src/app/authorization.spec.ts > authorization (independent expectations) > office roles > administrador: all office modules, including permissions and cancellation 491ms
+ ✓  project  src/app/authorization.spec.ts > authorization (independent expectations) > office roles > no session: every service rejects 3ms
+ ✓  project  src/app/services.spec.ts > service rules > CategoryService > capacity must be a positive integer or empty; members exclude players in BAJA 374ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > C · categories and enrollment > HU-015: unique name per season, no inverted ages; HU-070: one current season that must be active 369ms
+ ✓  project  src/app/services.spec.ts > service rules > VenueService > unique name, deactivation instead of delete, usage count 491ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > C · categories and enrollment > HU-016: weekly schedules validated (day, end after start, active venue), several per category 491ms
+ ✓  project  src/app/services.spec.ts > service rules > TrainingService > future sessions cannot be marked done; cancelling needs a reason; secretaría sees all sessions 492ms
+ ✓  project  src/app/services.spec.ts > service rules > UniformService > duplicate size, inactive variant and inactive player are rejected 249ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > C · categories and enrollment > HU-017/021: full category needs an authorized exception; occupancy shown; HU-018 lists active members with tutor 741ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > C · categories and enrollment > HU-019: change closes the previous membership, opens a new one, records reason and closes old rosters 253ms
+ ✓  project  src/app/services.spec.ts > service rules > PortalService > HU-033: attendance filtered by period with its own percentage 369ms
+ ✓  project  src/app/services.spec.ts > service rules > PortalService > HU-056: uniforms only of own children 370ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > C · categories and enrollment > HU-020: one enrollment per player and season whatever its status; cancel cancels the unpaid fee, refused if paid 622ms
+ ✓  project  src/app/services.spec.ts > service rules > CoachPanelService > HU-041: category filter options are only the coach’s categories; sessions only own 493ms
+ ✓  project  src/app/services.spec.ts > service rules > HU-068: month calendar grid covers whole weeks Monday→Sunday 2ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > D · coaches > HU-022/023: duplicates rejected; several coaches per category; no duplicate current assignment; validity 495ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > D · coaches > HU-026: coach ↔ participation requires a current category assignment; exact duplicates rejected; ended pair reopened 491ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > D · coaches > HU-024/025/027/038/060: the coach panel only shows own categories, schedule (with overlaps), competitions, notices 736ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > E · trainings and attendance > HU-028: sessions from recurring schedules are not duplicated; schedule must match category 370ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > E · trainings and attendance > HU-030/031: the assigned coach records one attendance per player, corrections are audited; others cannot 615ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > E · trainings and attendance > HU-032: attendance report with percentages, distinguishing justified absences 247ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > F · competitions and matches > HU-034/035/036: valid dates; unique participation; roster only with current members of the category 489ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > F · competitions and matches > HU-040: score only for played matches, both sides, no negatives; a played match is not cancelled 249ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > G · billing > HU-043/044: concept amount changes never touch charges; monthly generation with authorized exclusions 496ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > G · billing > HU-046/050: statement totals and debts list with primary tutor, excluding cancelled charges 737ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > G · billing > HU-049: only an authorized role cancels, with reason; HU-051: discounts by authorized users keep the original 492ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > H · uniforms > HU-053/054/055: price snapshot, charge = total, PAGADO from the balance, delivery, cancellation rules 865ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > H · uniforms > a free order (total 0) creates no charge (cargo_id NULL) 371ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > I · notices > HU-057/058/059/060: audience segmentation, validity, publish/unpublish 496ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > J · family portal > HU-061/062/063/064: cards, sporting data, roster-based competitions and contact-only profile edits 615ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > J · family portal > a family with a child only in one competition roster sees only that competition (HU-063.1) 369ms
+ ✓  project  src/app/domain-rules.spec.ts > domain rules by HU > K · reports > HU-065/066/067/068: KPIs declare their source; players by category; income excludes cancelled; agenda merges events 739ms
+ ✓  project  src/app/app.routes.spec.ts > routes & RBAC > admin@example.com: every menu page renders without load errors 19258ms
+ ✓  project  src/app/app.routes.spec.ts > routes & RBAC > secretaria@example.com: every menu page renders without load errors 16739ms
+ ✓  project  src/app/app.routes.spec.ts > routes & RBAC > coach@example.com: every menu page renders without load errors 2567ms
+ ✓  project  src/app/app.routes.spec.ts > routes & RBAC > tutor@example.com: every menu page renders without load errors 1957ms
+ ✓  project  src/app/app.routes.spec.ts > routes & RBAC > marta@example.com: every menu page renders without load errors 4407ms
+ ✓  project  src/app/app.routes.spec.ts > routes & RBAC > renders detail pages: receipt, player record, child (own) and session 2711ms
+ ✓  project  src/app/app.routes.spec.ts > routes & RBAC > a tutor opening another family's child sees an error, not the data (HU-003.2) 741ms
+ Test Files  10 passed (10)
+      Tests  131 passed (131)
+   Start at  19:59:50
+   Duration  52.50s (tests 83%, environment 10%, setup 5%, transform 2%, import 1%)

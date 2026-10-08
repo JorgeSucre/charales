@@ -11,13 +11,14 @@ organizadas por épicas y responsables.
 
 ## Requisitos
 
-| Herramienta | Versión                                               | Para qué                      |
-| ----------- | ----------------------------------------------------- | ----------------------------- |
-| Node.js     | `^22.22.3`, `^24.15.0` o `>=26` (probado con 26.10.0) | Frontend                      |
-| npm         | 11 (probado con 11.19.1)                              | Dependencias y scripts        |
-| PostgreSQL  | 16, con `psql`, `createdb` y `dropdb` en el `PATH`    | Sólo para la BD y sus pruebas |
-| Git         | reciente                                              | —                             |
-| `sh`        | macOS/Linux; en Windows usa Git Bash o WSL            | Scripts de BD                 |
+| Herramienta | Versión                                               | Para qué                                                                   |
+| ----------- | ----------------------------------------------------- | -------------------------------------------------------------------------- |
+| Node.js     | `^22.22.3`, `^24.15.0` o `>=26` (probado con 26.10.0) | Frontend                                                                   |
+| npm         | 11 (probado con 11.19.1)                              | Dependencias y scripts                                                     |
+| MariaDB     | 10.6+, con `mariadb` y `mariadb-dump` en el `PATH`    | Modelo objetivo: checks del esquema y respaldo (opcional para el frontend) |
+| PostgreSQL  | 16, con `psql`, `createdb` y `dropdb` en el `PATH`    | Sólo el esquema histórico de `db/migrations`                               |
+| Git         | reciente                                              | —                                                                          |
+| `sh`        | macOS/Linux; en Windows usa Git Bash o WSL            | Scripts de BD                                                              |
 
 ## Empezar desde cero
 
@@ -70,7 +71,7 @@ No existen `db:seed` ni `lint`: el seed se carga con `db:reset` y no hay ESLint 
 **Recomendadas:**
 
 - Un editor con soporte de Angular y Prettier.
-- `psql` o un cliente gráfico de PostgreSQL (pgAdmin, DBeaver, TablePlus) para explorar la BD.
+- El cliente `mariadb` o uno gráfico (DBeaver, TablePlus) para explorar la BD.
 
 **Opcionales:** cualquier editor sirve. Si usas VS Code o Code OSS, `.vscode/extensions.json` recomienda:
 

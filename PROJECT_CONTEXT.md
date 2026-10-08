@@ -30,21 +30,21 @@ Las historias de usuario se organizan por épicas (EP01–EP12) y cada una tiene
 
 ## Estado del proyecto
 
-| Área                  | Estado          | Detalle                                                                                                                                                             |
-| --------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Arquitectura frontend | **COMPLETADO**  | Angular standalone por dominio, RBAC por permisos, capa de servicios                                                                                                |
-| Frontend              | **EN REVISIÓN** | Las 76 HU implementadas sobre `MockDb` en la rama `jorgesucre/feat/backlog-mariadb` ([`TRACEABILITY.md`](docs/TRACEABILITY.md)); cada responsable revisa las suyas  |
-| Base de datos         | **COMPLETADO**  | Modelo **MariaDB** adoptado ([`MARIADB.md`](docs/database/MARIADB.md)); 42/42 checks del esquema. El PostgreSQL de `db/` queda como historial                       |
-| Backend               | **NO INICIADO** | —                                                                                                                                                                   |
-| API                   | **PENDIENTE**   | Contrato: [`MARIADB.md`](docs/database/MARIADB.md) § 1–3 y § 7 (pasos para conectar)                                                                                |
-| Autenticación         | **SIMULADA**    | Login con hash con sal (mock), sesiones con expiración, roles por perfil, permisos editables, recuperación con token. El hash real (argon2/bcrypt) va en el backend |
-| Cobranza              | **EN REVISIÓN** | Conceptos, cargos, mensualidades, pagos parciales, folios, cancelación, estado de cuenta, adeudos, descuentos/becas. Sin backend                                    |
-| Uniformes             | **EN REVISIÓN** | Catálogo, pedidos con precio histórico, cargo vinculado (`cargo_id`), pagado derivado, entrega, cancelación. Sin backend                                            |
-| Portal del tutor      | **EN REVISIÓN** | Tarjetas por hijo, datos deportivos, partidos/resultados por plantel, estado de cuenta, asistencia, uniformes, avisos, perfil                                       |
-| Reportes              | **EN REVISIÓN** | Tablero con fuentes, jugadores por categoría, ingresos, agenda global                                                                                               |
-| Agenda                | **EN REVISIÓN** | Sesiones (también desde horarios), partidos con reprogramación y resultados                                                                                         |
-| Pruebas               | **EN PROGRESO** | 74 pruebas Angular (6 flujos críticos HU-074 + reglas por HU + RBAC por ruta) con verificación de integridad. Sin E2E de navegador                                  |
-| Deployment            | **NO INICIADO** | —                                                                                                                                                                   |
+| Área                  | Estado          | Detalle                                                                                                                                                                 |
+| --------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Arquitectura frontend | **COMPLETADO**  | Angular standalone por dominio, RBAC por permisos, capa de servicios                                                                                                    |
+| Frontend              | **EN REVISIÓN** | Las 76 HU implementadas sobre `MockDb` en la rama `jorgesucre/feat/backlog-mariadb` ([`TRACEABILITY.md`](docs/TRACEABILITY.md)); cada responsable revisa las suyas      |
+| Base de datos         | **COMPLETADO**  | Modelo **MariaDB** adoptado ([`MARIADB.md`](docs/database/MARIADB.md)); 42/42 checks del esquema. El PostgreSQL de `db/` queda como historial                           |
+| Backend               | **NO INICIADO** | —                                                                                                                                                                       |
+| API                   | **PENDIENTE**   | Contrato: [`MARIADB.md`](docs/database/MARIADB.md) § 1–3 y § 7 (pasos para conectar)                                                                                    |
+| Autenticación         | **SIMULADA**    | Login con hash con sal (mock), sesiones con expiración, roles por perfil, permisos editables, recuperación con token. El hash real (argon2/bcrypt) va en el backend     |
+| Cobranza              | **EN REVISIÓN** | Conceptos, cargos, mensualidades, pagos parciales, folios, cancelación, estado de cuenta, adeudos, descuentos/becas. Sin backend                                        |
+| Uniformes             | **EN REVISIÓN** | Catálogo, pedidos con precio histórico, cargo vinculado (`cargo_id`), pagado derivado, entrega, cancelación. Sin backend                                                |
+| Portal del tutor      | **EN REVISIÓN** | Tarjetas por hijo, datos deportivos, partidos/resultados por plantel, estado de cuenta, asistencia, uniformes, avisos, perfil                                           |
+| Reportes              | **EN REVISIÓN** | Tablero con fuentes, jugadores por categoría, ingresos, agenda global                                                                                                   |
+| Agenda                | **EN REVISIÓN** | Sesiones (también desde horarios), partidos con reprogramación y resultados                                                                                             |
+| Pruebas               | **EN PROGRESO** | 131 pruebas Angular (flujos críticos, reglas por HU, autorización independiente, integridad 21/21, rendimiento). Sin E2E de navegador ([`TESTING.md`](docs/TESTING.md)) |
+| Deployment            | **NO INICIADO** | —                                                                                                                                                                       |
 
 ### Terminado
 
@@ -151,11 +151,12 @@ como operación del servicio owner, en un PR que revisa el owner.
 ## Arquitectura
 
 ```text
-Angular (src/app)        páginas → servicios de dominio → MockDb   ← HOY
+Angular (src/app)        páginas → servicios de dominio (+ AuthorizationService) → MockDb   ← HOY
                                              ↓ (futuro: HttpClient)
-API / Backend            no existe todavía; contrato propuesto en docs/database/api-contract.md
+API / Backend            no existe todavía; contrato: docs/database/MARIADB.md, AUTHORIZATION.md, DOMAIN_RULES.md
                                              ↓
-PostgreSQL 16 (db/)      esquema, restricciones, vista de saldos   ← EXISTE, sin conectar
+MariaDB 10.6+            docs/escuela_futbol_mariadb.sql (39 tablas) + db/mariadb/   ← modelo objetivo, sin conectar
+(histórico) PostgreSQL 16 en db/migrations: diseño anterior, ya no es la fuente de verdad
 ```
 
 | Qué                      | Dónde                                                                                                    |
@@ -173,16 +174,17 @@ PostgreSQL 16 (db/)      esquema, restricciones, vista de saldos   ← EXISTE, s
 
 Versiones instaladas, tomadas de `package-lock.json` y las herramientas locales al 2026-09-30.
 
-| Tecnología                                | Versión                                       | Nota                                                  |
-| ----------------------------------------- | --------------------------------------------- | ----------------------------------------------------- |
-| Node.js                                   | 26.10.0                                       | Angular 22 acepta `^22.22.3`, `^24.15.0` o `>=26.0.0` |
-| npm                                       | 11.19.1                                       | Fijado en `packageManager`                            |
-| Angular (core, CLI, build)                | 22.2.0                                        | Standalone, zoneless, OnPush por defecto              |
-| TypeScript                                | 6.0.3                                         | `strict` por defecto                                  |
-| Vitest (vía `ng test`) + jsdom            | 5.0.3 + 30.1.1                                | Pruebas del frontend                                  |
-| Prettier                                  | 3.9.9                                         | Formato; configurado en `.prettierrc`                 |
-| PostgreSQL (`psql`, `createdb`, `dropdb`) | 16 (probado con 16.15)                        | BD y sus pruebas                                      |
-| Git                                       | cualquier versión reciente (probado con 2.54) | —                                                     |
+| Tecnología                          | Versión                                       | Nota                                                  |
+| ----------------------------------- | --------------------------------------------- | ----------------------------------------------------- |
+| Node.js                             | 26.10.0                                       | Angular 22 acepta `^22.22.3`, `^24.15.0` o `>=26.0.0` |
+| npm                                 | 11.19.1                                       | Fijado en `packageManager`                            |
+| Angular (core, CLI, build)          | 22.2.0                                        | Standalone, zoneless, OnPush por defecto              |
+| TypeScript                          | 6.0.3                                         | `strict` por defecto                                  |
+| Vitest (vía `ng test`) + jsdom      | 5.0.3 + 30.1.1                                | Pruebas del frontend                                  |
+| Prettier                            | 3.9.9                                         | Formato; configurado en `.prettierrc`                 |
+| MariaDB (`mariadb`, `mariadb-dump`) | 10.6+ (probado con 13.0.2)                    | Modelo objetivo, checks del esquema y respaldo        |
+| PostgreSQL (`psql`)                 | 16 (probado con 16.15)                        | Sólo el esquema histórico de `db/migrations`          |
+| Git                                 | cualquier versión reciente (probado con 2.54) | —                                                     |
 
 No hay ESLint configurado.
 
@@ -202,7 +204,8 @@ Sólo las que un desarrollador necesita entender; las demás son transitivas.
 | `vitest`, `jsdom`                                         | 5.0.3, 30.1.1 | Pruebas unitarias en Node con DOM simulado           | Desarrollo  |
 | `prettier`                                                | 3.9.9         | Formato                                              | Desarrollo  |
 
-La BD no usa paquetes npm: los scripts llaman a `psql`.
+La BD no usa paquetes npm: los scripts llaman a `mariadb`/`mariadb-dump` (`db/mariadb/scripts`) y, para el esquema
+histórico, a `psql`.
 
 ## Documentación importante
 
