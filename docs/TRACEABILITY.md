@@ -100,3 +100,17 @@ las HU marcadas «corregida» estaban sobreestimadas en la versión anterior de 
 | Implementada          | 74                                                                          |
 | Parcial               | 1 (HU-071: sin validación visual en navegador)                              |
 | Bloqueada por backend | 1 (HU-072: hashing, sesión en servidor, consultas parametrizadas, secretos) |
+
+## Decisiones de permisos (D12, 2026-10-07)
+
+Resolución funcional posterior a la tabla oficial (que no se modifica). Detalle:
+[`MARIADB.md` § 4, D12](database/MARIADB.md) y [`AUTHORIZATION.md`](AUTHORIZATION.md#matriz-de-roles-d12).
+
+| HU / tema                 | Decisión                                                                                                                                                                                               | Código y prueba                                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| HU-070                    | La HU nombra al Administrador; el Word § 5 y el diagrama (posteriores) asignan temporadas también a Secretaría: crea, edita y marca la temporada actual (`temporadas.crear/editar`).                   | `permissions.ts`, `010_permisos_app.sql`; AZ «role matrix (D12)»                                         |
+| HU-051                    | Descuentos y becas: crear sólo el Administrador (la HU lo dice); Secretaría **consulta** (`descuentos.consultar`), el formulario de alta sólo se muestra con `descuentos.crear`.                       | `BillingService.discounts/addDiscount`, `DiscountsPage`; AZ                                              |
+| HU-049 / HU-054.3         | **Cargo ≠ pago.** Secretaría cancela **cargos sin pagos** (`cobranza.cancelar`, con motivo y auditoría; con pagos se rechaza). Revertir un **pago** (`pagos.cancelar`) es exclusivo del Administrador. | `BillingService.cancelCharge/voidCharge/cancelPayment`; AZ                                               |
+| Permisos de Secretaría    | Administra la operación, no el sistema: 45 permisos; sin `usuarios.*`, `roles.*`, `auditoria.consultar`, `pagos.cancelar`, `descuentos.crear`, `asistencias.crear/editar`.                             | AZ «secretaría: exactly the 45 operational permissions»                                                  |
+| Perfil vinculado (HU-030) | SECRETARIA + perfil ENTRENADOR es válido, pero los permisos del perfil sólo valen en su alcance: captura asistencia en sus sesiones, nunca en todas (corrige una escalada lateral).                    | `session.store.ts#grants`, `AuthService.accessOf` (`officePermissions`), `TrainingService.canRecord`; AZ |
+| HU-024.1 / HU-002         | Un entrenador sin rol de oficina ya no pasa `requireOffice()` por traer `asistencias.*` en su perfil (no lista todos los jugadores ni los catálogos de oficina).                                       | `AuthorizationService.requireOffice`; AZ «entrenador: own sessions only, no office catalogs»             |

@@ -68,14 +68,17 @@ No existen entidades `equipos`, `evaluaciones` ni configuración general: la **c
 - `usuarios.rol_id` sólo admite roles de tipo **SEGURIDAD** (ADMINISTRADOR, SECRETARIA). **TUTOR** y **ENTRENADOR** son
   roles de **PERFIL**: los otorga tener `tutores.usuario_id` / `entrenadores.usuario_id` (y `entrenadores.activo`). Una
   misma cuenta puede ser, p. ej., entrenadora y tutora (`marta@example.com` en el seed).
-- Al iniciar sesión, `AuthService.accessOf` calcula roles = rol de seguridad + perfiles, y permisos = unión de
-  `rol_permiso` de esos roles. Se guardan en la sesión: **los cambios de permisos aplican a sesiones nuevas** (HU-006.2).
+- Al iniciar sesión, `AuthService.accessOf` calcula roles = rol de seguridad + perfiles, permisos = unión de
+  `rol_permiso` de esos roles, y aparte los permisos **sólo del rol de seguridad** (`officePermissions`). Se guardan en
+  la sesión: **los cambios de permisos aplican a sesiones nuevas** (HU-006.2). Un permiso de módulo de oficina cuenta
+  globalmente sólo si lo da el rol de seguridad; el que trae un perfil vale sólo en el alcance del perfil (sin escalada
+  lateral; ver [`AUTHORIZATION.md`](../AUTHORIZATION.md)).
 - Rutas y menú verifican **permisos** (`modulo.accion`), nunca nombres de rol. Tabla de seguridad: `app.routes.spec.ts`.
 - **Módulos de permiso agregados** (son filas de `permisos`, no cambios de esquema; el comentario de la columna `modulo`
   dice «Ejemplo»): `roles`, `tutores`, `entrenadores`, `temporadas`, `sedes`, `cobranza`, `descuentos`, `reportes`,
   `portal`, `panel_entrenador`. Script idempotente: [`db/mariadb/010_permisos_app.sql`](../../db/mariadb/010_permisos_app.sql)
-  (probado sobre MariaDB 13.0.2: 59 permisos; ADMINISTRADOR 56, SECRETARIA 42, ENTRENADOR 3, TUTOR 2 — mismos números que
-  `DEFAULT_ROLE_PERMISSIONS`).
+  (probado sobre MariaDB 13.0.2: 59 permisos; `rol_permiso` 106 filas: ADMINISTRADOR 56, SECRETARIA 45, ENTRENADOR 3,
+  TUTOR 2 — la misma matriz, fila por fila, que `DEFAULT_ROLE_PERMISSIONS`; ver D12).
 - Cada operación pública de servicio verifica permiso y propiedad en `AuthorizationService` a partir de la sesión
   (`tutor → tutor_jugador → jugadores`; `entrenador → entrenador_categoria / entrenador_competencia_categoria`), nunca a
   partir de un id enviado por el cliente. Matriz completa y estrategia: [`AUTHORIZATION.md`](../AUTHORIZATION.md).
@@ -96,6 +99,28 @@ No existen entidades `equipos`, `evaluaciones` ni configuración general: la **c
 | D9  | HU-057: «a todos o a audiencias seleccionadas»                 | `aviso_destinatario` GENERAL/CATEGORIA/TUTOR/ENTRENADOR (con su FK)                           | Sin selección = GENERAL; si no, una fila por categoría, tutor o entrenador elegido. «Todos los tutores» sin entrenadores no es expresable sin enumerarlos.                                                                                                             |
 | D10 | HU-031: «solo entrenador asignado o admin» edita la bitácora   | sin columna de autor de la bitácora                                                           | Requiere `asistencias.editar` y alcance de entrenador; la secretaría (sin ese permiso) sólo consulta.                                                                                                                                                                  |
 | D11 | HU-045.1: el pago «captura … fecha»                            | `pagos.fecha_pago DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`: admite un valor explícito     | **Resuelto 2026-10-07:** la fecha y hora del pago se capturan (por omisión, ahora); no puede ser futura; `creado_en` conserva el momento de captura, así un pago registrado con fecha anterior queda trazable. Antes la ponía siempre el servidor y contradecía la HU. |
+| D12 | Roles de oficina (ver abajo)                                   | `rol_permiso` editable                                                                        | Administrador administra el sistema; Secretaría administra la operación de la escuela.                                                                                                                                                                                 |
+
+### D12 · Administrador administra el sistema; Secretaría administra la operación (resuelta 2026-10-07)
+
+Fuentes en conflicto: la **Matriz Roles** del backlog (Secretaría: asistencia sólo consulta, pagos alta/consulta, sin
+auditoría; «CRUD usuarios; permisos según política»), **HU-070** (temporadas: rol Administrador), y el **Word de
+revisión § 5** (posterior: Administrador y Secretaría con los mismos privilegios _operativos_, roles separados para
+trazabilidad) con el **diagrama** («Crear categorías y temporadas» para ambos). Resolución aprobada por el equipo:
+
+- **Secretaría** = toda la operación cotidiana (lo que enumera el Word § 5): jugadores, tutores, entrenadores,
+  categorías, **temporadas** (incluida la actual; prevalece el Word/diagrama sobre HU-070), inscripciones, sedes,
+  sesiones, competencias, partidos, cobranza (incluido **cancelar cargos sin pagos**), registrar pagos, uniformes,
+  avisos y reportes; **consulta** asistencia y descuentos/becas. Las cuentas de tutores y entrenadores las gestiona con
+  `tutores.editar`/`entrenadores.editar`, sin `usuarios.*`.
+- **Exclusivo del Administrador** (administración del sistema y decisiones o reversiones financieras): `usuarios.*`,
+  `roles.*`, `auditoria.consultar`, `pagos.cancelar` (HU-049), `descuentos.crear` (HU-051). La captura de asistencia es
+  del entrenador (HU-030); el Administrador la conserva para cualquier sesión.
+- Una persona puede ser SECRETARIA **y** ENTRENADORA; los permisos que trae el perfil sólo valen en su alcance.
+- `USER_STORIES.md` (tabla oficial) no se modifica: esta decisión es posterior y queda documentada aquí.
+
+Resultado: SECRETARIA 42 → 45 permisos (+`temporadas.crear`, +`temporadas.editar`, +`descuentos.consultar`).
+`permissions.ts` y `010_permisos_app.sql` generan la misma matriz (106 filas de `rol_permiso`).
 
 ## 5. Rendimiento (HU-075)
 

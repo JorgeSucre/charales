@@ -43,7 +43,7 @@ Las historias de usuario se organizan por épicas (EP01–EP12) y cada una tiene
 | Portal del tutor      | **EN REVISIÓN** | Tarjetas por hijo, datos deportivos, partidos/resultados por plantel, estado de cuenta, asistencia, uniformes, avisos, perfil                                           |
 | Reportes              | **EN REVISIÓN** | Tablero con fuentes, jugadores por categoría, ingresos, agenda global                                                                                                   |
 | Agenda                | **EN REVISIÓN** | Sesiones (también desde horarios), partidos con reprogramación y resultados                                                                                             |
-| Pruebas               | **EN PROGRESO** | 131 pruebas Angular (flujos críticos, reglas por HU, autorización independiente, integridad 21/21, rendimiento). Sin E2E de navegador ([`TESTING.md`](docs/TESTING.md)) |
+| Pruebas               | **EN PROGRESO** | 138 pruebas Angular (flujos críticos, reglas por HU, autorización independiente, integridad 21/21, rendimiento). Sin E2E de navegador ([`TESTING.md`](docs/TESTING.md)) |
 | Deployment            | **NO INICIADO** | —                                                                                                                                                                       |
 
 ### Terminado

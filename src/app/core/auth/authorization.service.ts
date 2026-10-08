@@ -2,8 +2,8 @@ import { Injectable, inject } from '@angular/core';
 import { MockDb } from '../data/mock-db';
 import { Id } from '../models';
 import { isCurrentAssignment } from '../../shared/dates';
-import { PROFILE_MODULES, PermissionKey } from './permissions';
-import { AuthUser, SessionStore } from './session.store';
+import { PermissionKey } from './permissions';
+import { AuthUser, SessionStore, grants } from './session.store';
 
 /** Thrown when the session may not perform an operation. Same message whatever the reason (nothing to enumerate). */
 export class ForbiddenError extends Error {
@@ -34,25 +34,26 @@ export class AuthorizationService {
     return user;
   }
 
+  /** Office modules count only from the security role; profile modules from the profile (see `grants`). */
   has(permission: PermissionKey): boolean {
-    return !!this.session.user()?.permissions.includes(permission);
+    return grants(this.session.user(), permission);
   }
 
   /** Requires at least one of the permissions. */
   require(...anyOf: PermissionKey[]): AuthUser {
     const user = this.user();
-    if (!anyOf.some((p) => user.permissions.includes(p))) throw new ForbiddenError();
+    if (!anyOf.some((p) => grants(user, p))) throw new ForbiddenError();
     return user;
   }
 
   /**
    * Shared office catalogs (categories, seasons, venues, coaches, concepts…) used as selects across office pages:
-   * any office permission is enough; tutor/coach profiles alone are not (their areas compose their own data).
+   * any permission of the security role is enough; tutor/coach profiles are not, not even the office-module
+   * permissions a profile carries (ENTRENADOR → asistencias.*): their areas compose their own data.
    */
   requireOffice(): AuthUser {
     const user = this.user();
-    if (!user.permissions.some((p) => !PROFILE_MODULES.includes(p.split('.')[0])))
-      throw new ForbiddenError();
+    if (!user.officePermissions.length) throw new ForbiddenError();
     return user;
   }
 
@@ -110,7 +111,7 @@ export class AuthorizationService {
     relations: { tutor?: boolean; coach?: boolean } = {},
   ): AuthUser {
     const user = this.user();
-    if (user.permissions.includes(officePermission)) return user;
+    if (grants(user, officePermission)) return user;
     if (relations.tutor && this.has('portal.consultar') && this.tutorChildren().includes(playerId))
       return user;
     if (
@@ -125,7 +126,7 @@ export class AuthorizationService {
   /** Office permission, or a coach currently assigned to the category. */
   assertCategory(categoryId: Id, officePermission: PermissionKey): AuthUser {
     const user = this.user();
-    if (user.permissions.includes(officePermission)) return user;
+    if (grants(user, officePermission)) return user;
     if (this.has('panel_entrenador.consultar') && this.coachCategories().includes(categoryId))
       return user;
     throw new ForbiddenError('No tienes acceso a esta categoría.');
@@ -143,7 +144,8 @@ export class AuthorizationService {
     const keys = this.db.permissions
       .filter((p) => permissionIds.includes(p.id))
       .map((p) => `${p.module}.${p.action}`);
-    if (!keys.every((k) => user.permissions.includes(k as PermissionKey)))
+    // Only the actor's security role counts: a linked profile never helps grant a role.
+    if (!keys.every((k) => user.officePermissions.includes(k as PermissionKey)))
       throw new ForbiddenError('No puedes asignar un rol con más permisos que los tuyos.');
   }
 

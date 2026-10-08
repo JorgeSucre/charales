@@ -31,6 +31,6 @@ del respaldo: `npm run db:mariadb:test-backup` (requiere un servidor MariaDB loc
 
 ## Evidencia
 
-- Salida detallada de `npx ng test --watch=false --reporters=verbose` (131/131):
+- Salida detallada de `npx ng test --watch=false --reporters=verbose` (138/138):
   [`database/evidence/tests-2026-10-08.txt`](database/evidence/tests-2026-10-08.txt).
 - Respaldo/restauración: [`database/evidence/backup-restore-2026-10-07.txt`](database/evidence/backup-restore-2026-10-07.txt).

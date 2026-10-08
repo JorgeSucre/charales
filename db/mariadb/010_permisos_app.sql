@@ -34,15 +34,15 @@ INSERT IGNORE INTO rol_permiso (rol_id, permiso_id)
 SELECT r.id, p.id FROM roles r JOIN permisos p
 WHERE r.nombre = 'ADMINISTRADOR' AND p.modulo NOT IN ('portal', 'panel_entrenador');
 
--- SECRETARIA: sin usuarios/roles/auditoría/descuentos, sin cancelar pagos, asistencia sólo consulta,
--- temporadas sólo consulta.
+-- SECRETARIA (D12: administra la operación, no el sistema): sin usuarios/roles/auditoría, sin cancelar pagos,
+-- descuentos sólo consulta, asistencia sólo consulta. Sí temporadas y cancelar cargos sin pagos (cobranza.cancelar).
 INSERT IGNORE INTO rol_permiso (rol_id, permiso_id)
 SELECT r.id, p.id FROM roles r JOIN permisos p
 WHERE r.nombre = 'SECRETARIA'
-  AND p.modulo NOT IN ('portal', 'panel_entrenador', 'usuarios', 'roles', 'auditoria', 'descuentos')
+  AND p.modulo NOT IN ('portal', 'panel_entrenador', 'usuarios', 'roles', 'auditoria')
+  AND NOT (p.modulo = 'descuentos' AND p.accion = 'crear')
   AND NOT (p.modulo = 'pagos' AND p.accion = 'cancelar')
-  AND NOT (p.modulo = 'asistencias' AND p.accion IN ('crear', 'editar'))
-  AND NOT (p.modulo = 'temporadas' AND p.accion IN ('crear', 'editar'));
+  AND NOT (p.modulo = 'asistencias' AND p.accion IN ('crear', 'editar'));
 
 INSERT IGNORE INTO rol_permiso (rol_id, permiso_id)
 SELECT r.id, p.id FROM roles r JOIN permisos p

@@ -1,45 +1,45 @@
-MariaDB 13.0.2-MariaDB · 2026-10-07 11:01
+MariaDB 13.0.2-MariaDB · 2026-10-07 20:55
 Checks del esquema: 42 casos, 42 OK, 0 fallas
-Respaldo: ef_bktest_16023_src_2026-10-07_110128.sql.gz (8328 bytes comprimidos)
-Restaurado en ef_bktest_16023_dst
-asistencias                        filas      1 /      1  checksum   4261184193 /   4261184193  OK
+Respaldo: ef_bktest_29232_src_2026-10-07_205515.sql.gz (8328 bytes comprimidos)
+Restaurado en ef_bktest_29232_dst
+asistencias                        filas      1 /      1  checksum   3854184329 /   3854184329  OK
 auditoria                          filas      0 /      0  checksum            0 /            0  OK
-avisos                             filas      1 /      1  checksum   4244857338 /   4244857338  OK
+avisos                             filas      1 /      1  checksum   1243721034 /   1243721034  OK
 aviso_destinatario                 filas      2 /      2  checksum    880183542 /    880183542  OK
-cargos                             filas      3 /      3  checksum   3047063630 /   3047063630  OK
-categorias                         filas      2 /      2  checksum   1819723680 /   1819723680  OK
-competencias                       filas      1 /      1  checksum   3168061215 /   3168061215  OK
-competencia_categoria              filas      1 /      1  checksum   4082868231 /   4082868231  OK
-conceptos_cobro                    filas      1 /      1  checksum    653468428 /    653468428  OK
-descuentos                         filas      1 /      1  checksum    984030135 /    984030135  OK
+cargos                             filas      3 /      3  checksum   2917543686 /   2917543686  OK
+categorias                         filas      2 /      2  checksum   1542051744 /   1542051744  OK
+competencias                       filas      1 /      1  checksum   3949356421 /   3949356421  OK
+competencia_categoria              filas      1 /      1  checksum   2766733981 /   2766733981  OK
+conceptos_cobro                    filas      1 /      1  checksum   1900118422 /   1900118422  OK
+descuentos                         filas      1 /      1  checksum   1830140205 /   1830140205  OK
 detalle_uniforme                   filas      0 /      0  checksum            0 /            0  OK
-entrenadores                       filas      2 /      2  checksum   4196755245 /   4196755245  OK
+entrenadores                       filas      2 /      2  checksum    162044189 /    162044189  OK
 entrenador_categoria               filas      0 /      0  checksum            0 /            0  OK
 entrenador_competencia_categoria   filas      0 /      0  checksum            0 /            0  OK
-historial_categoria                filas      1 /      1  checksum   4282695325 /   4282695325  OK
-historial_estatus                  filas      2 /      2  checksum   3775509835 /   3775509835  OK
-horarios_entrenamiento             filas      1 /      1  checksum   2572325256 /   2572325256  OK
-inscripciones                      filas      1 /      1  checksum   3015307229 /   3015307229  OK
-jugadores                          filas      2 /      2  checksum   3513568855 /   3513568855  OK
-jugador_categoria                  filas      2 /      2  checksum   1078199049 /   1078199049  OK
+historial_categoria                filas      1 /      1  checksum   2834701319 /   2834701319  OK
+historial_estatus                  filas      2 /      2  checksum   3807763259 /   3807763259  OK
+horarios_entrenamiento             filas      1 /      1  checksum   3470799634 /   3470799634  OK
+inscripciones                      filas      1 /      1  checksum   3825945927 /   3825945927  OK
+jugadores                          filas      2 /      2  checksum   2708805063 /   2708805063  OK
+jugador_categoria                  filas      2 /      2  checksum   3225666293 /   3225666293  OK
 jugador_competencia_categoria      filas      0 /      0  checksum            0 /            0  OK
-pagos                              filas      2 /      2  checksum    898403568 /    898403568  OK
-pago_aplicacion                    filas      1 /      1  checksum    744586787 /    744586787  OK
-partidos                           filas      1 /      1  checksum   1434789131 /   1434789131  OK
-pedidos_uniforme                   filas      3 /      3  checksum   1967327696 /   1967327696  OK
+pagos                              filas      2 /      2  checksum   1217628879 /   1217628879  OK
+pago_aplicacion                    filas      1 /      1  checksum   2077482169 /   2077482169  OK
+partidos                           filas      1 /      1  checksum   1304660035 /   1304660035  OK
+pedidos_uniforme                   filas      3 /      3  checksum   1819574168 /   1819574168  OK
 permisos                           filas     59 /     59  checksum   1984406247 /   1984406247  OK
 productos_uniforme                 filas      0 /      0  checksum            0 /            0  OK
 rivales                            filas      0 /      0  checksum            0 /            0  OK
-roles                              filas      4 /      4  checksum     16922821 /     16922821  OK
-rol_permiso                        filas    103 /    103  checksum   2168356785 /   2168356785  OK
-sedes                              filas      1 /      1  checksum   1700485168 /   1700485168  OK
-sesiones                           filas      1 /      1  checksum   2950860140 /   2950860140  OK
-sesiones_entrenamiento             filas      2 /      2  checksum   1532253475 /   1532253475  OK
-temporadas                         filas      2 /      2  checksum   3941235528 /   3941235528  OK
-tokens_recuperacion                filas      1 /      1  checksum   2770535876 /   2770535876  OK
-tutores                            filas      3 /      3  checksum   3078889500 /   3078889500  OK
-tutor_jugador                      filas      4 /      4  checksum    739211467 /    739211467  OK
-usuarios                           filas      2 /      2  checksum   1013351168 /   1013351168  OK
+roles                              filas      4 /      4  checksum       242921 /       242921  OK
+rol_permiso                        filas    106 /    106  checksum   3650747456 /   3650747456  OK
+sedes                              filas      1 /      1  checksum    854194858 /    854194858  OK
+sesiones                           filas      1 /      1  checksum    885359935 /    885359935  OK
+sesiones_entrenamiento             filas      2 /      2  checksum    727451315 /    727451315  OK
+temporadas                         filas      2 /      2  checksum   1158511672 /   1158511672  OK
+tokens_recuperacion                filas      1 /      1  checksum   3048358258 /   3048358258  OK
+tutores                            filas      3 /      3  checksum   3754275172 /   3754275172  OK
+tutor_jugador                      filas      4 /      4  checksum   3563927463 /   3563927463  OK
+usuarios                           filas      2 /      2  checksum   1281857792 /   1281857792  OK
 variantes_uniforme                 filas      0 /      0  checksum            0 /            0  OK
 Tablas comparadas: 39
 RESULTADO: OK, el respaldo es idéntico

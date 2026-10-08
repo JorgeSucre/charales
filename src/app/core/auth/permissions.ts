@@ -82,8 +82,10 @@ export const PROFILE_MODULES: readonly string[] = ['portal', 'panel_entrenador']
 const all = PERMISSION_CATALOG.filter((p) => !PROFILE_MODULES.includes(p.split('.')[0]));
 
 /**
- * Initial rol_permiso (Matriz Roles of the backlog). Editable afterwards from the permissions screen (HU-006).
- * Secretaría: no users/roles/audit, no payment cancellation or discounts, attendance read-only, seasons read-only.
+ * Initial rol_permiso. Editable afterwards from the permissions screen (HU-006).
+ * D12 (MARIADB.md): Administrador administers the system; Secretaría administers the school's operation —
+ * everything operational (seasons included; voiding charges without payments) but no users/roles/audit, no payment
+ * cancellation, discounts read-only, and attendance read-only (capture belongs to the coach).
  */
 export const DEFAULT_ROLE_PERMISSIONS: Record<BaseRole, readonly PermissionKey[]> = {
   ADMINISTRADOR: all,
@@ -92,9 +94,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<BaseRole, readonly PermissionKey[]
       !p.startsWith('usuarios.') &&
       !p.startsWith('roles.') &&
       !p.startsWith('auditoria.') &&
-      !p.startsWith('descuentos.') &&
-      !['pagos.cancelar', 'asistencias.crear', 'asistencias.editar'].includes(p) &&
-      !['temporadas.crear', 'temporadas.editar'].includes(p),
+      !['descuentos.crear', 'pagos.cancelar', 'asistencias.crear', 'asistencias.editar'].includes(
+        p,
+      ),
   ),
   ENTRENADOR: ['panel_entrenador.consultar', 'asistencias.crear', 'asistencias.editar'],
   TUTOR: ['portal.consultar', 'portal.editar'],
