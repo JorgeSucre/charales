@@ -14,15 +14,16 @@ npm run api:start                 # http://localhost:3000
 npm run api:test                  # pruebas en una base temporal ef_apitest_* que se borra al terminar
 ```
 
-| Variable                  | Por defecto      | Notas                                      |
-| ------------------------- | ---------------- | ------------------------------------------ |
-| `PORT`                    | `3000`           |                                            |
-| `DB_NAME`                 | `escuela_futbol` |                                            |
-| `DB_HOST` / `DB_PORT`     | `127.0.0.1:3306` | Se ignoran si hay `DB_SOCKET`              |
-| `DB_SOCKET`               | —                | Socket local (autenticación `unix_socket`) |
-| `DB_USER` / `DB_PASSWORD` | —                | Nunca en el repo                           |
-| `DB_POOL_SIZE`            | `5`              |                                            |
-| `COOKIE_SECURE`           | `false`          | Siempre `Secure` con `NODE_ENV=production` |
+| Variable                  | Por defecto      | Notas                                                                                                                          |
+| ------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `PORT`                    | `3000`           |                                                                                                                                |
+| `DB_NAME`                 | `escuela_futbol` |                                                                                                                                |
+| `DB_HOST` / `DB_PORT`     | `127.0.0.1:3306` | Se ignoran si hay `DB_SOCKET`                                                                                                  |
+| `DB_SOCKET`               | —                | Socket local (autenticación `unix_socket`)                                                                                     |
+| `DB_USER` / `DB_PASSWORD` | —                | Nunca en el repo                                                                                                               |
+| `DB_POOL_SIZE`            | `5`              |                                                                                                                                |
+| `COOKIE_SECURE`           | `false`          | Siempre `Secure` con `NODE_ENV=production`                                                                                     |
+| `MAIL_CONSOLE`            | `false`          | Sólo desarrollo: imprime en la consola de la API el correo de recuperación (con el enlace). Ignorado con `NODE_ENV=production` |
 
 Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`, contraseña `demo1234`), creadas por
 [`db/mariadb/020_dev_seed.sql`](../db/mariadb/020_dev_seed.sql). Son ficticias; **nunca** se cargan en producción.
@@ -45,14 +46,17 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
 
 ## Endpoints
 
-| Método y ruta         | Sesión | Respuestas                                                                                                                                                      |
-| --------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /health`         | No     | `200 {status:"ok",database:"ok"}` · `503` si MariaDB no responde                                                                                                |
-| `POST /auth/login`    | No     | `200 AuthUser` + cookie · `400` faltan datos · `401` correo/contraseña incorrectos **o cuenta deshabilitada** (mismo mensaje) · `403` sin rol ni perfil · `429` |
-| `GET /auth/session`   | Sí     | `200 AuthUser` (renueva el uso) · `401` sin sesión, vencida o cerrada                                                                                           |
-| `POST /auth/logout`   | —      | `204` siempre; borra la cookie y cierra la sesión si había una                                                                                                  |
-| `GET /api/jugadores`  | Sí     | `200` arreglo de filas de `jugadores` · `401` sin sesión · `403` sin `jugadores.consultar` del rol de seguridad                                                 |
-| `GET /api/categorias` | Sí     | `200` arreglo de filas de `categorias` · `401` sin sesión · `403` sin ningún permiso de oficina                                                                 |
+| Método y ruta                       | Sesión | Respuestas                                                                                                                                                      |
+| ----------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /health`                       | No     | `200 {status:"ok",database:"ok"}` · `503` si MariaDB no responde                                                                                                |
+| `POST /auth/login`                  | No     | `200 AuthUser` + cookie · `400` faltan datos · `401` correo/contraseña incorrectos **o cuenta deshabilitada** (mismo mensaje) · `403` sin rol ni perfil · `429` |
+| `GET /auth/session`                 | Sí     | `200 AuthUser` (renueva el uso) · `401` sin sesión, vencida o cerrada                                                                                           |
+| `POST /auth/logout`                 | —      | `204` siempre; borra la cookie y cierra la sesión si había una                                                                                                  |
+| `POST /auth/password`               | Sí     | `{currentPassword, newPassword}` → `204` (cierra las otras sesiones) · `400` actual incorrecta, política o igual a la actual · `401` sin sesión · `429`         |
+| `POST /auth/password-reset/request` | No     | `{email}` → `204` siempre (exista o no la cuenta) · `400` sin correo · `429` · `503` sin transporte de correo                                                   |
+| `POST /auth/password-reset/confirm` | No     | `{token, newPassword}` → `204` (cierra todas las sesiones y borra la cookie) · `400` política, o «El enlace no es válido o ya expiró.»                          |
+| `GET /api/jugadores`                | Sí     | `200` arreglo de filas de `jugadores` · `401` sin sesión · `403` sin `jugadores.consultar` del rol de seguridad                                                 |
+| `GET /api/categorias`               | Sí     | `200` arreglo de filas de `categorias` · `401` sin sesión · `403` sin ningún permiso de oficina                                                                 |
 
 `AuthUser` es la interfaz de `src/app/core/auth/session.store.ts`: `userId`, `sessionId`, `email`, `displayName`,
 `roles`, `permissions`, `officePermissions`, `tutorId`, `coachId`, `isStaff`, `expiresAt`, `lastUsedAt`. Nunca incluye
@@ -63,6 +67,39 @@ curl -i -c jar -H 'Content-Type: application/json' -d '{"email":"admin@example.c
 curl -b jar localhost:3000/auth/session
 curl -b jar -c jar -X POST localhost:3000/auth/logout
 ```
+
+## Contraseñas (HU-005)
+
+Código: [`api/password.ts`](../api/password.ts). Responsable de la historia: Borrayo. Decisiones del registro M0
+(2026-10-09): D2, D3a, D3b, D3d, D3e, D4a, D4b, D4d, D7, D8.
+
+- **Cambio y recuperación son operaciones distintas.** El cambio exige sesión y la contraseña actual; una actual
+  incorrecta responde `400` (no `401`, para que el cliente no lo confunda con una sesión vencida) y cuenta para el
+  límite de 5 intentos en 15 min por usuario. Al cambiarla se cierran las **demás** sesiones y se conserva la actual.
+- **Política** (igual que el frontend): 8 a 200 caracteres, con letras y números; distinta de la actual.
+- **Recuperación:** token aleatorio de 32 bytes; sólo se guarda su SHA-256 en `tokens_recuperacion`; un solo uso;
+  vence a los 60 min. Una nueva solicitud revoca los tokens anteriores vigentes de la cuenta marcando `usado_en` (se
+  conserva el historial). Confirmar cierra **todas** las sesiones, en una transacción con la auditoría.
+- **Sin enumeración:** la solicitud responde `204` igual para cuentas existentes, inexistentes o inactivas; límite de 5
+  solicitudes por correo e IP en 15 min (también para correos inexistentes).
+- **Correo:** no hay proveedor (D4c pendiente). Sin transporte, la solicitud responde `503` antes de consultar la
+  cuenta, y la recuperación queda **deshabilitada en producción**. En desarrollo, `MAIL_CONSOLE=true` imprime el correo
+  (con el enlace y su token) en la consola de la API; nunca con `NODE_ENV=production`.
+- **Sólo tokens de recuperación (D3e):** `tokens_recuperacion` no tiene columna de finalidad, así que la API no emite
+  invitaciones. Antes de hacerlo hará falta una migración con finalidad explícita (aprobación propia).
+- **Registros:** el pool usa `logParam: false`, así que un error de SQL no imprime los parámetros. La API no registra
+  contraseñas, cookies ni tokens; la única excepción es la consola de desarrollo anterior.
+- **Concurrencia:** las tres operaciones bloquean primero la fila de `usuarios` (orden `usuarios` → `tokens_recuperacion`
+  → `sesiones`), así que las operaciones sobre una misma cuenta se ejecutan una tras otra. El cambio vuelve a comprobar,
+  bajo el bloqueo, que la sesión sigue abierta (si no, `401`) y que la contraseña no cambió desde que se verificó (si
+  cambió, `400` sin contar como intento): un cambio nunca sobrescribe un restablecimiento simultáneo, y de dos cambios
+  simultáneos gana uno solo. El intento de cambio se reserva antes de verificar la contraseña, así que peticiones
+  paralelas no superan el límite. Dentro de las transacciones sólo hay lecturas con bloqueo: con el aislamiento por
+  instantánea de MariaDB (`innodb_snapshot_isolation`, activo por omisión desde 11.6) una lectura simple previa
+  provocaría «Record has changed since last read». Si falla el rollback, se conserva el error original.
+- **Auditoría:** `EDITAR usuarios` «Cambio de contraseña» y «Restablecimiento de contraseña». La solicitud no se audita
+  (igual que el mock).
+- Las páginas de contraseña de Angular **siguen usando el mock** hasta que se integre el login real (M4/M5).
 
 ## Práctica de laboratorio: dos endpoints GET
 

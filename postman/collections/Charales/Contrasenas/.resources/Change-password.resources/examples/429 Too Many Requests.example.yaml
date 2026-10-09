@@ -1,0 +1,14 @@
+$kind: http-example
+request:
+  url: '{{baseUrl}}/auth/password'
+  method: POST
+response:
+  statusCode: 429
+  statusText: Too Many Requests
+  headers:
+    - key: Content-Type
+      value: application/json; charset=utf-8
+  body:
+    type: json
+    content: |-
+      { "error": "Demasiados intentos. Intenta de nuevo más tarde." }

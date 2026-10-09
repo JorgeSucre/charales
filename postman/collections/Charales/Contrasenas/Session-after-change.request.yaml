@@ -1,0 +1,10 @@
+$kind: http-request
+name: 'GET /auth/session (tras el cambio)'
+method: GET
+url: '{{baseUrl}}/auth/session'
+order: 4000
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200: la sesión actual se conserva (D2)', () => pm.response.to.have.status(200));

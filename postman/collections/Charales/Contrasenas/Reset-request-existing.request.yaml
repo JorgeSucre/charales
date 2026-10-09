@@ -1,0 +1,22 @@
+$kind: http-request
+name: 'POST /auth/password-reset/request (correo existente)'
+method: POST
+url: '{{baseUrl}}/auth/password-reset/request'
+order: 8000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "{{coachEmail}}"
+    }
+examples: './.resources/Reset-request.resources/examples'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('204, 503 (sin transporte) o 429 (límite)', () => pm.expect(pm.response.code).to.be.oneOf([204, 429, 503]));
+      pm.collectionVariables.set('resetStatusExisting', String(pm.response.code));
+      pm.collectionVariables.set('resetBodyExisting', pm.response.text());

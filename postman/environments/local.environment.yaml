@@ -16,6 +16,10 @@ values:
     value: baja@example.com
     enabled: true
     type: default
+  - key: tempPassword
+    value: Temporal2026x
+    enabled: true
+    type: default
   - key: password
     value: demo1234
     enabled: true
