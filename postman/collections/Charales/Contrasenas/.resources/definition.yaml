@@ -1,0 +1,8 @@
+$kind: collection
+name: Contraseñas
+order: 5000
+description: |-
+  HU-005 (M0 D2–D8). Cambio de contraseña con sesión y recuperación por token. El cambio deja la contraseña de nuevo
+  en {{password}} al final, para que la colección se pueda repetir. La solicitud de recuperación responde 204 con
+  MAIL_CONSOLE=true en desarrollo, 503 sin transporte de correo y 429 al superar el límite; en todos los casos debe
+  responder igual para un correo existente y uno inexistente.

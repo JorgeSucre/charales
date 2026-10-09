@@ -1,0 +1,23 @@
+$kind: http-request
+name: 'POST /auth/password (contraseña actual incorrecta)'
+method: POST
+url: '{{baseUrl}}/auth/password'
+order: 2000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "currentPassword": "{{password}}-incorrecta",
+      "newPassword": "{{tempPassword}}"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('400: la contraseña actual no es correcta (no 401: la sesión sigue)', () => {
+        pm.response.to.have.status(400);
+        pm.expect(pm.response.json().error).to.eql('La contraseña actual no es correcta.');
+      });

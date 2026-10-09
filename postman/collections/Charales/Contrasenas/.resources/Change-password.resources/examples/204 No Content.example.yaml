@@ -1,0 +1,11 @@
+$kind: http-example
+request:
+  url: '{{baseUrl}}/auth/password'
+  method: POST
+response:
+  statusCode: 204
+  statusText: No Content
+  headers: []
+  body:
+    type: text
+    content: ''

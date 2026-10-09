@@ -30,22 +30,22 @@ Las historias de usuario se organizan por épicas (EP01–EP12) y cada una tiene
 
 ## Estado del proyecto
 
-| Área                  | Estado          | Detalle                                                                                                                                                                          |
-| --------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Arquitectura frontend | **COMPLETADO**  | Angular standalone por dominio, RBAC por permisos, capa de servicios                                                                                                             |
-| Frontend              | **EN REVISIÓN** | Las 76 HU implementadas sobre `MockDb` en `main` (`18178ba`, local) ([`TRACEABILITY.md`](docs/TRACEABILITY.md)); cada responsable revisa las suyas                               |
-| Base de datos         | **COMPLETADO**  | Modelo **MariaDB** adoptado ([`MARIADB.md`](docs/database/MARIADB.md)); 42/42 checks del esquema. El PostgreSQL de `db/` queda como historial                                    |
-| Backend               | **EN PROGRESO** | Milestone 1 en `api/`: Node `node:http` + MariaDB, configuración por variables de entorno, pruebas `node:test`, colección Postman local                                          |
-| API                   | **EN PROGRESO** | `GET /health`, `/auth/login`, `/auth/session`, `/auth/logout`, `GET /api/jugadores`, `GET /api/categorias` ([`API.md`](docs/API.md)); el frontend aún no la consume              |
-| Autenticación         | **EN PROGRESO** | API: argon2id, cookie HttpOnly, 8 h / 30 min, límite de intentos, auditoría. El frontend sigue con el mock (SHA-256); recuperación y cambio de contraseña aún sólo en el mock    |
-| Autorización          | **COMPLETADO**  | Permiso + alcance en cada servicio; matriz D12 (Administrador 56, Secretaría 45, Entrenador 3, Tutor 2); sin escalada por perfiles ([`AUTHORIZATION.md`](docs/AUTHORIZATION.md)) |
-| Cobranza              | **EN REVISIÓN** | Conceptos, cargos, mensualidades, pagos parciales, folios, cancelación, estado de cuenta, adeudos, descuentos/becas. Sin backend                                                 |
-| Uniformes             | **EN REVISIÓN** | Catálogo, pedidos con precio histórico, cargo vinculado (`cargo_id`), pagado derivado, entrega, cancelación. Sin backend                                                         |
-| Portal del tutor      | **EN REVISIÓN** | Tarjetas por hijo, datos deportivos, partidos/resultados por plantel, estado de cuenta, asistencia, uniformes, avisos, perfil                                                    |
-| Reportes              | **EN REVISIÓN** | Tablero con fuentes, jugadores por categoría, ingresos, agenda global                                                                                                            |
-| Agenda                | **EN REVISIÓN** | Sesiones (también desde horarios), partidos con reprogramación y resultados                                                                                                      |
-| Pruebas               | **EN PROGRESO** | 138 pruebas Angular (flujos críticos, reglas por HU, autorización independiente, integridad 21/21, rendimiento). Sin E2E de navegador ([`TESTING.md`](docs/TESTING.md))          |
-| Deployment            | **NO INICIADO** | —                                                                                                                                                                                |
+| Área                  | Estado          | Detalle                                                                                                                                                                                         |
+| --------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Arquitectura frontend | **COMPLETADO**  | Angular standalone por dominio, RBAC por permisos, capa de servicios                                                                                                                            |
+| Frontend              | **EN REVISIÓN** | Las 76 HU implementadas sobre `MockDb` en `main` (`18178ba`, local) ([`TRACEABILITY.md`](docs/TRACEABILITY.md)); cada responsable revisa las suyas                                              |
+| Base de datos         | **COMPLETADO**  | Modelo **MariaDB** adoptado ([`MARIADB.md`](docs/database/MARIADB.md)); 42/42 checks del esquema. El PostgreSQL de `db/` queda como historial                                                   |
+| Backend               | **EN PROGRESO** | Milestone 1 en `api/`: Node `node:http` + MariaDB, configuración por variables de entorno, pruebas `node:test`, colección Postman local                                                         |
+| API                   | **EN PROGRESO** | `GET /health`, `/auth/login`, `/auth/session`, `/auth/logout`, `/auth/password*` (HU-005), `GET /api/jugadores`, `GET /api/categorias` ([`API.md`](docs/API.md)); el frontend aún no la consume |
+| Autenticación         | **EN PROGRESO** | API: argon2id, cookie HttpOnly, 8 h / 30 min, límite de intentos, auditoría. El frontend sigue con el mock (SHA-256); recuperación y cambio de contraseña aún sólo en el mock                   |
+| Autorización          | **COMPLETADO**  | Permiso + alcance en cada servicio; matriz D12 (Administrador 56, Secretaría 45, Entrenador 3, Tutor 2); sin escalada por perfiles ([`AUTHORIZATION.md`](docs/AUTHORIZATION.md))                |
+| Cobranza              | **EN REVISIÓN** | Conceptos, cargos, mensualidades, pagos parciales, folios, cancelación, estado de cuenta, adeudos, descuentos/becas. Sin backend                                                                |
+| Uniformes             | **EN REVISIÓN** | Catálogo, pedidos con precio histórico, cargo vinculado (`cargo_id`), pagado derivado, entrega, cancelación. Sin backend                                                                        |
+| Portal del tutor      | **EN REVISIÓN** | Tarjetas por hijo, datos deportivos, partidos/resultados por plantel, estado de cuenta, asistencia, uniformes, avisos, perfil                                                                   |
+| Reportes              | **EN REVISIÓN** | Tablero con fuentes, jugadores por categoría, ingresos, agenda global                                                                                                                           |
+| Agenda                | **EN REVISIÓN** | Sesiones (también desde horarios), partidos con reprogramación y resultados                                                                                                                     |
+| Pruebas               | **EN PROGRESO** | 138 pruebas Angular (flujos críticos, reglas por HU, autorización independiente, integridad 21/21, rendimiento). Sin E2E de navegador ([`TESTING.md`](docs/TESTING.md))                         |
+| Deployment            | **NO INICIADO** | —                                                                                                                                                                                               |
 
 ### Terminado
 
