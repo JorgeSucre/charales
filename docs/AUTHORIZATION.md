@@ -66,7 +66,7 @@ exige motivo y queda en `auditoria`; revertir un **pago** (`pagos.cancelar`, HU-
   de Secretaría (allow/deny), temporadas, descuentos en consulta, cancelar cargo sin pagos (y rechazo con pagos),
   control total del Administrador, alcance del entrenador y del tutor, y la prueba de **escalada lateral**
   (SECRETARIA + perfil ENTRENADOR captura sólo en sus sesiones).
-- `src/app/app.routes.spec.ts`: tabla de seguridad de las **50** rutas protegidas con las 5 cuentas de demostración
+- `src/app/app.routes.spec.ts`: tabla de seguridad de las **51** rutas protegidas con las 5 cuentas de demostración
   (comprueba la coherencia guard ↔ permisos; las expectativas independientes están en `authorization.spec.ts`).
 
 ## Matriz por operación (generada del código)

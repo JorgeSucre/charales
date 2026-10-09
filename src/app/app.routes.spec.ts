@@ -1,3 +1,4 @@
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { Route, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
@@ -16,6 +17,7 @@ const EXPECTED: Record<string, PermissionKey | null> = {
   '/forbidden': null,
   '/account/password': null,
   '/admin/dashboard': 'reportes.consultar',
+  '/admin/api': 'jugadores.consultar',
   '/admin/players': 'jugadores.consultar',
   '/admin/players/new': 'jugadores.crear',
   '/admin/players/:id': 'jugadores.consultar',
@@ -85,7 +87,10 @@ describe('routes & RBAC', () => {
     sessionStorage.clear();
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(2026, 9, 7, 12, 0));
-    TestBed.configureTestingModule({ providers: appConfig.providers });
+    // HttpTestingController instead of the network: /admin/api never calls a real API from the tests.
+    TestBed.configureTestingModule({
+      providers: [...appConfig.providers, provideHttpClientTesting()],
+    });
   });
   afterEach(() => vi.useRealTimers());
 
@@ -137,6 +142,12 @@ describe('routes & RBAC', () => {
 
   async function settle(harness: RouterTestingHarness) {
     await new Promise((r) => setTimeout(r, 600)); // mock latency (sequential loads)
+    // /admin/api: no API session in tests (401) → the page shows its API login form, not an error.
+    for (const req of TestBed.inject(HttpTestingController).match('/auth/session'))
+      req.flush(
+        { error: 'Sesión no iniciada o expirada.' },
+        { status: 401, statusText: 'Unauthorized' },
+      );
     harness.detectChanges();
     await harness.fixture.whenStable();
     return harness.routeNativeElement as HTMLElement;

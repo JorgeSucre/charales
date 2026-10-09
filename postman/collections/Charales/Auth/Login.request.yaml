@@ -1,0 +1,35 @@
+$kind: http-request
+name: 'POST /auth/login'
+method: POST
+url: '{{baseUrl}}/auth/login'
+order: 4000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "{{adminEmail}}",
+      "password": "{{password}}"
+    }
+examples: './.resources/Login.resources/examples'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200 con AuthUser', () => {
+        pm.response.to.have.status(200);
+        const user = pm.response.json();
+        pm.expect(user.email).to.eql(pm.environment.get('adminEmail'));
+        pm.expect(user.roles).to.eql(['ADMINISTRADOR']);
+        pm.expect(user).to.include.keys('userId', 'sessionId', 'permissions', 'officePermissions', 'expiresAt');
+        pm.expect(JSON.stringify(user)).to.not.include('password');
+        pm.collectionVariables.set('sessionId', String(user.sessionId));
+      });
+      pm.test('cookie de sesión HttpOnly', () => {
+        const setCookie = pm.response.headers.get('Set-Cookie');
+        pm.expect(setCookie).to.match(/^charales_sid=[\w-]+;/);
+        pm.expect(setCookie).to.include('HttpOnly');
+        pm.expect(setCookie).to.include('SameSite=Strict');
+      });

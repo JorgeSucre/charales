@@ -1,0 +1,13 @@
+$kind: http-request
+name: 'GET /api/categorias (anónimo)'
+method: GET
+url: '{{baseUrl}}/api/categorias'
+order: 3000
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('401 sin sesión', () => {
+        pm.response.to.have.status(401);
+        pm.expect(pm.response.json().error).to.eql('Sesión no iniciada o expirada.');
+      });

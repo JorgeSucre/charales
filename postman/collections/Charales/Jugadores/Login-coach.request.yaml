@@ -1,0 +1,20 @@
+$kind: http-request
+name: 'POST /auth/login (entrenador)'
+method: POST
+url: '{{baseUrl}}/auth/login'
+order: 2000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "{{coachEmail}}",
+      "password": "{{password}}"
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200 (sesión iniciada; el cookie jar guarda la cookie)', () => pm.response.to.have.status(200));

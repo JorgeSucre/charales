@@ -1,0 +1,14 @@
+$kind: http-request
+name: 'GET /auth/session'
+method: GET
+url: '{{baseUrl}}/auth/session'
+order: 5000
+examples: './.resources/Session.resources/examples'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200 con la sesión del login (cookie reenviada por el cookie jar)', () => {
+        pm.response.to.have.status(200);
+        pm.expect(String(pm.response.json().sessionId)).to.eql(pm.collectionVariables.get('sessionId'));
+      });

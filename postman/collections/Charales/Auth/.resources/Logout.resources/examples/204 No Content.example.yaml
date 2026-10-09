@@ -1,0 +1,13 @@
+$kind: http-example
+request:
+  url: '{{baseUrl}}/auth/logout'
+  method: POST
+response:
+  statusCode: 204
+  statusText: No Content
+  headers:
+    - key: Set-Cookie
+      value: 'charales_sid=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'
+  body:
+    type: text
+    content: ''

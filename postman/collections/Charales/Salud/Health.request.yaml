@@ -1,0 +1,14 @@
+$kind: http-request
+name: GET /health
+method: GET
+url: '{{baseUrl}}/health'
+order: 1000
+examples: './.resources/Health.resources/examples'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200 con la base de datos disponible', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json()).to.eql({ status: 'ok', database: 'ok' });
+      });

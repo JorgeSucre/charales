@@ -1,6 +1,7 @@
 # Pruebas
 
-Estado de `main` en `18178ba`: **138/138** pruebas Angular en verde, typecheck y build sin errores, formato correcto,
+Estado de `main` en `18178ba`: **138/138** pruebas Angular en verde (en `jorgesucre/api-milestone-1`: **146/146**, con
+las 8 de `CharalesApi`), typecheck y build sin errores, formato correcto,
 MariaDB 42/42 checks y respaldo/restauración idéntico en 39 tablas. No se ha medido cobertura porcentual.
 
 ## Cómo correrlas
@@ -14,6 +15,7 @@ MariaDB 42/42 checks y respaldo/restauración idéntico en 39 tablas. No se ha m
 | Formato                       | `npx prettier --check .`                                                           |
 | Build                         | `npm run build`                                                                    |
 | Esquema MariaDB + respaldo    | `npm run db:mariadb:test-backup` (requiere un servidor MariaDB local)              |
+| API (Node)                    | `npm run api:test` y `npm run api:typecheck` ([`API.md`](API.md))                  |
 
 Las pruebas Angular corren con Vitest y jsdom vía `@angular/build:unit-test`, sobre `MockDb`. No hay ESLint.
 
@@ -29,7 +31,8 @@ Las pruebas Angular corren con Vitest y jsdom vía `@angular/build:unit-test`, s
 | `domain-rules.spec.ts`                   | 29      | Integración de servicios                        | Reglas de negocio por fase y HU                                                                                                                                                |
 | `services.spec.ts`                       | 16      | Integración de servicios                        | Reglas de servicios sin cobertura previa (cobranza, usuarios, sedes, sesiones, uniformes, portal, panel)                                                                       |
 | `authorization.spec.ts`                  | 22      | Integración de servicios + ruteo                | Expectativas de seguridad **escritas a mano** (ver abajo)                                                                                                                      |
-| `app.routes.spec.ts`                     | 16      | Ruteo e integración de componentes en **jsdom** | Las 50 rutas protegidas con las 5 cuentas (guards reales vía `RouterTestingHarness`), render de cada página del menú sin errores y toda tabla dentro de `.table-wrap` (HU-071) |
+| `core/api/charales-api.service.spec.ts`  | 8       | Unitaria HTTP (`HttpTestingController`)         | `CharalesApi`: GET de jugadores y categorías, conversión de filas reales a `Player`/`Category`, 401, 403, sin conexión (0/502), login y logout                                 |
+| `app.routes.spec.ts`                     | 16      | Ruteo e integración de componentes en **jsdom** | Las 51 rutas protegidas con las 5 cuentas (guards reales vía `RouterTestingHarness`), render de cada página del menú sin errores y toda tabla dentro de `.table-wrap` (HU-071) |
 | `performance.spec.ts`                    | 1       | Medición (HU-075)                               | 6 consultas principales sobre 5 000 jugadores / 20 000 cargos / 10 000 pagos, < 300 ms cada una sin la latencia simulada                                                       |
 
 ### Autorización (`authorization.spec.ts`)

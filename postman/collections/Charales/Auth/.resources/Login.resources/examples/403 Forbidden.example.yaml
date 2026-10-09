@@ -1,0 +1,14 @@
+$kind: http-example
+request:
+  url: '{{baseUrl}}/auth/login'
+  method: POST
+response:
+  statusCode: 403
+  statusText: Forbidden
+  headers:
+    - key: Content-Type
+      value: application/json; charset=utf-8
+  body:
+    type: json
+    content: |-
+      { "error": "Tu cuenta no tiene un rol o perfil activo. Contacta a la escuela." }

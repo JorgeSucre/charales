@@ -1,0 +1,10 @@
+$kind: http-request
+name: 'POST /auth/logout (entrenador)'
+method: POST
+url: '{{baseUrl}}/auth/logout'
+order: 6000
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('204', () => pm.response.to.have.status(204));
