@@ -21,13 +21,18 @@ const mariadbCli = (input: string, db = '') =>
 let db: Pool;
 let server: Server;
 let base: string;
+/** E-mails captured by the test transport (HU-005); the real console transport is never used in tests. */
+const mail: { to: string; subject: string; text: string }[] = [];
 
 before(async () => {
   mariadbCli(sql('docs/escuela_futbol_mariadb.sql').replaceAll('escuela_futbol', DB));
   mariadbCli(sql('db/mariadb/010_permisos_app.sql'), DB);
   mariadbCli(sql('db/mariadb/020_dev_seed.sql'), DB);
   db = createPool({ ...process.env, DB_NAME: DB });
-  server = createApp(db, { secureCookie: false }).listen(0);
+  server = createApp(db, {
+    secureCookie: false,
+    mailer: (to, subject, text) => void mail.push({ to, subject, text }),
+  }).listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -200,5 +205,169 @@ test('GET /api/categorias: 401 anonymous, 403 profile-only account, 200 with an 
   assert.deepEqual(
     rows.map((r: { nombre: string }) => r.nombre),
     ['Sub-10', 'Sub-12', 'Sub-8'],
+  );
+});
+
+// ---------------------------------------------------------------- HU-005: password change and recovery (M0 D2–D8)
+
+const post = (path: string, body: unknown, cookie?: string) =>
+  fetch(`${base}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+    body: JSON.stringify(body),
+  });
+const changePassword = (cookie: string | undefined, currentPassword: string, newPassword: string) =>
+  post('/auth/password', { currentPassword, newPassword }, cookie);
+const requestReset = (email: string) => post('/auth/password-reset/request', { email });
+const confirmReset = (token: string, newPassword: string) =>
+  post('/auth/password-reset/confirm', { token, newPassword });
+/** Raw token from the last captured e-mail to `to`. */
+const tokenFor = (to: string) =>
+  /token=([\w-]+)/.exec(mail.filter((m) => m.to === to).at(-1)!.text)![1]!;
+
+test('change password: 401 without session; wrong current → 400; policy and same password → 400', async () => {
+  assert.equal((await changePassword(undefined, 'demo1234', 'Nueva12345')).status, 401);
+  const cookie = cookieOf(await login('coach@example.com'));
+  const wrong = await changePassword(cookie, 'mala1234', 'Nueva12345');
+  assert.equal(wrong.status, 400);
+  assert.deepEqual(await wrong.json(), { error: 'La contraseña actual no es correcta.' });
+  assert.equal((await changePassword(cookie, 'demo1234', 'corta1')).status, 400);
+  assert.equal((await changePassword(cookie, 'demo1234', 'sololetras')).status, 400);
+  assert.equal((await changePassword(cookie, 'demo1234', 'demo1234')).status, 400);
+  assert.equal((await getSession(cookie)).status, 200, 'a failed change keeps the session');
+});
+
+test('change password (D2): keeps the current session, closes the others, only the hash is stored', async () => {
+  const current = cookieOf(await login('coach@example.com'));
+  const other = cookieOf(await login('coach@example.com'));
+  const res = await changePassword(current, 'demo1234', 'Nueva12345');
+  assert.equal(res.status, 204);
+  assert.equal((await getSession(current)).status, 200);
+  assert.equal((await getSession(other)).status, 401);
+  assert.equal((await login('coach@example.com', 'demo1234')).status, 401);
+  assert.equal((await login('coach@example.com', 'Nueva12345')).status, 200);
+  const [row] = await db.query(
+    "SELECT password_hash FROM usuarios WHERE email = 'coach@example.com'",
+  );
+  assert.match(row.password_hash, /^\$argon2id\$/);
+  assert.ok(!row.password_hash.includes('Nueva12345'));
+  const [{ n }] = await db.query(
+    "SELECT COUNT(*) AS n FROM auditoria WHERE accion = 'EDITAR' AND descripcion = 'Cambio de contraseña'",
+  );
+  assert.equal(n, 1);
+});
+
+test('change password: 5 wrong current passwords → 429, even with the right one', async () => {
+  const cookie = cookieOf(await login('marta@example.com'));
+  for (let i = 0; i < 5; i++)
+    assert.equal((await changePassword(cookie, `mala${i}x1`, 'Nueva12345')).status, 400);
+  assert.equal((await changePassword(cookie, 'demo1234', 'Nueva12345')).status, 429);
+});
+
+test('reset request (D7): same 204 for existing, unknown and inactive accounts; only the existing one gets mail', async () => {
+  const before = mail.length;
+  for (const email of ['tutor@example.com', 'nadie@example.com', 'baja@example.com']) {
+    const res = await requestReset(email);
+    assert.equal(res.status, 204, email);
+    assert.equal(await res.text(), '');
+  }
+  assert.deepEqual(
+    mail.slice(before).map((m) => m.to),
+    ['tutor@example.com'],
+  );
+  const token = tokenFor('tutor@example.com');
+  const rows = await db.query('SELECT token_hash FROM tokens_recuperacion');
+  assert.ok(
+    rows.every((r: { token_hash: string }) => r.token_hash !== token && r.token_hash.length === 64),
+  );
+});
+
+test('reset (D3a/D3b/D8): a new request revokes the earlier token; single use; closes every session', async () => {
+  const session = cookieOf(await login('tutor@example.com'));
+  await requestReset('tutor@example.com');
+  const first = tokenFor('tutor@example.com');
+  await requestReset('tutor@example.com');
+  const second = tokenFor('tutor@example.com');
+  assert.notEqual(first, second);
+
+  const revoked = await confirmReset(first, 'Recupera123');
+  assert.equal(revoked.status, 400);
+  assert.deepEqual(await revoked.json(), { error: 'El enlace no es válido o ya expiró.' });
+
+  const ok = await confirmReset(second, 'Recupera123');
+  assert.equal(ok.status, 204);
+  assert.match(ok.headers.get('set-cookie') ?? '', /Max-Age=0/);
+  assert.equal((await getSession(session)).status, 401, 'reset closes open sessions');
+  assert.equal((await login('tutor@example.com', 'Recupera123')).status, 200);
+  assert.equal((await confirmReset(second, 'OtraVez123')).status, 400, 'single use');
+
+  const [{ total, used }] = await db.query(
+    `SELECT COUNT(*) AS total, COUNT(t.usado_en) AS used FROM tokens_recuperacion t
+       JOIN usuarios u ON u.id = t.usuario_id WHERE u.email = 'tutor@example.com'`,
+  );
+  assert.equal(total, used, 'revoked and used tokens are kept (usado_en), not deleted');
+});
+
+test('reset: an expired token is rejected and the password does not change', async () => {
+  await requestReset('marta@example.com');
+  const token = tokenFor('marta@example.com');
+  await db.query(
+    `UPDATE tokens_recuperacion SET creado_en = creado_en - INTERVAL 3 HOUR, expira_en = expira_en - INTERVAL 2 HOUR
+      WHERE token_hash = SHA2(?, 256)`,
+    [token],
+  );
+  assert.equal((await confirmReset(token, 'Expirada123')).status, 400);
+  assert.equal((await login('marta@example.com', 'Expirada123')).status, 401);
+});
+
+test('reset: policy is checked; invalid tokens get the generic message', async () => {
+  assert.equal((await confirmReset('cualquiera', 'corta')).status, 400);
+  const res = await confirmReset('no-existe', 'Valida12345');
+  assert.equal(res.status, 400);
+  assert.deepEqual(await res.json(), { error: 'El enlace no es válido o ya expiró.' });
+});
+
+test('reset request: limited per e-mail and IP (429), whether the account exists or not', async () => {
+  for (let i = 0; i < 5; i++) assert.equal((await requestReset('limite@example.com')).status, 204);
+  assert.equal((await requestReset('limite@example.com')).status, 429);
+  assert.equal((await requestReset('LIMITE@example.com ')).status, 429, 'normalized e-mail');
+});
+
+test('reset request without a mail transport (D4b): 503 before reading the account, no token created', async () => {
+  const noMail = createApp(db, { secureCookie: false }).listen(0);
+  await new Promise((resolve) => noMail.once('listening', resolve));
+  const url = `http://127.0.0.1:${(noMail.address() as AddressInfo).port}/auth/password-reset/request`;
+  try {
+    const [{ n: before }] = await db.query('SELECT COUNT(*) AS n FROM tokens_recuperacion');
+    for (const email of ['admin@example.com', 'nadie@example.com']) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      assert.equal(res.status, 503, email);
+      assert.deepEqual(await res.json(), {
+        error: 'La recuperación de contraseña no está disponible.',
+      });
+    }
+    const [{ n: after }] = await db.query('SELECT COUNT(*) AS n FROM tokens_recuperacion');
+    assert.equal(after, before);
+  } finally {
+    noMail.close(); // even when an assertion fails, or the open server keeps the test process alive
+  }
+});
+
+test('the console mail transport exists only in development with MAIL_CONSOLE=true (D4a)', async () => {
+  const { mailerFromEnv } = await import('./password.ts');
+  assert.equal(mailerFromEnv({}), null);
+  assert.equal(mailerFromEnv({ MAIL_CONSOLE: 'false' }), null);
+  assert.equal(mailerFromEnv({ MAIL_CONSOLE: 'true', NODE_ENV: 'production' }), null);
+  assert.equal(typeof mailerFromEnv({ MAIL_CONSOLE: 'true' }), 'function');
+});
+
+test('database errors do not echo query parameters into logs (logParam: false, D4d)', async () => {
+  await assert.rejects(
+    db.query('SELECT * FROM tabla_inexistente WHERE x = ?', ['SECRETO-123']),
+    (e: Error & { sql?: string }) => !`${e.message} ${e.sql ?? ''}`.includes('SECRETO-123'),
   );
 });

@@ -62,8 +62,8 @@ Todos son los que usa el proyecto (`package.json`, [`CONTRIBUTING.md`](../CONTRI
 | Formato                    | `npx prettier --check .` (aplicar: `npx prettier --write .`)                       | Todo con formato                     |
 | Build de producción        | `npm run build` (salida en `dist/`)                                                | Sin errores                          |
 | Esquema MariaDB + respaldo | `npm run db:mariadb:test-backup`                                                   | 42/42 checks; 39/39 tablas idénticas |
-| Pruebas de la API          | `npm run api:test` (base temporal `ef_apitest_*`)                                  | 12/12                                |
-| Colección Postman          | `postman collection lint postman/` y `postman collection run …` (ver `API.md`)     | 19 requests, 24/24 aserciones        |
+| Pruebas de la API          | `npm run api:test` (base temporal `ef_apitest_*`)                                  | 23/23                                |
+| Colección Postman          | `postman collection lint postman/` y `postman collection run …` (ver `API.md`)     | 29 requests, 34/34 aserciones        |
 | Lint                       | No hay ESLint configurado                                                          | —                                    |
 
 `npm run db:mariadb:test-backup` crea y borra sólo sus propias bases temporales `ef_bktest_*`. Los scripts

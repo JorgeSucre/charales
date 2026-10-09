@@ -6,6 +6,7 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import mariadb, { type Pool } from 'mariadb';
 import * as auth from './auth.ts';
+import * as password from './password.ts';
 
 export interface Ctx {
   body: unknown;
@@ -14,6 +15,8 @@ export interface Ctx {
   ip: string;
   userAgent: string | null;
   secureCookie: boolean;
+  /** E-mail transport for HU-005 recovery; null = recovery unavailable (503). */
+  mailer: password.Mailer | null;
 }
 export interface Reply {
   status: number;
@@ -29,6 +32,10 @@ const routes: Record<string, Handler> = {
   'POST /auth/login': auth.login,
   'GET /auth/session': auth.session,
   'POST /auth/logout': auth.logout,
+  // HU-005 (docs/API.md § Contraseñas)
+  'POST /auth/password': password.changePassword,
+  'POST /auth/password-reset/request': password.requestPasswordReset,
+  'POST /auth/password-reset/confirm': password.confirmPasswordReset,
   // Lab exercise (docs/API.md § Práctica): plain table reads, same permissions as PlayerService.search and
   // CategoryService.list. Rows go out as stored (snake_case), so they compare 1:1 with SELECT * in MariaDB.
   'GET /api/jugadores': async (ctx, db) =>
@@ -52,7 +59,10 @@ async function health(_ctx: Ctx, db: Pool): Promise<Reply> {
   }
 }
 
-export function createApp(db: Pool, options: { secureCookie: boolean }): Server {
+export function createApp(
+  db: Pool,
+  options: { secureCookie: boolean; mailer?: password.Mailer | null },
+): Server {
   return createServer(async (req, res) => {
     let reply: Reply;
     try {
@@ -66,6 +76,7 @@ export function createApp(db: Pool, options: { secureCookie: boolean }): Server 
               ip: req.socket.remoteAddress ?? '',
               userAgent: req.headers['user-agent']?.slice(0, 500) ?? null,
               secureCookie: options.secureCookie,
+              mailer: options.mailer ?? null,
             },
             db,
           )
@@ -132,6 +143,8 @@ export function createPool(env: Record<string, string | undefined> = process.env
     dateStrings: true,
     bigIntAsNumber: true,
     insertIdAsNumber: true,
+    // Errors must not echo query parameters (e-mails, hashes, IPs) into the logs (M0 D4d). The driver's default is true.
+    logParam: false,
   });
 }
 
@@ -140,7 +153,7 @@ if (import.meta.main) {
   const db = createPool(env);
   const port = Number(env['PORT'] ?? 3000);
   const secureCookie = env['NODE_ENV'] === 'production' || env['COOKIE_SECURE'] === 'true';
-  createApp(db, { secureCookie }).listen(port, () =>
+  createApp(db, { secureCookie, mailer: password.mailerFromEnv(env) }).listen(port, () =>
     console.log(
       `Charales API en http://localhost:${port} (BD ${env['DB_NAME'] ?? 'escuela_futbol'})`,
     ),

@@ -5,7 +5,7 @@
  */
 import { argon2, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import type { Pool } from 'mariadb';
+import type { Pool, PoolConnection } from 'mariadb';
 import type { Ctx, Reply } from './server.ts';
 
 /** Session policy (HU-002), same values as the mock AuthService. */
@@ -15,7 +15,7 @@ export const COOKIE = 'charales_sid';
 const SCHOOL_TZ = 'America/Mexico_City';
 
 const INVALID = 'Correo o contraseña incorrectos.';
-const NO_SESSION = 'Sesión no iniciada o expirada.';
+export const NO_SESSION = 'Sesión no iniciada o expirada.';
 const NO_ROLE = 'Tu cuenta no tiene un rol o perfil activo. Contacta a la escuela.';
 const FORBIDDEN = 'No tienes permiso para esta operación.';
 
@@ -52,12 +52,13 @@ const DUMMY_HASH = hashPassword(randomBytes(16).toString('hex'));
 
 // ---------------------------------------------------------------- attempt limiting (MARIADB.md § 8.3)
 
-const MAX_FAILURES = 5;
+export const MAX_FAILURES = 5;
 const FAILURE_WINDOW_MS = 15 * 60_000;
 // ponytail: in-memory per process; move to a shared store if the API ever runs as several instances.
 const failures = new Map<string, number[]>();
 
-function recentFailures(key: string): number[] {
+/** Attempts of `key` in the last 15 min; callers push `Date.now()` to count one. Shared by login and HU-005. */
+export function recentFailures(key: string): number[] {
   const since = Date.now() - FAILURE_WINDOW_MS;
   const list = (failures.get(key) ?? []).filter((t) => t > since);
   failures.set(key, list);
@@ -67,14 +68,14 @@ function recentFailures(key: string): number[] {
 // ---------------------------------------------------------------- dates (school wall clock, MARIADB.md § 1)
 
 /** 'YYYY-MM-DD HH:MM:SS' in the school's time zone: what MariaDB stores (no offset). */
-function localDateTime(ms = Date.now()): string {
+export function localDateTime(ms = Date.now()): string {
   return new Date(ms).toLocaleString('sv-SE', { timeZone: SCHOOL_TZ });
 }
 const toJson = (dt: string) => dt.replace(' ', 'T');
 
 // ---------------------------------------------------------------- endpoints
 
-interface UserRow {
+export interface UserRow {
   id: number;
   rol_id: number | null;
   nombre: string | null;
@@ -213,7 +214,7 @@ export async function logout(ctx: Ctx, db: Pool): Promise<Reply> {
  * The open session behind the cookie, or null. An expired or idle session, or one whose account was deactivated,
  * is closed here (audited as «Sesión expirada»), like the mock's checkSession.
  */
-async function currentSession(
+export async function currentSession(
   ctx: Ctx,
   db: Pool,
 ): Promise<{ sessionId: number; expiresAt: string; user: UserRow } | null> {
@@ -287,28 +288,30 @@ async function accessOf(db: Pool, user: UserRow) {
 
 // ---------------------------------------------------------------- helpers
 
-function sha256(text: string): string {
+export function sha256(text: string): string {
   return createHash('sha256').update(text).digest('hex');
 }
 
 function sessionCookie(token: string, maxAgeSeconds: number, secure: boolean): string {
   return `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAgeSeconds}${secure ? '; Secure' : ''}`;
 }
-const clearCookie = (secure: boolean) => sessionCookie('', 0, secure);
+export const clearCookie = (secure: boolean) => sessionCookie('', 0, secure);
 
-function audit(
-  db: Pool,
+/** `db` may be a pooled connection inside a transaction (HU-005). */
+export function audit(
+  db: Pool | PoolConnection,
   userId: number | null,
-  action: 'LOGIN' | 'LOGOUT' | 'OTRO',
+  action: 'LOGIN' | 'LOGOUT' | 'EDITAR' | 'OTRO',
   entity: string,
   entityId: number | null,
   description: string,
   ip: string,
+  module = 'auth',
 ) {
   return db.query(
     `INSERT INTO auditoria (usuario_id, accion, modulo, entidad, entidad_id, descripcion, ip, creado_en)
-     VALUES (?, ?, 'auth', ?, ?, ?, ?, ?)`,
-    [userId, action, entity, entityId, description, ip.slice(0, 45), localDateTime()],
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [userId, action, module, entity, entityId, description, ip.slice(0, 45), localDateTime()],
   );
 }
 
