@@ -371,3 +371,116 @@ test('database errors do not echo query parameters into logs (logParam: false, D
     (e: Error & { sql?: string }) => !`${e.message} ${e.sql ?? ''}`.includes('SECRETO-123'),
   );
 });
+
+// ---------------------------------------------------------------- HU-005: concurrency (audit C1, R1, R2)
+
+const statusesOf = (responses: Response[]) => responses.map((r) => r.status).sort();
+
+test('C1: ten simultaneous wrong current passwords never evaluate more than the limit', async () => {
+  const cookie = cookieOf(await login('admin@example.com'));
+  const responses = await Promise.all(
+    Array.from({ length: 10 }, (_, i) => changePassword(cookie, `mala${i}x99`, 'Nueva12345')),
+  );
+  const evaluated = responses.filter((r) => r.status === 400).length;
+  const limited = responses.filter((r) => r.status === 429).length;
+  assert.ok(evaluated <= 5, `evaluated ${evaluated} > 5`);
+  assert.equal(evaluated + limited, 10);
+  assert.equal((await changePassword(cookie, 'demo1234', 'Nueva12345')).status, 429);
+});
+
+test('R1: two simultaneous changes from two sessions — exactly one wins, consistently', async () => {
+  const a = cookieOf(await login('coach@example.com', 'Nueva12345'));
+  const b = cookieOf(await login('coach@example.com', 'Nueva12345'));
+  const [ra, rb] = await Promise.all([
+    changePassword(a, 'Nueva12345', 'Primera123'),
+    changePassword(b, 'Nueva12345', 'Segunda123'),
+  ]);
+  assert.deepEqual(statusesOf([ra, rb]), [204, 401]);
+  const [winner, loser] = ra.status === 204 ? [a, b] : [b, a];
+  const [winnerPassword, loserPassword] =
+    ra.status === 204 ? ['Primera123', 'Segunda123'] : ['Segunda123', 'Primera123'];
+  assert.equal((await getSession(winner)).status, 200);
+  assert.equal((await getSession(loser)).status, 401);
+  assert.equal((await login('coach@example.com', winnerPassword)).status, 200);
+  assert.equal((await login('coach@example.com', loserPassword)).status, 401);
+});
+
+test('R1: a password change racing a reset never overwrites the reset', async () => {
+  const session = cookieOf(await login('tutor@example.com', 'Recupera123'));
+  await requestReset('tutor@example.com');
+  const token = tokenFor('tutor@example.com');
+  const [change, reset] = await Promise.all([
+    changePassword(session, 'Recupera123', 'Cambio12345'),
+    confirmReset(token, 'Reset12345x'),
+  ]);
+  assert.equal(reset.status, 204);
+  assert.ok([204, 401].includes(change.status), `change → ${change.status}`);
+  assert.equal((await login('tutor@example.com', 'Reset12345x')).status, 200);
+  assert.equal((await login('tutor@example.com', 'Cambio12345')).status, 401);
+  assert.equal((await getSession(session)).status, 401);
+});
+
+test('R2: two simultaneous recovery requests — both 204, at most one live token', async () => {
+  const mailed = mail.filter((m) => m.to === 'admin@example.com').length;
+  const responses = await Promise.all([
+    requestReset('admin@example.com'),
+    requestReset('admin@example.com'),
+  ]);
+  assert.deepEqual(statusesOf(responses), [204, 204]);
+  const [{ live }] = await db.query(
+    `SELECT COUNT(*) AS live FROM tokens_recuperacion t JOIN usuarios u ON u.id = t.usuario_id
+      WHERE u.email = 'admin@example.com' AND t.usado_en IS NULL AND t.expira_en > NOW()`,
+  );
+  assert.equal(live, 1);
+  // Both were served (serialized), none silently dropped by a deadlock: two tokens issued, the first revoked.
+  const [{ total }] = await db.query(
+    `SELECT COUNT(*) AS total FROM tokens_recuperacion t JOIN usuarios u ON u.id = t.usuario_id
+      WHERE u.email = 'admin@example.com'`,
+  );
+  assert.equal(total, 2);
+  assert.equal(mail.filter((m) => m.to === 'admin@example.com').length, mailed + 2);
+});
+
+test('two simultaneous confirmations of one token — exactly one succeeds', async () => {
+  await requestReset('marta@example.com');
+  const token = tokenFor('marta@example.com');
+  const [first, second] = await Promise.all([
+    confirmReset(token, 'Doble12345'),
+    confirmReset(token, 'Doble67890'),
+  ]);
+  assert.deepEqual(statusesOf([first, second]), [204, 400]);
+  const failed = first.status === 400 ? first : second;
+  assert.deepEqual(await failed.json(), { error: 'El enlace no es válido o ya expiró.' });
+  const winnerPassword = first.status === 204 ? 'Doble12345' : 'Doble67890';
+  assert.equal((await login('marta@example.com', winnerPassword)).status, 200);
+});
+
+test('transaction(): a failing rollback never hides the original error; the connection is released', async () => {
+  const { transaction } = await import('./password.ts');
+  let released = false;
+  const fakePool = {
+    getConnection: async () => ({
+      beginTransaction: async () => {},
+      commit: async () => {},
+      rollback: async () => {
+        throw new Error('rollback roto');
+      },
+      release: async () => {
+        released = true;
+      },
+    }),
+  } as unknown as Pool;
+  const original = console.error;
+  console.error = () => {}; // the expected «Falló el rollback» line
+  try {
+    await assert.rejects(
+      transaction(fakePool, async () => {
+        throw new Error('error original');
+      }),
+      /error original/,
+    );
+  } finally {
+    console.error = original;
+  }
+  assert.equal(released, true);
+});

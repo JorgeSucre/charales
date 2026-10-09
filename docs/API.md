@@ -89,6 +89,14 @@ Código: [`api/password.ts`](../api/password.ts). Responsable de la historia: Bo
   invitaciones. Antes de hacerlo hará falta una migración con finalidad explícita (aprobación propia).
 - **Registros:** el pool usa `logParam: false`, así que un error de SQL no imprime los parámetros. La API no registra
   contraseñas, cookies ni tokens; la única excepción es la consola de desarrollo anterior.
+- **Concurrencia:** las tres operaciones bloquean primero la fila de `usuarios` (orden `usuarios` → `tokens_recuperacion`
+  → `sesiones`), así que las operaciones sobre una misma cuenta se ejecutan una tras otra. El cambio vuelve a comprobar,
+  bajo el bloqueo, que la sesión sigue abierta (si no, `401`) y que la contraseña no cambió desde que se verificó (si
+  cambió, `400` sin contar como intento): un cambio nunca sobrescribe un restablecimiento simultáneo, y de dos cambios
+  simultáneos gana uno solo. El intento de cambio se reserva antes de verificar la contraseña, así que peticiones
+  paralelas no superan el límite. Dentro de las transacciones sólo hay lecturas con bloqueo: con el aislamiento por
+  instantánea de MariaDB (`innodb_snapshot_isolation`, activo por omisión desde 11.6) una lectura simple previa
+  provocaría «Record has changed since last read». Si falla el rollback, se conserva el error original.
 - **Auditoría:** `EDITAR usuarios` «Cambio de contraseña» y «Restablecimiento de contraseña». La solicitud no se audita
   (igual que el mock).
 - Las páginas de contraseña de Angular **siguen usando el mock** hasta que se integre el login real (M4/M5).
