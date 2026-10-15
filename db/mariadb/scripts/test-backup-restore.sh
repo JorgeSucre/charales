@@ -9,6 +9,7 @@ cleanup() { mariadb -e "DROP DATABASE IF EXISTS \`$SRC\`; DROP DATABASE IF EXIST
 trap cleanup EXIT
 echo "MariaDB $(mariadb -N -e 'SELECT VERSION()') · $(date '+%Y-%m-%d %H:%M')"
 sed "s/escuela_futbol/$SRC/g" docs/escuela_futbol_mariadb.sql | mariadb
+sh "$HERE/migrate.sh" "$SRC" > /dev/null
 mariadb "$SRC" < db/mariadb/010_permisos_app.sql
 mariadb "$SRC" < docs/escuela_futbol_mariadb_checks.sql > "$TMP/checks.txt"
 tail -1 "$TMP/checks.txt" | awk '{print "Checks del esquema: " $1 " casos, " $2 " OK, " $3 " fallas"}'
