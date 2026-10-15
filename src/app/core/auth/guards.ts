@@ -8,11 +8,12 @@ import { PermissionKey } from './permissions';
  * (HU-002.3). The API repeats every check — the guard only protects the UI.
  */
 export function requirePermission(permission?: PermissionKey): CanActivateFn {
-  return (_route, state) => {
+  return async (_route, state) => {
     const auth = inject(AuthService);
     const router = inject(Router);
     const hadSession = auth.isLoggedIn();
-    if (!auth.checkSession()) {
+    // The app's AuthService (ApiAuthService) asks the API; the mock answers synchronously (tests).
+    if (!(await auth.checkSession())) {
       const queryParams: Record<string, string> = { returnUrl: state.url };
       if (hadSession) queryParams['expired'] = '1';
       return router.createUrlTree(['/login'], { queryParams });

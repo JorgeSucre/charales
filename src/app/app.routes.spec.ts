@@ -2,7 +2,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { Route, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { appConfig } from './app.config';
+import { baseProviders } from './app.config';
 import { routes } from './app.routes';
 import { AuthService } from './core/auth/auth.service';
 import { PermissionKey } from './core/auth/permissions';
@@ -89,7 +89,7 @@ describe('routes & RBAC', () => {
     vi.setSystemTime(new Date(2026, 9, 7, 12, 0));
     // HttpTestingController instead of the network: /admin/api never calls a real API from the tests.
     TestBed.configureTestingModule({
-      providers: [...appConfig.providers, provideHttpClientTesting()],
+      providers: [...baseProviders, provideHttpClientTesting()],
     });
   });
   afterEach(() => vi.useRealTimers());
