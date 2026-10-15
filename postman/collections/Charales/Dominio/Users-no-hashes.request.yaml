@@ -1,0 +1,20 @@
+$kind: http-request
+name: 'POST /api/rpc UserService.list'
+method: POST
+url: '{{baseUrl}}/api/rpc'
+order: 3000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    { "service": "UserService", "method": "list", "args": [{}] }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200 sin hashes de contraseña ni de token (HU-072)', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.text()).to.not.match(/passwordHash|tokenHash|argon2/);
+      });

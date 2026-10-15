@@ -1,0 +1,17 @@
+$kind: http-request
+name: 'POST /api/rpc sin sesión'
+method: POST
+url: '{{baseUrl}}/api/rpc'
+order: 8000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    { "service": "PlayerService", "method": "search", "args": [{}] }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('401 sin sesión', () => pm.response.to.have.status(401));

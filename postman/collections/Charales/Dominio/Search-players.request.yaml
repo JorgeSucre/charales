@@ -1,0 +1,20 @@
+$kind: http-request
+name: 'POST /api/rpc PlayerService.search'
+method: POST
+url: '{{baseUrl}}/api/rpc'
+order: 2000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    { "service": "PlayerService", "method": "search", "args": [{ "query": "" }] }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200 con una página de jugadores (HU-014)', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json().result.items).to.be.an('array');
+      });
