@@ -152,25 +152,29 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
 
 /** HU-002: valid session → the same AuthUser the login returned; touches `ultimo_uso_en`. */
 export async function session(ctx: Ctx, db: Pool): Promise<Reply> {
-  const s = await currentSession(ctx, db);
-  if (!s)
+  const user = await sessionUser(ctx, db);
+  if (!user)
     return {
       status: 401,
       body: { error: NO_SESSION },
       cookie: ctx.token ? clearCookie(ctx.secureCookie) : undefined,
     };
+  return { status: 200, body: user };
+}
+
+/** The AuthUser of the cookie's open session (touching `ultimo_uso_en`), or null. Also used by the domain bridge. */
+export async function sessionUser(ctx: Ctx, db: Pool) {
+  const s = await currentSession(ctx, db);
+  if (!s) return null;
   const now = localDateTime();
   await db.query('UPDATE sesiones SET ultimo_uso_en = ? WHERE id = ?', [now, s.sessionId]);
   return {
-    status: 200,
-    body: {
-      ...(await accessOf(db, s.user)),
-      userId: s.user.id,
-      sessionId: s.sessionId,
-      email: s.user.email,
-      expiresAt: toJson(s.expiresAt),
-      lastUsedAt: toJson(now),
-    },
+    ...(await accessOf(db, s.user)),
+    userId: s.user.id,
+    sessionId: s.sessionId,
+    email: s.user.email,
+    expiresAt: toJson(s.expiresAt),
+    lastUsedAt: toJson(now),
   };
 }
 

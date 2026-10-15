@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "strict": true,
+    "types": ["node"],
+    "lib": ["es2024", "dom"]
+  },
+  "files": ["index.ts"]
+}

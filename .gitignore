@@ -46,3 +46,6 @@ Thumbs.db
 # API
 .env
 postman/environments/*.local.environment.yaml
+
+# API: dominio empaquetado por npm run api:build
+/api/.build
