@@ -67,8 +67,7 @@ Esa lista de privilegios es la que se probó con `db:setup`, `db:admin` y la API
 
 ```bash
 git clone https://github.com/JorgeSucre/charales.git
-cd charales
-git switch jorgesucre/api-express     # la rama de esta versión (hasta que se integre a main)
+cd charales                           # queda en main, la rama de trabajo del equipo
 npm ci                                # dependencias exactas del lockfile
 ```
 
@@ -143,6 +142,22 @@ npm run db:mariadb:test-backup   # sh: checks del esquema y respaldo/restauraci�
 Las pruebas de la API y el E2E nunca usan `escuela_futbol`: crean bases `ef_*` y sólo pueden borrar bases con ese
 prefijo. Necesitan el permiso sobre `ef\_%` de la sección 3. Detalle: [`TESTING.md`](TESTING.md).
 
+**Chrome para `npm run e2e`.** Por omisión se busca en la ruta de macOS
+(`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`); si no está ahí, la prueba falla con «Google Chrome
+no encontrado (CHROME_PATH)». Indica el ejecutable con `CHROME_PATH`, en `.env` o en la terminal:
+
+```bash
+CHROME_PATH=/usr/bin/google-chrome npm run e2e                                  # Linux (o /usr/bin/chromium)
+CHROME_PATH="/Applications/Chromium.app/Contents/MacOS/Chromium" npm run e2e    # macOS con otro navegador
+```
+
+```powershell
+$env:CHROME_PATH = "C:\Program Files\Google\Chrome\Application\chrome.exe"; npm run e2e   # Windows (PowerShell)
+```
+
+En `.env` se escribe sin comillas: `CHROME_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe`. Sólo las
+rutas de macOS se han probado.
+
 ## 9. Respaldo y restauración de tu base local
 
 ```bash
@@ -159,6 +174,15 @@ restaurar sobre una base existente. Más detalle: [`database/MARIADB.md` § 6](d
 El trabajo diario que marca cargos VENCIDO (migración 002) sólo corre con `event_scheduler=ON`. En local **no hace
 falta**: la app recalcula VENCIDO en cada operación de cobranza. Para activarlo en tu propio MariaDB, agrega
 `event_scheduler=ON` en la sección `[mysqld]` de su configuración y reinícialo (`db:setup` avisa si está apagado).
+
+## 10.1 Zona horaria
+
+Charales trabaja con la hora de la escuela, `America/Mexico_City` (`DATETIME` sin zona, `MARIADB.md` § 1). La API la
+fija sola al iniciar (`api/auth.ts`): invitaciones, vencimientos, cargos y asistencia usan esa hora aunque tu
+computadora o el servidor estén en otra zona (`api/timezone.test.ts`). MariaDB, en cambio, usa la suya para los
+valores por omisión `CURRENT_TIMESTAMP` y para el trabajo diario de VENCIDO (`CURDATE()`). Compruébala con
+`mariadb -e "SELECT @@system_time_zone, @@time_zone"`. Si no es la del centro de México, agrega
+`default_time_zone='-06:00'` en `[mysqld]` y reinicia MariaDB (México no aplica horario de verano desde 2022).
 
 ## 11. Problemas comunes
 

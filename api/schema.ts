@@ -206,6 +206,78 @@ export async function runSqlFile(
   }
 }
 
+/** Legacy development seed (`npm run db:mariadb:dev-seed`): @example.com accounts with the public password demo1234. */
+export const DEV_SEED = 'db/mariadb/020_dev_seed.sql';
+export const NOT_EMPTY =
+  'La base ya tiene usuarios o jugadores: la semilla de desarrollo sólo se carga en una base sin datos. No se modificó nada.';
+
+/**
+ * Users + players already in `name` (0 if it or its tables don't exist yet). No writes: `api/setup.ts --dev-seed`
+ * calls it BEFORE setupDatabase, so a refused seed doesn't even touch the catalog or version_datos.
+ */
+export async function existingRows(env: Record<string, string | undefined>): Promise<number> {
+  const name = databaseName(env);
+  const conn = await mariadb.createConnection(serverOptions(env));
+  try {
+    const [t] = await conn.query(
+      `SELECT COUNT(*) AS n FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA = ? AND TABLE_NAME IN ('usuarios', 'jugadores')`,
+      [name],
+    );
+    if (Number(t.n) < 2) return 0;
+    const [r] = await conn.query(
+      `SELECT (SELECT COUNT(*) FROM \`${name}\`.usuarios) + (SELECT COUNT(*) FROM \`${name}\`.jugadores) AS n`,
+    );
+    return Number(r.n);
+  } finally {
+    await conn.end();
+  }
+}
+
+/**
+ * Loads DEV_SEED into a prepared database WITHOUT users or players (the same rule as `--demo`), all or nothing:
+ * one transaction that re-checks the rule with locking reads (a concurrent insert waits), runs the seed, verifies
+ * every row landed (020 uses INSERT IGNORE, which would skip a conflicting row silently) and bumps version_datos so a
+ * running API re-reads its cache (rpc.ts). Anything wrong → ROLLBACK and SetupError. Never touches rol_permiso.
+ */
+export async function loadDevSeed(env: Record<string, string | undefined>): Promise<void> {
+  const conn = await mariadb.createConnection({
+    ...serverOptions(env),
+    database: databaseName(env),
+  });
+  try {
+    await conn.beginTransaction();
+    try {
+      const users = await conn.query('SELECT id FROM usuarios FOR UPDATE');
+      const players = await conn.query('SELECT id FROM jugadores FOR UPDATE');
+      if (users.length || players.length) throw new SetupError(NOT_EMPTY);
+      await runSql(conn, read(DEV_SEED));
+      // What 020 inserts: 6 accounts, 2 linked coaches, 2 linked tutors, 6 players, 3 categories of its season.
+      const [c] = await conn.query(
+        `SELECT (SELECT COUNT(*) FROM usuarios) AS usuarios, (SELECT COUNT(*) FROM jugadores) AS jugadores,
+                (SELECT COUNT(*) FROM entrenadores WHERE usuario_id IS NOT NULL) AS entrenadores,
+                (SELECT COUNT(*) FROM tutores WHERE usuario_id IS NOT NULL) AS tutores,
+                (SELECT COUNT(*) FROM categorias c JOIN temporadas t ON t.id = c.temporada_id
+                  WHERE t.nombre = 'Temporada 2026-2027') AS categorias`,
+      );
+      const got = Object.fromEntries(Object.entries(c).map(([k, n]) => [k, Number(n)]));
+      const want = { usuarios: 6, jugadores: 6, entrenadores: 2, tutores: 2, categorias: 3 };
+      if (JSON.stringify(got) !== JSON.stringify(want))
+        throw new SetupError(
+          `La semilla de desarrollo no se aplicó completa (${JSON.stringify(got)}; ¿otra temporada actual?). ` +
+            'No se guardó nada.',
+        );
+      await conn.query('UPDATE version_datos SET version = version + 1 WHERE id = 1');
+      await conn.commit();
+    } catch (e) {
+      await conn.rollback().catch(() => undefined);
+      throw e;
+    }
+  } finally {
+    await conn.end();
+  }
+}
+
 /**
  * Drops a TEMPORARY test database. Refuses any name not starting with `ef_` (the prefix of every test database), so a
  * mistake can never drop escuela_futbol or another real database.

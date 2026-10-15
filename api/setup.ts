@@ -5,15 +5,21 @@
  *
  *   npm run db:setup              # schema + migrations + permissions
  *   npm run db:setup -- --demo    # …and the fictitious demo data (only on a database without users or players)
+ *   npm run db:mariadb:dev-seed   # (obsolete, use --demo) = db:setup -- --dev-seed: …and the small 020 seed,
+ *                                 # also only on a database without users or players (checked before any write)
  *
  * Then create the first administrator with `npm run db:admin`. Guide: docs/SETUP.md.
  */
 import { loadDemo } from './demo.ts';
-import { SetupError, setupDatabase } from './schema.ts';
+import { NOT_EMPTY, SetupError, existingRows, loadDevSeed, setupDatabase } from './schema.ts';
 import { createPool } from './server.ts';
 
 if (import.meta.main) {
   try {
+    const devSeed = process.argv.includes('--dev-seed');
+    // Refused before setupDatabase: a database with users or players is left exactly as it was (loadDevSeed checks
+    // again, under lock, inside its own transaction).
+    if (devSeed && (await existingRows(process.env)) > 0) throw new SetupError(NOT_EMPTY);
     const r = await setupDatabase(process.env);
     console.log(`MariaDB ${r.version} · base «${r.database}»${r.created ? ' (creada)' : ''}`);
     console.log(
@@ -25,6 +31,12 @@ if (import.meta.main) {
         ? `· permisos: matriz inicial de roles aplicada (${r.counts['rol_permiso']} filas)`
         : `· permisos: catálogo al día; se conservó la matriz de roles existente (${r.counts['rol_permiso']} filas)`,
     );
+    if (devSeed) {
+      await loadDevSeed({ ...process.env, DB_NAME: r.database });
+      console.warn(
+        '· semilla 020 cargada (obsoleta: usa npm run db:setup -- --demo). Cuentas @example.com: nunca en producción.',
+      );
+    }
     if (process.argv.includes('--demo')) {
       const db = createPool({ ...process.env, DB_NAME: r.database });
       try {

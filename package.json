@@ -14,7 +14,7 @@
     "db:reset": "sh db/scripts/reset.sh",
     "db:test": "sh db/scripts/test.sh",
     "db:mariadb:test-backup": "sh db/mariadb/scripts/test-backup-restore.sh",
-    "db:mariadb:dev-seed": "sh -c \"mariadb ${DB_NAME:-escuela_futbol} < db/mariadb/010_permisos_app.sql && mariadb ${DB_NAME:-escuela_futbol} < db/mariadb/020_dev_seed.sql\"",
+    "db:mariadb:dev-seed": "npm run db:setup -- --dev-seed",
     "api:build": "esbuild api/domain/index.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=api/.build/domain.mjs --log-level=warning",
     "db:mariadb:migrate": "sh db/mariadb/scripts/migrate.sh",
     "db:mariadb:demo": "npm run api:build && node --env-file-if-exists=.env api/demo.ts",

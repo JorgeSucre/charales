@@ -13,6 +13,9 @@ export const SESSION_HOURS = 8;
 export const IDLE_MINUTES = 30;
 export const COOKIE = 'charales_sid';
 const SCHOOL_TZ = 'America/Mexico_City';
+// The domain services running in this process (api/domain: today(), nowDateTime()) read the process clock: pin it to
+// the school's zone, so invitations, due dates and attendance never follow the machine's TZ (api/timezone.test.ts).
+process.env.TZ = SCHOOL_TZ;
 
 const INVALID = 'Correo o contraseña incorrectos.';
 export const NO_SESSION = 'Sesión no iniciada o expirada.';

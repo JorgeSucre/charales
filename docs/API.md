@@ -19,8 +19,23 @@ npm run api:test                  # pruebas en bases temporales ef_* que se borr
 
 `npm run api:build` empaqueta con esbuild los servicios de Angular que ejecuta la API (`api/domain` →
 `api/.build/domain.mjs`, no versionado); `api:start`, `api:test`, `db:setup`, `db:admin` y `db:mariadb:demo` lo
-ejecutan solos. Los scripts `sh` anteriores (`db:mariadb:migrate`, `db:mariadb:dev-seed`) siguen disponibles para quien
-use el cliente `mariadb`; `020_dev_seed.sql` es el conjunto mínimo que usa `api/api.test.ts` y la colección Postman.
+ejecutan solos. El script `sh` anterior `db:mariadb:migrate` sigue disponible para quien use el cliente `mariadb`.
+`db:mariadb:dev-seed` está **obsoleto** (usa `npm run db:setup -- --demo`) y **sólo sirve para una base nueva**. Es
+`db:setup -- --dev-seed` (`api/setup.ts`, `loadDevSeed` en `api/schema.ts`) y carga `020_dev_seed.sql`, el conjunto
+mínimo que usan `api/api.test.ts` y la colección Postman: 6 cuentas `@example.com` con la contraseña **pública**
+`demo1234` (una de ellas ADMINISTRADOR), 2 entrenadores y 2 tutores vinculados, la temporada 2026-2027 con 3
+categorías y 6 jugadores. Garantías (`api/setup.test.ts`):
+
+- Se **niega** si la base ya tiene algún usuario o jugador. Lo comprueba antes de escribir nada (ni siquiera el
+  `db:setup` previo corre) y otra vez, con bloqueo, dentro de su transacción. Así nunca recrea una cuenta desactivada
+  o con otro correo, ni revincula un perfil, ni devuelve un permiso retirado.
+- Todo o nada: si la semilla no queda completa (p. ej. ya hay otra temporada actual y su `INSERT IGNORE` se omitiría),
+  hace `ROLLBACK` y termina con error sin dejar cambios.
+- No toca `rol_permiso`: la matriz inicial la aplica `db:setup` sólo en la primera instalación.
+- Al terminar incrementa `version_datos`, así que una API en marcha deja de usar su copia en memoria.
+
+No la uses en una base real ni en producción. Aplicar `020_dev_seed.sql` a mano con el cliente `mariadb` no tiene
+ninguna de estas protecciones.
 
 | Variable                  | Por defecto             | Notas                                                                                                                          |
 | ------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -157,7 +172,9 @@ esta API**, no con un proyecto aparte:
 - Devuelven las filas **tal como están en MariaDB** (columnas `snake_case`, `DATETIME` como `"YYYY-MM-DD HH:MM:SS"`,
   `BOOLEAN` como `0/1`) para compararlas 1:1 con la base. El contrato definitivo (`camelCase`, § Convenciones) se aplica
   cuando el frontend consuma estos datos.
-- Datos: `npm run db:mariadb:dev-seed` carga la temporada actual, 3 categorías y 6 jugadores ficticios (los de `MockDb`).
+- Datos: `npm run db:mariadb:dev-seed` (obsoleto; para la app usa `npm run db:setup -- --demo`), sólo sobre una base
+  sin usuarios ni jugadores (ver arriba): carga la temporada actual, 3 categorías y 6 jugadores ficticios (los de
+  `MockDb`).
 
 **Comparar API y base:**
 

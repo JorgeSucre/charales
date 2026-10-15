@@ -14,14 +14,14 @@ organizadas por épicas y responsables.
 
 ## Requisitos
 
-| Herramienta | Versión                                               | Para qué                                                              |
-| ----------- | ----------------------------------------------------- | --------------------------------------------------------------------- |
-| Node.js     | `^22.22.3`, `^24.15.0` o `>=26` (probado con 26.10.0) | Frontend                                                              |
-| npm         | 11 (probado con 11.19.1)                              | Dependencias y scripts                                                |
-| MariaDB     | 10.6+, con `mariadb` y `mariadb-dump` en el `PATH`    | La base de la app (la API la necesita), checks del esquema y respaldo |
-| PostgreSQL  | 16, con `psql`, `createdb` y `dropdb` en el `PATH`    | Sólo el esquema histórico de `db/migrations`                          |
-| Git         | reciente                                              | —                                                                     |
-| `sh`        | macOS/Linux; en Windows usa Git Bash o WSL            | Scripts de BD                                                         |
+| Herramienta | Versión                                            | Para qué                                                              |
+| ----------- | -------------------------------------------------- | --------------------------------------------------------------------- |
+| Node.js     | `^24.15.0` o `>=26` (`engines`; probado con 26.11) | Frontend, API (`crypto.argon2`) y pruebas                             |
+| npm         | 11 (probado con 11.19.1)                           | Dependencias y scripts                                                |
+| MariaDB     | 10.6+, con `mariadb` y `mariadb-dump` en el `PATH` | La base de la app (la API la necesita), checks del esquema y respaldo |
+| PostgreSQL  | 16, con `psql`, `createdb` y `dropdb` en el `PATH` | Sólo el esquema histórico de `db/migrations`                          |
+| Git         | reciente                                           | —                                                                     |
+| `sh`        | macOS/Linux; en Windows usa Git Bash o WSL         | Scripts de BD                                                         |
 
 ## Empezar desde cero
 
@@ -29,8 +29,7 @@ Guía completa, con la instalación de MariaDB por sistema operativo y la cuenta
 **[`docs/SETUP.md`](docs/SETUP.md)**. En corto (con MariaDB ya instalado y la base/cuenta de su sección 3):
 
 ```bash
-git clone https://github.com/JorgeSucre/charales.git && cd charales
-git switch jorgesucre/api-express    # esta versión, hasta que se integre a main
+git clone https://github.com/JorgeSucre/charales.git && cd charales   # rama main
 npm ci
 cp .env.example .env                 # pon tu DB_PASSWORD; .env no se versiona
 npm run db:setup                     # esquema + migraciones + permisos; seguro de repetir, nunca borra

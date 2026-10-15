@@ -12,8 +12,8 @@ Contexto, equipo y estado por área: [`../PROJECT_CONTEXT.md`](../PROJECT_CONTEX
 - **La app usa la API para todo** (sesión y datos): sin la API corriendo, el login muestra «No se pudo conectar con la
   API». Datos de prueba: `npm run db:mariadb:demo` sobre un esquema vacío.
 
-> **Estado (2026-10-13):** `main` = `origin/main` en `e60c004` (API Milestone 1 y HU-005). La conexión de toda la
-> app a la API (D13) está en la rama `jorgesucre/api-express`, sin commit todavía.
+> **Estado:** la conexión de toda la app a la API (D13) llega a `main` con el PR #10 (`jorgesucre/api-express`);
+> se instala desde `main` ([`SETUP.md`](SETUP.md)).
 
 ## 1. Requisitos
 
