@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { AuthService } from './core/auth/auth.service';
 import { MockDb } from './core/data/mock-db';
+import { PlayerStatus } from './core/models';
 import { integrityViolations } from './core/data/mock-db.integrity';
 import { AuditService } from './core/services/audit.service';
 import { CategoryService } from './core/services/category.service';
@@ -134,6 +135,13 @@ describe('domain rules by HU', () => {
       await login('secretaria');
       const players = get(PlayerService);
       await expect(players.changeStatus(3, 'BAJA_DEFINITIVA', '')).rejects.toThrow('motivo');
+      const history = db().statusHistory.length;
+      for (const bad of ['SUSPENDIDO', 'toString'])
+        await expect(players.changeStatus(3, bad as PlayerStatus, 'x')).rejects.toThrow(
+          'Estatus inválido',
+        );
+      expect((await players.get(3)).status).toBe('ACTIVO');
+      expect(db().statusHistory).toHaveLength(history);
       await players.changeStatus(3, 'BAJA_DEFINITIVA', 'Cambio de ciudad');
       expect((await players.record(3)).statusHistory[0]).toMatchObject({
         previousStatus: 'ACTIVO',
