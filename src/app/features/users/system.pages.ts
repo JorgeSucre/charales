@@ -196,8 +196,9 @@ export class UsersPage {
   template: `
     <h1>Permisos por rol</h1>
     <p class="muted">
-      Los cambios aplican a las sesiones que se inicien después. Los permisos marcados con 🔒 no se
-      pueden retirar para que ningún rol base se quede sin acceso.
+      Los cambios aplican desde la siguiente acción de cada usuario, aunque ya tenga la sesión
+      abierta. Los permisos marcados con 🔒 no se pueden retirar para que ningún rol base se quede
+      sin acceso.
     </p>
     <app-submission-alert [submission]="submission" />
     <app-load-state [res]="matrix"
@@ -258,7 +259,7 @@ export class PermissionsPage {
   async set(roleId: Id, p: Permission, granted: boolean): Promise<void> {
     await this.submission.run(
       () => this.service.setPermission(roleId, p.id, granted),
-      `${granted ? 'Otorgado' : 'Retirado'} ${p.module}.${p.action}. Aplica en nuevas sesiones.`,
+      `${granted ? 'Otorgado' : 'Retirado'} ${p.module}.${p.action}. Aplica desde la siguiente acción de cada usuario.`,
     );
     this.matrix.reload();
   }

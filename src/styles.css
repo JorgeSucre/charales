@@ -302,6 +302,8 @@ button.link.danger {
 
 /* Tables: scroll horizontally on small screens instead of breaking the layout */
 .table-wrap {
+  /* Containing block of the .sr-only spans in headers: without it they escape the clipping and widen the page. */
+  position: relative;
   overflow-x: auto;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -487,6 +489,9 @@ fieldset {
 .kpi {
   display: grid;
   gap: 0.15rem;
+  /* Grid item: without these, a long word («PROGRAMADO/REPROGRAMADO») runs past the card. */
+  min-width: 0;
+  overflow-wrap: anywhere;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -527,8 +532,9 @@ fieldset {
   gap: 0.5rem;
 }
 .attendance li {
-  display: grid;
-  grid-template-columns: minmax(10rem, 1fr) auto minmax(8rem, 1fr);
+  /* Wraps by available width (the side menu leaves ~530 px at 768 px): name, status buttons, note. */
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   align-items: center;
   background: var(--surface);
@@ -536,8 +542,16 @@ fieldset {
   border-radius: var(--radius);
   padding: 0.5rem;
 }
+.attendance li .name {
+  flex: 1 1 10rem;
+}
+.attendance li .note {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
 .seg {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
 }
 .seg label {
@@ -602,8 +616,8 @@ li.muted {
 }
 
 @media (max-width: 600px) {
-  .attendance li {
-    grid-template-columns: 1fr;
+  .attendance li > * {
+    flex-basis: 100%;
   }
   .seg label {
     flex: 1;
