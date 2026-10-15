@@ -42,6 +42,8 @@ npm run build
 npx ng test --watch=false
 npx prettier --check .
 npx tsc -p tsconfig.app.json --noEmit && npx tsc -p tsconfig.spec.json --noEmit
+npm run api:test && npm run api:typecheck   # API y dominio sobre MariaDB (bases temporales ef_*)
+npm run e2e                      # si tocaste páginas o estilos (requiere Google Chrome)
 npm run db:mariadb:test-backup   # si tocaste el modelo MariaDB o db/mariadb (requiere MariaDB local)
 ```
 
@@ -51,8 +53,10 @@ Guía completa de comandos y de dónde está cada cosa: [`docs/DEVELOPMENT.md`](
 
 El modelo vigente es MariaDB ([`MARIADB.md`](docs/database/MARIADB.md)). En corto:
 
-- el esquema es `docs/escuela_futbol_mariadb.sql`; un cambio de esquema se acuerda con el equipo y se acompaña de su caso
-  en `docs/escuela_futbol_mariadb_checks.sql`; los datos de la app (permisos) van en `db/mariadb/NNN_*.sql`;
+- el esquema base es `docs/escuela_futbol_mariadb.sql` y **no se edita**: un cambio de esquema es una migración nueva e
+  idempotente en `db/mariadb/migrations/NNN_*.sql` (con su caso en `docs/escuela_futbol_mariadb_checks.sql` cuando
+  aplique) y, si cambia una tabla, su columna en `api/tables.ts`; los datos de la app (permisos) van en
+  `db/mariadb/NNN_*.sql`;
 - si cambia una tabla, actualiza su modelo en `core/models`, `MockDb` y `core/data/mock-db.integrity.ts`;
 - documentación actualizada (`MARIADB.md`, `DOMAIN_RULES.md`, `AUTHORIZATION.md` si aplica);
 - `npm run db:mariadb:test-backup` en verde.

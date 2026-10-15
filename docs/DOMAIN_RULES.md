@@ -2,7 +2,8 @@
 
 El esquema [`escuela_futbol_mariadb.sql`](escuela_futbol_mariadb.sql) asegura PK, FK, UNIQUE y CHECK (42/42 casos en
 `escuela_futbol_mariadb_checks.sql`). Las reglas de abajo **no** están en el esquema: hoy viven en la capa de dominio
-(servicios + reglas puras) y **la API debe reproducirlas dentro de la misma transacción**. No dependen del frontend:
+(servicios + reglas puras), que **la API ejecuta dentro de la misma transacción** de cada operación (D13,
+[`API.md`](API.md#operaciones-de-dominio)). No dependen del frontend:
 el frontend las muestra, pero la fuente es el dominio. La alternativa de llevar algunas a triggers de MariaDB queda
 como decisión del equipo (ver «Pendiente»).
 
