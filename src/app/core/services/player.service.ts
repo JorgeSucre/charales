@@ -258,8 +258,10 @@ export class PlayerService {
   /** HU-010: status change with history; nothing is deleted (payments, matches, categories stay). */
   async changeStatus(id: Id, status: PlayerStatus, reason: string): Promise<Player> {
     this.authz.require('jugadores.editar');
-    // `status` comes from the browser: only jugadores.estatus values, not just what the select offers.
-    if (!Object.hasOwn(STATUS_LABELS, status)) throw new Error('Estatus inválido.');
+    // `status` comes from the browser: only jugadores.estatus values, not just what the select offers. A string first:
+    // Object.hasOwn would turn ['ACTIVO'] into 'ACTIVO'.
+    if (typeof status !== 'string' || !Object.hasOwn(STATUS_LABELS, status))
+      throw new Error('Estatus inválido.');
     const before = this.db.get(this.db.players, id, 'Jugador');
     if (before.status === status) throw new Error('El jugador ya tiene ese estatus.');
     const motive = required(reason, 'El motivo');

@@ -135,7 +135,8 @@ test('HU-010: status change — unknown status (400) or no permission (403) writ
     ),
   });
   const before = await snapshot(5);
-  for (const bad of ['SUSPENDIDO', 'activo', 'toString', null])
+  // ['BAJA_TEMPORAL']: an array holding a valid status is still not a status.
+  for (const bad of ['SUSPENDIDO', 'activo', 'toString', null, ['BAJA_TEMPORAL']])
     await t.refused(
       t.call(secretaria, 'PlayerService', 'changeStatus', 5, bad, 'Motivo'),
       400,
