@@ -3,7 +3,7 @@
 ## Antes de modificar código
 
 1. Lee [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md): qué es, estado, quién hace qué. Comandos y mapa del código:
-   [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) y [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). La API está en `api/` (Milestone 1: salud y autenticación; contrato en [`docs/API.md`](docs/API.md)).
+   [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) y [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). La API está en `api/` (autenticación y `POST /api/rpc`, que ejecuta los servicios de dominio sobre MariaDB, D13; contrato en [`docs/API.md`](docs/API.md)).
 2. Lee el contrato de lo que vas a tocar: modelo de datos → [`MARIADB.md`](docs/database/MARIADB.md) (vigente) y las
    reglas de dominio de [`DATA_CONTRACT.md`](docs/database/DATA_CONTRACT.md); reglas que la API debe garantizar →
    [`DOMAIN_RULES.md`](docs/DOMAIN_RULES.md); autorización → [`AUTHORIZATION.md`](docs/AUTHORIZATION.md); estado de
@@ -13,10 +13,12 @@
    reasignes historias; para lo ajeno, usa los contratos del owner.
 4. Revisa `git status`, `git log` y la rama actual. No pises trabajo existente.
 5. **No inventes** tablas, modelos, requisitos ni historias. Si falta información, pregunta o documenta la ambigüedad.
-6. **No modifiques migraciones ya aplicadas**; crea una nueva (`db/migrations/NNN_*.sql`) con su prueba.
+6. **No modifiques migraciones ya aplicadas**; crea una nueva (`db/mariadb/migrations/NNN_*.sql`, idempotente) con su
+   prueba. `db/migrations` es el PostgreSQL histórico.
 7. **No escribas en tablas de otro owner.** Llama a su servicio.
 8. Ejecuta las pruebas antes de decir que algo funciona:
-   `npm run build`, `npx ng test --watch=false` y `npx prettier --check .`; si tocaste el modelo MariaDB o
+   `npm run build`, `npx ng test --watch=false`, `npm run api:test`, `npm run api:typecheck` y `npx prettier --check .`
+   (si tocaste páginas o estilos, también `npm run e2e`); si tocaste el modelo MariaDB o
    `db/mariadb`, también `npm run db:mariadb:test-backup` (checks del esquema + respaldo). `npm run db:test` sólo
    aplica al esquema PostgreSQL histórico. Si tocaste `api/`: `npm run api:test`, `postman collection lint postman/` y
    `postman collection run` contra la API local ([`docs/API.md`](docs/API.md)).
@@ -37,7 +39,10 @@
 ## Convenciones de código (resumen; la fuente es cada documento enlazado)
 
 - Flujo: páginas → servicios de dominio → `core/data/mock-db.ts`. Las páginas nunca inyectan `MockDb`. Los servicios
-  devuelven `Promise`.
+  devuelven `Promise`. En la app, los servicios corren en la API (D13): un método nuevo que use una página se agrega a
+  `core/api/rpc-methods.ts` y debe empezar con su verificación de `AuthorizationService`.
+- Los argumentos de una operación vienen del navegador: copia a la fila sólo los campos del borrador, uno por uno; nunca
+  `{ ...draft }` ni `update(tabla, id, draft)` (el cliente podría fijar `active`, `createdAt`…).
 - Modelos sólo en `src/app/core/models/`; no se redeclaran en los módulos.
 - Autorización por **permiso** (`core/auth/permissions.ts`), nunca `role === '…'`. Toda ruta nueva va en la tabla de
   `app.routes.spec.ts`.

@@ -14,7 +14,8 @@ export class ForbiddenError extends Error {
 }
 
 /**
- * Domain authorization (the second barrier after route guards; the API will be the third and final one).
+ * Domain authorization (the second barrier after route guards). These services run inside the API with the session of
+ * the cookie (api/rpc.ts, D13), so this is also the server-side check.
  * Every public async service method that becomes an API endpoint starts with one of these checks. They read the
  * identity ONLY from the session (never from ids sent by the caller) and resolve ownership through the relations:
  *   tutor → tutor_jugador → jugador

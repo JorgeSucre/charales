@@ -86,21 +86,21 @@ describe('auth, sessions & RBAC', () => {
 
   it('session expires after idle time and the guard sends to login with expired=1 (HU-002.4)', async () => {
     await auth.login('admin@example.com', PASSWORD);
-    expect(runGuard('reportes.consultar')).toBe(true);
+    expect(await runGuard('reportes.consultar')).toBe(true);
     vi.setSystemTime(new Date(NOW.getTime() + (IDLE_MINUTES + 1) * 60_000));
-    expect((runGuard('reportes.consultar') as UrlTree).toString()).toBe(
+    expect(((await runGuard('reportes.consultar')) as UrlTree).toString()).toBe(
       '/login?returnUrl=%2Fadmin%2Fbilling%2Fdebts&expired=1',
     );
     expect(auth.isLoggedIn()).toBe(false);
   });
 
   it('guard: anonymous → /login; tutor → /forbidden on office routes, allowed on the portal (HU-003)', async () => {
-    expect((runGuard('cobranza.consultar') as UrlTree).toString()).toBe(
+    expect(((await runGuard('cobranza.consultar')) as UrlTree).toString()).toBe(
       '/login?returnUrl=%2Fadmin%2Fbilling%2Fdebts',
     );
     await auth.login('tutor@example.com', PASSWORD);
-    expect((runGuard('cobranza.consultar') as UrlTree).toString()).toBe('/forbidden');
-    expect(runGuard('portal.consultar')).toBe(true);
+    expect(((await runGuard('cobranza.consultar')) as UrlTree).toString()).toBe('/forbidden');
+    expect(await runGuard('portal.consultar')).toBe(true);
     expect(auth.homeUrl()).toBe('/portal');
   });
 

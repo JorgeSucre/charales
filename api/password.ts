@@ -3,8 +3,8 @@
  * - change (authenticated) and recovery (token) are separate operations (D8);
  * - a change closes the user's OTHER sessions and keeps the current one (D2);
  * - recovery tokens: single use, 60 min, only their SHA-256 is stored; a new request revokes the account's earlier
- *   unused ones through `usado_en` (D3a, D3b, D3d). The API issues ONLY recovery tokens: `tokens_recuperacion` has
- *   no purpose column, so invitations stay out of the API until one is added (D3e);
+ *   unused RECOVERY ones through `usado_en` (D3a, D3b, D3d); a pending invitation (`finalidad = 'INVITACION'`,
+ *   migration 001, D3e) is never revoked by a recovery request. Both kinds are confirmed here;
  * - the request answers the same whether the account exists or not, with an attempt limit (D7);
  * - without a mail transport it answers 503 before reading anything (D4b); the console transport is dev-only (D4a).
  */
@@ -42,8 +42,19 @@ export type Mailer = (to: string, subject: string, text: string) => Promise<void
  */
 export function mailerFromEnv(env: Record<string, string | undefined>): Mailer | null {
   if (env['NODE_ENV'] === 'production' || env['MAIL_CONSOLE'] !== 'true') return null;
-  return (to, subject, text) =>
+  const console_: Mailer = (to, subject, text) =>
     console.info(`[correo de desarrollo] para ${to}: ${subject}\n${text}`);
+  return withAppUrl(console_, env['APP_URL'] ?? 'http://localhost:4200');
+}
+
+/**
+ * The services write app links as paths (`/reset-password?token=…`); an e-mail needs them absolute. APP_URL is where
+ * the app is served (dev: http://localhost:4200). Any transport added later goes through this too.
+ */
+export function withAppUrl(mailer: Mailer, appUrl: string): Mailer {
+  const base = appUrl.replace(/\/+$/, '');
+  return (to, subject, text) =>
+    mailer(to, subject, text.replace(/(^|\s)\/reset-password\?/g, `$1${base}/reset-password?`));
 }
 
 /** HU-005.2 — same policy as the frontend (`core/auth/password.ts` → passwordProblem). */
@@ -158,14 +169,15 @@ export async function requestPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
         );
         if (!locked) return false;
         const now = localDateTime();
-        // D3b/D3d: revoke the earlier live tokens (all recovery tokens in M1, D3e), keeping the rows.
+        // D3b/D3d: revoke the earlier live recovery tokens, keeping the rows; invitations are another purpose (D3e).
         await tx.query(
           `UPDATE tokens_recuperacion SET usado_en = ?
-          WHERE usuario_id = ? AND usado_en IS NULL AND expira_en > ?`,
+          WHERE usuario_id = ? AND finalidad = 'RECUPERACION' AND usado_en IS NULL AND expira_en > ?`,
           [now, user.id, now],
         );
         await tx.query(
-          'INSERT INTO tokens_recuperacion (usuario_id, token_hash, creado_en, expira_en) VALUES (?, ?, ?, ?)',
+          `INSERT INTO tokens_recuperacion (usuario_id, finalidad, token_hash, creado_en, expira_en)
+           VALUES (?, 'RECUPERACION', ?, ?, ?)`,
           [user.id, sha256(token), now, localDateTime(Date.now() + RESET_TOKEN_MINUTES * 60_000)],
         );
         return true;

@@ -1,0 +1,179 @@
+# Evidencia de pruebas — rama jorgesucre/api-express (base e60c004), 2026-10-15 10:33
+# Node v26.11.0 · MariaDB 13.0.2-MariaDB · Google Chrome 155.0.8059.80  · event_scheduler=OFF
+# Pruebas de la API con reloj fijo 2026-10-13 12:00 (api/test-db.ts); E2E con reloj real.
+
+## npx ng test --watch=false
+ Test Files  12 passed (12)
+      Tests  156 passed (156)
+
+## npm run api:test (MariaDB real, bases temporales ef_*)
+✔ GET /health reports the database (7530.237667ms)
+✔ unknown route → 404 (2.111292ms)
+✔ login without e-mail or password → 400 (2.751458ms)
+✔ wrong password, unknown e-mail and disabled account → same 401, no cookie (97.857417ms)
+✔ valid login → AuthUser + HttpOnly cookie; only the token hash is stored (63.582958ms)
+✔ profile account: roles from tutores/entrenadores, no office permissions (D12) (71.506125ms)
+✔ GET /auth/session: 401 anonymous or bogus cookie, 200 with the login cookie (87.127666ms)
+✔ logout closes the session and clears the cookie; anonymous logout is a no-op 204 (53.291209ms)
+✔ idle session (30 min) and deactivated account → 401 and the session is closed (66.127584ms)
+✔ 5 wrong passwords lock that e-mail for this client → 429, even with the right password (173.206916ms)
+✔ GET /api/jugadores: 401 anonymous, 403 profile-only account, 200 with jugadores.consultar (admin; secretaria is locked by the 429 test) (72.28825ms)
+✔ GET /api/categorias: 401 anonymous, 403 profile-only account, 200 with an office role (90.139292ms)
+✔ change password: 401 without session; wrong current → 400; policy and same password → 400 (126.9695ms)
+✔ change password (D2): keeps the current session, closes the others, only the hash is stored (220.056291ms)
+✔ change password: 5 wrong current passwords → 429, even with the right one (136.211959ms)
+✔ reset request (D7): same 204 for existing, unknown and inactive accounts; only the existing one gets mail (19.759542ms)
+✔ reset (D3a/D3b/D8): a new request revokes the earlier token; single use; closes every session (284.105875ms)
+✔ D3e: a recovery request never revokes a pending invitation; the invitation is confirmed like a reset (244.035958ms)
+✔ reset: an expired token is rejected and the password does not change (99.207167ms)
+✔ reset: policy is checked; invalid tokens get the generic message (21.13875ms)
+✔ reset request: limited per e-mail and IP (429), whether the account exists or not (3.030958ms)
+✔ reset request without a mail transport (D4b): 503 before reading the account, no token created (2.457125ms)
+✔ the console mail transport exists only in development with MAIL_CONSOLE=true (D4a) (0.255875ms)
+✔ e-mail links are absolute: APP_URL + the path the service wrote (0.149ms)
+✔ database errors do not echo query parameters into logs (logParam: false, D4d) (2.013166ms)
+✔ C1: ten simultaneous wrong current passwords never evaluate more than the limit (109.60425ms)
+✔ R1: two simultaneous changes from two sessions — exactly one wins, consistently (243.6005ms)
+✔ R1: a password change racing a reset never overwrites the reset (195.182416ms)
+✔ R2: two simultaneous recovery requests — both 204, at most one live token (42.535083ms)
+✔ two simultaneous confirmations of one token — exactly one succeeds (79.231917ms)
+✔ transaction(): a failing rollback never hides the original error; the connection is released (0.325042ms)
+✔ HU-021.3: a full category only takes a player with an authorized exception, recorded on the membership (7909.892417ms)
+✔ HU-025: the coach weekly schedule shows category, venue and time, and marks overlaps (43.114791ms)
+✔ HU-027: the coach sees only the competitions he is assigned to, with category, dates and next matches (6.573625ms)
+✔ HU-038/041: the coach calendar is only his categories, filters by competition, and tells upcoming from past (21.986917ms)
+✔ HU-032: attendance percentages — present and present-or-justified, per player (8.13775ms)
+✔ HU-033: the family sees date and status of each session and the percentage of the period (14.614833ms)
+✔ HU-039/061/062/063: family views — date, time, venue and rival; cards; sporting data; competitions by roster (42.766959ms)
+✔ HU-007: the audit log filters by user, module and date, and the API offers no way to edit it (30.920834ms)
+✔ HU-041.4: results in chronological order, ascending or descending (26.001042ms)
+✔ HU-060.3: coach notices newest first (5.144583ms)
+✔ HU-008: register a player — data, age, evident duplicates, internal identifier (7957.304125ms)
+✔ HU-009: edit a player — authorized fields, same id, modification date, required fields (25.552833ms)
+✔ HU-010: status change — reason, history kept, inactive player cannot join categories (44.039916ms)
+✔ HU-011: tutors — N:M, one primary contact per player, contact validation (25.0035ms)
+✔ HU-012: portal account for a tutor — only registered tutors, no duplicate, initial access, own children only (99.13925ms)
+✔ HU-013: player record — data, categories, payments and debts, uniforms and competitions (42.196833ms)
+✔ HU-014: search — partial name, combinable filters, pagination (14.618959ms)
+✔ HU-015: categories — unique per season, valid ranges, active flag (29.267542ms)
+✔ HU-016: training schedules — day, times and venue; end after start; several per category; deactivate (29.697875ms)
+✔ HU-017/021: category membership — active only, age rule with authorized exception, no duplicate, start date, capacity (40.343084ms)
+✔ HU-018: group list — active members with age and primary tutor, total (4.268834ms)
+✔ HU-019: category change — closes the previous one, opens a new one, keeps history with reason and date (21.510541ms)
+✔ HU-020: annual enrollment — season, date, amount, status, linked charge, one per season (22.602416ms)
+✔ HU-022/023: coaches — contact, status, account, duplicates; several per category, validity, no duplicate assignment (112.019458ms)
+✔ HU-024/025/027: coach views — own categories, players, weekly schedule, competitions; read-only (108.241625ms)
+✔ HU-026: coach ↔ competition/category — current assignment required, several coaches, no exact duplicate (103.601542ms)
+✔ HU-069: venues — create, edit, deactivate instead of delete, reused by schedules and matches (137.809958ms)
+✔ HU-070: seasons — name and dates, one current (must be active), history kept (215.673792ms)
+✔ HU-028: program a session — category, date, time, venue, coach; from schedules; valid dates; statuses (8039.77575ms)
+✔ HU-029: coach sessions — by date, only own, status, group players (24.83925ms)
+✔ HU-030/031: attendance and notes — assigned coach, one per player and session, audited corrections (63.72225ms)
+✔ HU-032: attendance report — filters, percentage, justified apart (40.641791ms)
+✔ HU-033: tutor attendance — own children only, date and status, period percentage, read-only (18.814958ms)
+✔ HU-034: competitions — name, type, season, organizer, status; valid dates; never deleted (11.269625ms)
+✔ HU-035/036: participations and rosters — unique, date, eligible players only, no duplicate, history (38.669125ms)
+✔ HU-037: matches — registered category, opponent/date/time/venue, statuses, reschedule with reason (43.872125ms)
+✔ HU-040: results — played matches only, both scores, no negatives, notes (34.945958ms)
+✔ HU-038/041: coach calendar and results — only assigned categories, filters, past and upcoming (10.874041ms)
+✔ HU-039/042: family matches and results — only through the child roster, read-only (9.350666ms)
+✔ HU-043: concepts — name, suggested amount, recurring, status; used ones not deleted; price change keeps history (7925.308208ms)
+✔ HU-044: monthly fees — one per player/concept/period, amount and due date, authorized exclusions, statuses (44.839375ms)
+✔ HU-045: payment — payer, concept, date, amount, method; partial; balance recomputed; folio (35.275667ms)
+✔ HU-046/047: statement — charges and payments, balance, overdue, filters; the tutor sees only own children (39.228333ms)
+✔ HU-048: receipt — folio, date, player, concept, amount, method; by folio; read-only; cancelled flag (16.248333ms)
+✔ HU-049: cancel a payment — admin only, reason, reverts balance, kept as CANCELADO with audit (44.17825ms)
+✔ HU-050: debts — period/category filters, primary tutor and contact, overdue balance, cancelled excluded (62.687708ms)
+✔ HU-051: discounts — type and reason, original and final kept, authorized users only (19.54825ms)
+✔ HU-052: uniform catalog — product with sizes and price, status, used products kept (40.723625ms)
+✔ HU-053/054/055: orders — price snapshot, charge = total, paid from the balance, delivery, cancellation (89.567459ms)
+✔ HU-056: family uniforms — own children only, product/size/quantity, status, read-only (10.578458ms)
+✔ D5 / HU-044.3: the daily job marks unpaid charges past their due date VENCIDO (migration 002) (40.628917ms)
+✔ HU-057: publish — title, message, publication and validity; all or selected audiences; unpublish; ordered by date (7973.750541ms)
+✔ HU-058: category notice — several categories; only related tutors and coaches see it; validity kept (48.441834ms)
+✔ HU-059: family notices — only current ones, general + their children categories, newest first, read-only (14.964875ms)
+✔ HU-060: coach notices — current, general + assigned categories, ordered, read-only (13.182458ms)
+✔ HU-061: family home — one card per child with category, next match, balance and recent notices (13.561125ms)
+✔ HU-062/063: child sporting data and competitions — category, schedule, venue, coaches; roster-based (21.438209ms)
+✔ HU-064: tutor profile — contact only, format validated, change recorded, player identity untouched (53.956333ms)
+✔ HU-065: dashboard — KPIs with source and link, straight from the database, period filter (7905.846542ms)
+✔ HU-066: players by category — category/status filters, primary tutor and contact, totals (24.063459ms)
+✔ HU-067: income — date filter, grouped by concept, cancelled payments excluded, total (26.582792ms)
+✔ HU-068: global agenda — trainings and matches together, category/coach, venue and time (9.020833ms)
+✔ HU-074: the critical flows on MariaDB — login, registration + enrollment, payment and balance, match, tutor isolation (161.20325ms)
+✔ D13 cache: what the API keeps in memory always equals MariaDB, also across two API instances (64.952667ms)
+HU-075 medianas (ms): {"búsqueda":20,"integrantes":30,"adeudos":39,"cargos":32,"estado de cuenta":19,"tablero":24,"auditoría":63}
+✔ HU-075: common queries answer in < 300 ms through the API with 5 000 players, 20 000 charges and 10 000 payments (5171.373792ms)
+✔ the column map round-trips every table of the MockDb seed through MariaDB (2623.518208ms)
+✔ rpc: 401 without session, 404 outside the allowlist, 400 malformed (55.546042ms)
+✔ HU-008: a player created through the API is stored in MariaDB with its audit row (36.86925ms)
+✔ a business-rule error answers 400 with the service message and writes nothing (27.471459ms)
+✔ authorization runs on the server: role, tutor isolation and coach scope (110.055833ms)
+✔ HU-045/049: payment, balance and cancellation persist; an over-payment rolls back entirely (51.345ms)
+✔ HU-073: MariaDB rejects what the services let through, and the whole unit of work rolls back (8.672917ms)
+✔ responses never carry password or token hashes (49.084584ms)
+✔ HU-004: a new staff account gets a 24 h invitation (D3c/D3e), usable once through the API (122.470833ms)
+✔ HU-004: without a mail transport the account is not created (503, rolled back) (37.893542ms)
+✔ HU-004.3: deactivating an account through the API closes its open sessions (104.936791ms)
+✔ HU-006: a permission removed through the API applies to the next request of open sessions (104.767042ms)
+✔ concurrency: parallel writes and logins never collide (ids, audit rows) (117.291291ms)
+✔ applyChanges writes only what changed (an unchanged load is a no-op) (44.395083ms)
+✔ audit: names of Object.prototype are not operations (404, never a 500) (33.683875ms)
+✔ audit: a client cannot set fields outside the draft (mass assignment) when editing (84.626708ms)
+✔ audit: CSRF and CORS — a non-JSON body never runs an operation; no CORS headers are sent (33.773209ms)
+✔ audit: session cookie attributes — HttpOnly, SameSite=Strict, Path=/, 8 h; Secure when configured (61.60225ms)
+✔ audit: a payment cancelled twice is reverted only once (42.554166ms)
+✔ audit: two simultaneous payments for the whole balance — exactly one succeeds, no double charge (63.790667ms)
+✔ audit: after writes, the in-memory tables of the bridge equal what MariaDB stores (44.797125ms)
+✔ audit: the API tests run on a fixed clock — Node and MariaDB agree, whatever the real date (0.203083ms)
+✔ db:setup creates and prepares a new database; a second run changes nothing (2605.408083ms)
+✔ db:setup on a database with data keeps every row and the administrator's permission matrix (95.861042ms)
+✔ db:setup refuses a non-empty database that is not Charales, without touching it (22.426583ms)
+✔ db:setup fails clearly on a bad name or an unreachable server; the schema it applies has no DROP (2.082625ms)
+✔ test databases are the only ones the harness may drop (0.167459ms)
+✔ SQL files with DELIMITER blocks are split the way the server needs (0.076166ms)
+✔ db:admin creates the first administrator (argon2id) and never overwrites an existing account (160.836167ms)
+ℹ tests 125
+ℹ suites 0
+ℹ pass 125
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 15668.080042
+
+## npm run e2e (build de producción en el mismo origen que la API, Chrome headless, base temporal)
+✔ Building...
+✔ admin@example.com: logs in through the form, lands on / and every menu page works at 375/768/1280 px (16416.607625ms)
+✔ secretaria@example.com: logs in through the form, lands on / and every menu page works at 375/768/1280 px (11753.231625ms)
+✔ coach@example.com: logs in through the form, lands on /coach and every menu page works at 375/768/1280 px (2185.806125ms)
+✔ tutor@example.com: logs in through the form, lands on /portal and every menu page works at 375/768/1280 px (1698.7225ms)
+✔ marta@example.com: logs in through the form, lands on /coach and every menu page works at 375/768/1280 px (3642.669292ms)
+✔ HU-002/003: direct URLs are guarded by the server session — anonymous → login, tutor → forbidden, logout ends it (724.258916ms)
+✔ HU-004.3 / HU-002.4: an account deactivated on the server is sent to the login on its next navigation (437.136041ms)
+✔ HU-008 through the UI: the secretary registers a player with the form and it is stored in MariaDB (488.070458ms)
+✔ admin@example.com: detail pages (record, receipt, attendance capture, child) work at 375/768/1280 px (2592.899292ms)
+✔ coach@example.com: detail pages (record, receipt, attendance capture, child) work at 375/768/1280 px (670.416625ms)
+✔ tutor@example.com: detail pages (record, receipt, attendance capture, child) work at 375/768/1280 px (943.182458ms)
+✔ HU-010 through the UI: changing the status asks for confirmation; dismissing it changes nothing (3448.800292ms)
+✔ persistence: a player created and edited in the UI survives a page reload and an API restart (997.757791ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 47196.427875
+
+## npm run db:mariadb:test-backup
+Checks del esquema: 42 casos, 42 OK, 0 fallas
+Tablas comparadas: 40
+RESULTADO: OK, el respaldo es idéntico
+
+## postman collection lint postman/
+Scanned: 37 | Errors: 0 | Warnings: 0 | 31ms
+
+## typecheck · prettier
+typecheck OK
+All matched files use Prettier code style!

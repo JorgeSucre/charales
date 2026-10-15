@@ -30,38 +30,38 @@ Las historias de usuario se organizan por épicas (EP01–EP12) y cada una tiene
 
 ## Estado del proyecto
 
-| Área                  | Estado          | Detalle                                                                                                                                                                                         |
-| --------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Arquitectura frontend | **COMPLETADO**  | Angular standalone por dominio, RBAC por permisos, capa de servicios                                                                                                                            |
-| Frontend              | **EN REVISIÓN** | Las 76 HU implementadas sobre `MockDb` en `main` (`18178ba`, local) ([`TRACEABILITY.md`](docs/TRACEABILITY.md)); cada responsable revisa las suyas                                              |
-| Base de datos         | **COMPLETADO**  | Modelo **MariaDB** adoptado ([`MARIADB.md`](docs/database/MARIADB.md)); 42/42 checks del esquema. El PostgreSQL de `db/` queda como historial                                                   |
-| Backend               | **EN PROGRESO** | Milestone 1 en `api/`: Node `node:http` + MariaDB, configuración por variables de entorno, pruebas `node:test`, colección Postman local                                                         |
-| API                   | **EN PROGRESO** | `GET /health`, `/auth/login`, `/auth/session`, `/auth/logout`, `/auth/password*` (HU-005), `GET /api/jugadores`, `GET /api/categorias` ([`API.md`](docs/API.md)); el frontend aún no la consume |
-| Autenticación         | **EN PROGRESO** | API: argon2id, cookie HttpOnly, 8 h / 30 min, límite de intentos, auditoría. El frontend sigue con el mock (SHA-256); recuperación y cambio de contraseña aún sólo en el mock                   |
-| Autorización          | **COMPLETADO**  | Permiso + alcance en cada servicio; matriz D12 (Administrador 56, Secretaría 45, Entrenador 3, Tutor 2); sin escalada por perfiles ([`AUTHORIZATION.md`](docs/AUTHORIZATION.md))                |
-| Cobranza              | **EN REVISIÓN** | Conceptos, cargos, mensualidades, pagos parciales, folios, cancelación, estado de cuenta, adeudos, descuentos/becas. Sin backend                                                                |
-| Uniformes             | **EN REVISIÓN** | Catálogo, pedidos con precio histórico, cargo vinculado (`cargo_id`), pagado derivado, entrega, cancelación. Sin backend                                                                        |
-| Portal del tutor      | **EN REVISIÓN** | Tarjetas por hijo, datos deportivos, partidos/resultados por plantel, estado de cuenta, asistencia, uniformes, avisos, perfil                                                                   |
-| Reportes              | **EN REVISIÓN** | Tablero con fuentes, jugadores por categoría, ingresos, agenda global                                                                                                                           |
-| Agenda                | **EN REVISIÓN** | Sesiones (también desde horarios), partidos con reprogramación y resultados                                                                                                                     |
-| Pruebas               | **EN PROGRESO** | 138 pruebas Angular (flujos críticos, reglas por HU, autorización independiente, integridad 21/21, rendimiento). Sin E2E de navegador ([`TESTING.md`](docs/TESTING.md))                         |
-| Deployment            | **NO INICIADO** | —                                                                                                                                                                                               |
+| Área                  | Estado          | Detalle                                                                                                                                                                                           |
+| --------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Arquitectura frontend | **COMPLETADO**  | Angular standalone por dominio, RBAC por permisos, capa de servicios                                                                                                                              |
+| Frontend              | **COMPLETADO**  | Las 76 HU sobre la API real (D13), revisadas en navegador a 375/768/1280 px ([`TRACEABILITY.md`](docs/TRACEABILITY.md))                                                                           |
+| Base de datos         | **COMPLETADO**  | Modelo **MariaDB** ([`MARIADB.md`](docs/database/MARIADB.md)) + migraciones (`db/mariadb/migrations`); 42/42 checks; es la persistencia real de la app                                            |
+| Backend               | **COMPLETADO**  | `api/` (Node `node:http` + MariaDB): autenticación, contraseñas y los servicios de dominio en el servidor (D13), con caché por versión (HU-075)                                                   |
+| API                   | **EN PROGRESO** | `/health`, `/auth/*` (login, sesión, logout, contraseñas), `POST /api/rpc` (125 operaciones de 22 servicios), `GET /api/jugadores` y `/api/categorias` de la práctica ([`API.md`](docs/API.md))   |
+| Autenticación         | **COMPLETADO**  | La app usa la API: argon2id, cookie HttpOnly, 8 h / 30 min, límite de intentos, auditoría, cambio y recuperación de contraseña, invitaciones de 24 h (sin proveedor de correo en producción: D4c) |
+| Autorización          | **COMPLETADO**  | Permiso + alcance en cada servicio, que ahora corre en la API con la sesión de la cookie; matriz D12 ([`AUTHORIZATION.md`](docs/AUTHORIZATION.md))                                                |
+| Cobranza              | **EN REVISIÓN** | Conceptos, cargos, mensualidades, pagos parciales, folios, cancelación, estado de cuenta, adeudos, descuentos/becas. Sin backend                                                                  |
+| Uniformes             | **EN REVISIÓN** | Catálogo, pedidos con precio histórico, cargo vinculado (`cargo_id`), pagado derivado, entrega, cancelación. Sin backend                                                                          |
+| Portal del tutor      | **EN REVISIÓN** | Tarjetas por hijo, datos deportivos, partidos/resultados por plantel, estado de cuenta, asistencia, uniformes, avisos, perfil                                                                     |
+| Reportes              | **EN REVISIÓN** | Tablero con fuentes, jugadores por categoría, ingresos, agenda global                                                                                                                             |
+| Agenda                | **EN REVISIÓN** | Sesiones (también desde horarios), partidos con reprogramación y resultados                                                                                                                       |
+| Pruebas               | **COMPLETADO**  | 156 Angular + 125 de la API sobre MariaDB (criterios por HU) + 13 E2E en Chrome headless + Postman ([`TESTING.md`](docs/TESTING.md))                                                              |
+| Deployment            | **NO INICIADO** | —                                                                                                                                                                                                 |
 
 ### Terminado
 
-- Frontend de las 76 HU sobre `MockDb`, con autorización por permiso y alcance en los servicios.
+- Las 76 HU conectadas a la API y MariaDB (D13), con autorización por permiso y alcance ejecutada en el servidor.
+- Las 76 HU con estado técnico **Completada** y evidencia sobre la API y MariaDB ([`TRACEABILITY.md`](docs/TRACEABILITY.md)).
 - Modelo MariaDB (39 tablas, 42/42 checks), permisos de la app (106 filas de `rol_permiso`), respaldo y restauración
   probados.
 - Matriz de roles D12 y corrección de la escalada por perfiles vinculados (`18178ba`).
-- 138 pruebas Angular; documentación de handoff ([`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md),
+- 156 pruebas Angular, 125 de la API y 13 E2E; documentación de handoff ([`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md),
   [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)).
 
 ### Pendiente
 
-- **Siguiente fase:** API/backend sobre MariaDB e integración frontend ↔ API
-  ([`MARIADB.md` § 8](docs/database/MARIADB.md)).
+- Revisión de cada HU por su responsable y PR de la rama `jorgesucre/api-express`.
+- Proveedor de correo (D4c) y despliegue (fuera del alcance actual).
 - Revisión de cada HU por su responsable (la implementación base ya está en `main`).
-- Publicar `main` en `origin` por PR: hoy `main` local está en `18178ba` y `origin/main` en `47b926c`.
 - Limitaciones conocidas P2/P3 (E2E, validación visual, decisiones de modelo):
   [`ROADMAP.md` › Limitaciones conocidas](docs/ROADMAP.md#limitaciones-conocidas-y-siguiente-fase).
 
@@ -91,8 +91,8 @@ Versión 2) y sprint.
 | Dani (en HU-003 aparece «Dany»)  | 15  | EN REVISIÓN: implementación base en `main`; cada responsable valida sus HU ([`TRACEABILITY.md`](docs/TRACEABILITY.md)) |
 | Todos (HU-073, integridad de BD) | 1   | EN REVISIÓN: implementación base en `main`; cada responsable valida sus HU ([`TRACEABILITY.md`](docs/TRACEABILITY.md)) |
 
-«Implementada» significa frontend + servicios + `MockDb` + modelo MariaDB + prueba. **Ninguna HU está respaldada por
-una API**: no existe todavía. Las decisiones posteriores a la tabla oficial (p. ej. D12 sobre HU-070) están en
+El estado técnico de cada HU (Completada / Parcial / Por verificar, por capa) está en
+[`TRACEABILITY.md`](docs/TRACEABILITY.md); todas corren sobre la API y MariaDB. Las decisiones posteriores a la tabla oficial (p. ej. D12 sobre HU-070) están en
 [`MARIADB.md` § 4](docs/database/MARIADB.md); la tabla oficial no se modifica.
 
 ## Equipo y ownership
@@ -123,24 +123,24 @@ como operación del servicio owner, en un PR que revisa el owner.
 Detalle en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ```text
-Angular (src/app)        páginas → servicios de dominio (+ AuthorizationService) → MockDb (en memoria)   ← HOY
-                                             ↓ (siguiente fase: HttpClient)
-API / Backend            api/ (Milestone 1: salud + autenticación, docs/API.md); contrato: MARIADB.md, AUTHORIZATION.md, DOMAIN_RULES.md
-                                             ↓
-MariaDB 10.6+            docs/escuela_futbol_mariadb.sql (39 tablas) + db/mariadb/   ← modelo probado, sin conectar
+Angular (src/app)        páginas → clientes de los servicios (rpcProviders) + ApiAuthService
+                                             ↓ HTTP, cookie HttpOnly
+API / Backend            api/: /auth/* y /api/rpc → servicios de dominio (+ AuthorizationService) en el servidor (D13)
+                                             ↓ transacción
+MariaDB 10.6+            docs/escuela_futbol_mariadb.sql (39 tablas) + db/mariadb/migrations + 010   ← persistencia real
 (histórico) PostgreSQL 16 en db/migrations: diseño anterior, ya no es la fuente de verdad
 ```
 
-| Qué                      | Dónde                                                                                                                              |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Modelos (contratos TS)   | `src/app/core/models/` (agrupados por dominio)                                                                                     |
-| Servicios de dominio     | `src/app/features/<dominio>/*.service.ts`; lecturas compartidas en `src/app/core/services/`                                        |
-| Reglas de negocio puras  | `src/app/features/billing/billing.rules.ts`                                                                                        |
-| Datos simulados          | `src/app/core/data/mock-db.ts` (único lugar; se elimina al conectar la API)                                                        |
-| Autenticación y permisos | `src/app/core/auth/`: `AuthService` **mock**, `permissions.ts` (catálogo y matriz D12), `grants()`, `AuthorizationService`, guards |
-| Rutas                    | `src/app/app.routes.ts` (áreas `/admin`, `/sports`, `/coach`, `/portal`)                                                           |
-| Base de datos            | MariaDB: `docs/escuela_futbol_mariadb*.sql`, `db/mariadb/`. Histórico PostgreSQL: `db/migrations`, `db/seed`, `db/tests`…          |
-| Pruebas                  | Angular: `src/**/*.spec.ts` (Vitest, 138). MariaDB: `npm run db:mariadb:test-backup` ([`TESTING.md`](docs/TESTING.md))             |
+| Qué                      | Dónde                                                                                                                                                                |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Modelos (contratos TS)   | `src/app/core/models/` (agrupados por dominio)                                                                                                                       |
+| Servicios de dominio     | `src/app/features/<dominio>/*.service.ts`; lecturas compartidas en `src/app/core/services/`                                                                          |
+| Reglas de negocio puras  | `src/app/features/billing/billing.rules.ts`                                                                                                                          |
+| Datos simulados          | `src/app/core/data/mock-db.ts` (único lugar; se elimina al conectar la API)                                                                                          |
+| Autenticación y permisos | `src/app/core/auth/`: `AuthService` **mock**, `permissions.ts` (catálogo y matriz D12), `grants()`, `AuthorizationService`, guards                                   |
+| Rutas                    | `src/app/app.routes.ts` (áreas `/admin`, `/sports`, `/coach`, `/portal`)                                                                                             |
+| Base de datos            | MariaDB: `docs/escuela_futbol_mariadb*.sql`, `db/mariadb/`. Histórico PostgreSQL: `db/migrations`, `db/seed`, `db/tests`…                                            |
+| Pruebas                  | Angular: `src/**/*.spec.ts` (Vitest, 156). API: `api/*.test.ts` (125). E2E: `e2e/` (13). MariaDB: `npm run db:mariadb:test-backup` ([`TESTING.md`](docs/TESTING.md)) |
 
 ## Stack
 
@@ -181,30 +181,31 @@ histórico, a `psql`.
 
 ## Documentación importante
 
-| Documento                                                                | Propósito                                                                          | Cuándo leerlo                                |
-| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- | -------------------------------------------- |
-| [`README.md`](README.md)                                                 | Instalar, ejecutar, comandos, herramientas                                         | Al clonar                                    |
-| `PROJECT_CONTEXT.md`                                                     | Este documento: qué es, estado, quién hace qué                                     | Antes de cualquier tarea                     |
-| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)                             | **Onboarding**: instalar, comandos, dónde está cada cosa, PR                       | Primer día                                   |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)                           | Capas, autorización, `MockDb`, qué es temporal (pre-API)                           | Antes de tocar código                        |
-| [`docs/AUTHORIZATION.md`](docs/AUTHORIZATION.md)                         | Matriz de roles D12, perfiles vinculados, contrato por operación                   | Antes de tocar permisos o servicios          |
-| [`docs/TESTING.md`](docs/TESTING.md)                                     | Qué valida cada grupo de pruebas y cómo correrlas                                  | Antes de un PR                               |
-| [`docs/API.md`](docs/API.md)                                             | **API**: ejecutar, endpoints, sesión, Postman, decisiones                          | Antes de tocar `api/` o `postman/`           |
-| [`docs/DOMAIN_RULES.md`](docs/DOMAIN_RULES.md)                           | Reglas que el esquema no garantiza y la API debe repetir                           | Al diseñar la API                            |
-| [`AGENTS.md`](AGENTS.md)                                                 | Reglas de trabajo para cualquier IA                                                | Si eres una IA, antes de tocar nada          |
-| [`CLAUDE.md`](CLAUDE.md)                                                 | Notas específicas de Claude Code                                                   | Si usas Claude Code                          |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md)                                     | Branches, commits, PRs, migraciones                                                | Antes del primer commit                      |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md)                                     | Fases y lo que sigue (**fuente de verdad del roadmap**)                            | Al planear                                   |
-| [`docs/requirements/USER_STORIES.md`](docs/requirements/USER_STORIES.md) | **Tabla oficial de las 76 HU** (responsable, sprint, criterios)                    | Antes de empezar cualquier HU                |
-| [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md)                           | Estado real de cada HU → código → pruebas                                          | Antes de tomar o revisar una HU              |
-| [`docs/database/MARIADB.md`](docs/database/MARIADB.md)                   | **Modelo MariaDB vigente**: convenciones, tablas → servicios, decisiones, respaldo | Antes de tocar datos, modelos o la API       |
-| [`docs/INTEGRATION_MAP.md`](docs/INTEGRATION_MAP.md)                     | **Histórico**: reparto de servicios de backend previo a MariaDB                    | Sólo como antecedente                        |
-| [`docs/PLAN.md`](docs/PLAN.md)                                           | **Histórico**: decisiones del frontend de las fases 1–2                            | Sólo como antecedente                        |
-| [`docs/database/README.md`](docs/database/README.md)                     | **Histórico (PostgreSQL)**: levantar la bd, estructura de `db/`, seed              | Al trabajar con la BD                        |
-| [`docs/database/DATA_CONTRACT.md`](docs/database/DATA_CONTRACT.md)       | **Reglas de datos congeladas** y proceso de cambios                                | Antes de tocar datos, modelos o SQL          |
-| [`docs/database/OWNERSHIP.md`](docs/database/OWNERSHIP.md)               | **Quién escribe cada tabla**; cobertura por historia; conflictos                   | Antes de escribir en una tabla               |
-| [`docs/database/schema.md`](docs/database/schema.md)                     | **Histórico (PostgreSQL)**: cada tabla: pk, fk, restricciones                      | Al diseñar consultas o endpoints             |
-| [`docs/database/relationships.md`](docs/database/relationships.md)       | **Histórico (PostgreSQL)**: relaciones en lenguaje sencillo + diagrama er          | Para entender el modelo                      |
-| [`docs/database/api-contract.md`](docs/database/api-contract.md)         | **Histórico (PostgreSQL)**: mapeo angular ↔ api ↔ tabla                            | Al implementar la API o conectar el frontend |
-| [`docs/database/decisions.md`](docs/database/decisions.md)               | **Histórico (PostgreSQL)**: el porqué de cada decisión de bd                       | Antes de proponer un cambio de diseño        |
-| [`docs/database/queries.md`](docs/database/queries.md)                   | **Histórico (PostgreSQL)**: las 21 consultas críticas                              | Al implementar reportes o el portal          |
+| Documento                                                                | Propósito                                                                                                         | Cuándo leerlo                                |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| [`README.md`](README.md)                                                 | Instalar, ejecutar, comandos, herramientas                                                                        | Al clonar                                    |
+| `PROJECT_CONTEXT.md`                                                     | Este documento: qué es, estado, quién hace qué                                                                    | Antes de cualquier tarea                     |
+| [`docs/SETUP.md`](docs/SETUP.md)                                         | **Instalación local paso a paso**: MariaDB por sistema, cuenta, `.env`, `db:setup`, `db:admin`, arranque, pruebas | Primer día, antes de ejecutar                |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)                             | **Onboarding**: instalar, comandos, dónde está cada cosa, PR                                                      | Primer día                                   |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)                           | Capas, autorización, `MockDb`, qué es temporal (pre-API)                                                          | Antes de tocar código                        |
+| [`docs/AUTHORIZATION.md`](docs/AUTHORIZATION.md)                         | Matriz de roles D12, perfiles vinculados, contrato por operación                                                  | Antes de tocar permisos o servicios          |
+| [`docs/TESTING.md`](docs/TESTING.md)                                     | Qué valida cada grupo de pruebas y cómo correrlas                                                                 | Antes de un PR                               |
+| [`docs/API.md`](docs/API.md)                                             | **API**: ejecutar, endpoints, sesión, Postman, decisiones                                                         | Antes de tocar `api/` o `postman/`           |
+| [`docs/DOMAIN_RULES.md`](docs/DOMAIN_RULES.md)                           | Reglas que el esquema no garantiza y la API debe repetir                                                          | Al diseñar la API                            |
+| [`AGENTS.md`](AGENTS.md)                                                 | Reglas de trabajo para cualquier IA                                                                               | Si eres una IA, antes de tocar nada          |
+| [`CLAUDE.md`](CLAUDE.md)                                                 | Notas específicas de Claude Code                                                                                  | Si usas Claude Code                          |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md)                                     | Branches, commits, PRs, migraciones                                                                               | Antes del primer commit                      |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md)                                     | Fases y lo que sigue (**fuente de verdad del roadmap**)                                                           | Al planear                                   |
+| [`docs/requirements/USER_STORIES.md`](docs/requirements/USER_STORIES.md) | **Tabla oficial de las 76 HU** (responsable, sprint, criterios)                                                   | Antes de empezar cualquier HU                |
+| [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md)                           | Estado real de cada HU → código → pruebas                                                                         | Antes de tomar o revisar una HU              |
+| [`docs/database/MARIADB.md`](docs/database/MARIADB.md)                   | **Modelo MariaDB vigente**: convenciones, tablas → servicios, decisiones, respaldo                                | Antes de tocar datos, modelos o la API       |
+| [`docs/INTEGRATION_MAP.md`](docs/INTEGRATION_MAP.md)                     | **Histórico**: reparto de servicios de backend previo a MariaDB                                                   | Sólo como antecedente                        |
+| [`docs/PLAN.md`](docs/PLAN.md)                                           | **Histórico**: decisiones del frontend de las fases 1–2                                                           | Sólo como antecedente                        |
+| [`docs/database/README.md`](docs/database/README.md)                     | **Histórico (PostgreSQL)**: levantar la bd, estructura de `db/`, seed                                             | Al trabajar con la BD                        |
+| [`docs/database/DATA_CONTRACT.md`](docs/database/DATA_CONTRACT.md)       | **Reglas de datos congeladas** y proceso de cambios                                                               | Antes de tocar datos, modelos o SQL          |
+| [`docs/database/OWNERSHIP.md`](docs/database/OWNERSHIP.md)               | **Quién escribe cada tabla**; cobertura por historia; conflictos                                                  | Antes de escribir en una tabla               |
+| [`docs/database/schema.md`](docs/database/schema.md)                     | **Histórico (PostgreSQL)**: cada tabla: pk, fk, restricciones                                                     | Al diseñar consultas o endpoints             |
+| [`docs/database/relationships.md`](docs/database/relationships.md)       | **Histórico (PostgreSQL)**: relaciones en lenguaje sencillo + diagrama er                                         | Para entender el modelo                      |
+| [`docs/database/api-contract.md`](docs/database/api-contract.md)         | **Histórico (PostgreSQL)**: mapeo angular ↔ api ↔ tabla                                                           | Al implementar la API o conectar el frontend |
+| [`docs/database/decisions.md`](docs/database/decisions.md)               | **Histórico (PostgreSQL)**: el porqué de cada decisión de bd                                                      | Antes de proponer un cambio de diseño        |
+| [`docs/database/queries.md`](docs/database/queries.md)                   | **Histórico (PostgreSQL)**: las 21 consultas críticas                                                             | Al implementar reportes o el portal          |

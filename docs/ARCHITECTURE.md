@@ -1,61 +1,61 @@
 # Arquitectura
 
-Estado de `main` en `18178ba` (2026-10-07). Cómo trabajar en el proyecto: [`DEVELOPMENT.md`](DEVELOPMENT.md).
+Estado: rama `jorgesucre/api-express` (2026-10-13). Cómo trabajar en el proyecto: [`DEVELOPMENT.md`](DEVELOPMENT.md).
 
 ## Lo que existe hoy
 
 ```text
-Navegador
-  Angular 22 (standalone, zoneless, signals)
-    páginas  src/app/features/<dominio>/*.page(s).ts      formularios y vistas; nunca inyectan MockDb
-      ↓
-    servicios de dominio  features/<dominio>/*.service.ts y core/services/
-      · validan reglas de negocio, abren transacciones, escriben auditoría
-      · verifican permiso y alcance con AuthorizationService
-      ↓
-    MockDb  src/app/core/data/mock-db.ts                   arreglos en memoria, uno por tabla MariaDB
+Navegador · Angular 22 (standalone, zoneless, signals)
+  páginas  features/<dominio>/*.page(s).ts            formularios y vistas; no cambian
+    ↓
+  servicios (clientes)  rpcProviders(): mismos métodos, cada llamada → POST /api/rpc
+  sesión                ApiAuthService (como AuthService): /auth/login, /auth/session, /auth/password…
+    ↓ HTTP, cookie HttpOnly (mismo origen: proxy de ng serve)
+API · Node node:http (api/)
+  /auth/*               argon2id, sesiones, límite de intentos, recuperación (HU-001..005, HU-072)
+  /api/rpc              candado + transacción → carga tablas → SERVICIO DE DOMINIO de Angular → diff → COMMIT (D13)
+    · los servicios  features/<dominio>/*.service.ts y core/services/, empaquetados por esbuild (api/domain)
+    · validan reglas, escriben auditoría y verifican permiso y alcance con AuthorizationService, con el
+      AuthUser de la cookie
+    ↓
+MariaDB · docs/escuela_futbol_mariadb.sql + db/mariadb/migrations + 010_permisos_app.sql
 ```
 
-**La API está en construcción** (`api/`, [`API.md`](API.md)): Milestone 1 tiene salud y autenticación sobre MariaDB,
-pero la aplicación Angular **todavía no la consume**. `MockDb` no es un backend: es estado en memoria del navegador que imita las tablas
-del modelo MariaDB.
-
-**Persistencia actual:**
-
-- Los datos viven en memoria y **se reinician al recargar la página** (el seed se reconstruye en cada carga).
-- Lo único que sobrevive a una recarga es la sesión del usuario: una copia en `sessionStorage` (clave
-  `charales.session`, `core/auth/session.store.ts`), que se descarta al cerrar la pestaña.
-- `MockDb.respond()` simula 120 ms de latencia y devuelve copias (`structuredClone`) para que nadie modifique el estado
-  "del servidor" por referencia. `MockDb.transaction()` revierte todos los cambios si la operación falla.
-
-**Modelo MariaDB:** existe como DDL probado ([`database/MARIADB.md`](database/MARIADB.md)), pero la aplicación no se
-conecta a él. Es el contrato que seguirán la API y la integración, que son la siguiente fase ([`ROADMAP.md`](ROADMAP.md)).
+- Los servicios de dominio son **un solo código** con dos usos: en la API, sobre las tablas de MariaDB (una
+  instancia de `MockDb` por solicitud, como unidad de trabajo); en las pruebas del frontend, sobre la semilla en
+  memoria de `MockDb`. El navegador nunca los ejecuta: recibe clientes HTTP con los mismos métodos.
+- `MockDb` ya no es el backend de la app: es la estructura en memoria de las tablas (y la semilla de las pruebas y de
+  `npm run db:mariadb:demo`). `MockDb.transaction()` sigue revirtiendo en memoria; en la API, además, MariaDB hace
+  ROLLBACK de la transacción completa.
+- La sesión vive en el servidor (`sesiones`); el navegador guarda en `sessionStorage` una copia del `AuthUser` para
+  menús y guards, que se revalida con la API en cada navegación.
 
 ## Capas y responsabilidades
 
-| Capa                 | Dónde                                      | Responsabilidad                                                                                                                                                                             |
-| -------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Arranque y rutas     | `app.ts`, `app.config.ts`, `app.routes.ts` | Rutas lazy por área: `/admin` (oficina), `/sports` (deportivo de oficina), `/coach` (panel del entrenador), `/portal` (tutor). Cada hoja declara su permiso (`page()`)                      |
-| Layout               | `layout/shell.ts`, `nav.ts`, `home.ts`     | Marco, menú (`NAV_ITEMS`, cada entrada con su permiso) e inicio                                                                                                                             |
-| Páginas              | `features/<dominio>/`                      | Componentes standalone con template inline, formularios reactivos tipados (`FieldError`, `Submission`), `resource()`. Sólo llaman servicios                                                 |
-| Servicios            | `features/<dominio>/*.service.ts`          | Una entidad = un servicio que la escribe ([`database/OWNERSHIP.md`](database/OWNERSHIP.md)). Devuelven `Promise`; serán los endpoints de la API                                             |
-| Lecturas compartidas | `core/services/`                           | `PlayerService`, `CategoryService`, `CompetitionService`, `AuditService`, `MailerService` (correo simulado en `outbox`)                                                                     |
-| Capa HTTP (API)      | `core/api/charales-api.service.ts`         | `CharalesApi` sobre `HttpClient` (`provideHttpClient(withFetch())`), mismo origen vía `proxy.conf.json`; sólo la usa la página `/admin/api` por ahora ([`API.md`](API.md#frontend-angular)) |
-| Reglas puras         | `features/billing/billing.rules.ts`        | Saldos, estados de cargo, aplicación de pagos, ingresos: especificación de cobranza para la API                                                                                             |
-| Modelos              | `core/models/`                             | Tipos TypeScript por dominio (`common`, `security`, `people`, `sports`, `billing`, `uniforms`, `notices`). Mismos campos que las tablas MariaDB, en `camelCase`                             |
-| Autenticación        | `core/auth/auth.service.ts`                | Login contra hashes con sal del mock (`password.ts`), sesiones con expiración (8 h, 30 min de inactividad), recuperación de contraseña, auditoría de LOGIN/LOGOUT                           |
-| Autorización         | `core/auth/authorization.service.ts`       | Permiso + alcance (relaciones) de cada operación. Ver abajo y [`AUTHORIZATION.md`](AUTHORIZATION.md)                                                                                        |
-| Permisos             | `core/auth/permissions.ts`                 | Catálogo (`PERMISSION_CATALOG`, 59) y matriz inicial por rol (`DEFAULT_ROLE_PERMISSIONS`). `db/mariadb/010_permisos_app.sql` la replica                                                     |
-| Guards               | `core/auth/guards.ts`                      | Sesión válida + permiso de la ruta. Sólo protegen la UI; la barrera real es el servicio                                                                                                     |
-| Datos simulados      | `core/data/mock-db.ts`                     | Seed ficticio, AUTO_INCREMENT simulado, `transaction()`, `respond()`                                                                                                                        |
-| Integridad           | `core/data/mock-db.integrity.ts`           | `integrityViolations()`: las restricciones del SQL (FK, UNIQUE, CHECK) verificadas sobre `MockDb` después de cada prueba de flujo                                                           |
-| Utilidades           | `shared/`                                  | Dinero en centavos (`money.ts`, `MoneyPipe`), fechas locales (`dates.ts`), paginación (`page.ts`), validación (`validate.ts`), UI común                                                     |
-| Estilos              | `src/styles.css`                           | Estilos globales y responsive                                                                                                                                                               |
+| Capa                 | Dónde                                                           | Responsabilidad                                                                                                                                                                                           |
+| -------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Arranque y rutas     | `app.ts`, `app.config.ts`, `app.routes.ts`                      | Rutas lazy por área: `/admin` (oficina), `/sports` (deportivo de oficina), `/coach` (panel del entrenador), `/portal` (tutor). Cada hoja declara su permiso (`page()`)                                    |
+| Layout               | `layout/shell.ts`, `nav.ts`, `home.ts`                          | Marco, menú (`NAV_ITEMS`, cada entrada con su permiso) e inicio                                                                                                                                           |
+| Páginas              | `features/<dominio>/`                                           | Componentes standalone con template inline, formularios reactivos tipados (`FieldError`, `Submission`), `resource()`. Sólo llaman servicios                                                               |
+| Servicios            | `features/<dominio>/*.service.ts`                               | Una entidad = un servicio que la escribe ([`database/OWNERSHIP.md`](database/OWNERSHIP.md)). Devuelven `Promise`; los ejecuta la API (`/api/rpc`, D13)                                                    |
+| Lecturas compartidas | `core/services/`                                                | `PlayerService`, `CategoryService`, `CompetitionService`, `AuditService`, `MailerService` (correo simulado en `outbox`)                                                                                   |
+| Capa HTTP (API)      | `core/api/charales-api.service.ts`, `rpc-services.ts`           | `CharalesApi` sobre `HttpClient`: sesión, contraseñas y `rpc()`; `rpcProviders()` convierte cada servicio de dominio en su cliente (D13). Mismo origen vía `proxy.conf.json`                              |
+| Reglas puras         | `features/billing/billing.rules.ts`                             | Saldos, estados de cargo, aplicación de pagos, ingresos: especificación de cobranza para la API                                                                                                           |
+| Modelos              | `core/models/`                                                  | Tipos TypeScript por dominio (`common`, `security`, `people`, `sports`, `billing`, `uniforms`, `notices`). Mismos campos que las tablas MariaDB, en `camelCase`                                           |
+| Autenticación        | `core/auth/api-auth.service.ts` (app), `auth.service.ts` (mock) | La app usa `ApiAuthService` contra la API (argon2id, cookie HttpOnly, 8 h / 30 min). `AuthService` es el mock que usan las pruebas y, en el servidor, los servicios de dominio (`accessOf`, invitaciones) |
+| Autorización         | `core/auth/authorization.service.ts`                            | Permiso + alcance (relaciones) de cada operación. Ver abajo y [`AUTHORIZATION.md`](AUTHORIZATION.md)                                                                                                      |
+| Permisos             | `core/auth/permissions.ts`                                      | Catálogo (`PERMISSION_CATALOG`, 59) y matriz inicial por rol (`DEFAULT_ROLE_PERMISSIONS`). `db/mariadb/010_permisos_app.sql` la replica                                                                   |
+| Guards               | `core/auth/guards.ts`                                           | Sesión válida (la API la confirma en cada navegación) + permiso de la ruta. Sólo protegen la UI; la barrera real es el servicio, que corre en la API                                                      |
+| Tablas en memoria    | `core/data/mock-db.ts`                                          | Un arreglo por tabla: unidad de trabajo en la API (cargada de MariaDB) y semilla de las pruebas y de `npm run db:mariadb:demo`                                                                            |
+| Integridad           | `core/data/mock-db.integrity.ts`                                | `integrityViolations()`: las restricciones del SQL (FK, UNIQUE, CHECK) verificadas sobre `MockDb` después de cada prueba de flujo                                                                         |
+| Utilidades           | `shared/`                                                       | Dinero en centavos (`money.ts`, `MoneyPipe`), fechas locales (`dates.ts`), paginación (`page.ts`), validación (`validate.ts`), UI común                                                                   |
+| Estilos              | `src/styles.css`                                                | Estilos globales y responsive                                                                                                                                                                             |
 
 ## Autorización: dónde vive cada cosa
 
 - **Definición de permisos:** `core/auth/permissions.ts`. Los permisos son filas `modulo.accion` de la tabla `permisos`.
-  La matriz es editable en ejecución desde la pantalla Permisos (HU-006); los cambios aplican a sesiones nuevas.
+  La matriz es editable en ejecución desde la pantalla Permisos (HU-006); la API recalcula los permisos en cada
+  solicitud, así que un cambio aplica desde la siguiente acción, también en sesiones abiertas.
 - **Cálculo de la sesión:** `AuthService.accessOf` arma, a partir del rol de seguridad y los perfiles vinculados:
   - `permissions`: unión del rol de seguridad y de los perfiles (TUTOR, ENTRENADOR), para menús y áreas de perfil;
   - `officePermissions`: **sólo** los del rol de seguridad (ADMINISTRADOR o SECRETARIA).
@@ -75,24 +75,30 @@ Matriz por rol, regla de perfiles vinculados y contrato por operación: [`AUTHOR
 
 ## Base de datos
 
-| Qué                          | Dónde                                                                                    | Estado                                       |
-| ---------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------- |
-| Modelo vigente (MariaDB)     | `docs/escuela_futbol_mariadb.sql` (39 tablas) + `docs/escuela_futbol_mariadb_checks.sql` | Probado: 42/42 checks. No conectado a la app |
-| Permisos de la app           | `db/mariadb/010_permisos_app.sql`                                                        | 59 permisos, 106 filas de `rol_permiso`      |
-| Respaldo y restauración      | `db/mariadb/scripts/`                                                                    | Probado: 39/39 tablas idénticas              |
-| Esquema anterior (histórico) | `db/migrations`, `db/seed`, `db/tests`, `db/queries`, `db/scripts` (PostgreSQL 16)       | Sólo historial; no se le agregan migraciones |
+| Qué                          | Dónde                                                                              | Estado                                                     |
+| ---------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Modelo vigente (MariaDB)     | `docs/escuela_futbol_mariadb.sql` (39 tablas) + `db/mariadb/migrations` + checks   | Probado: 42/42 checks. Conectado a la app por la API (D13) |
+| Permisos de la app           | `db/mariadb/010_permisos_app.sql`                                                  | 59 permisos, 106 filas de `rol_permiso`                    |
+| Respaldo y restauración      | `db/mariadb/scripts/`                                                              | Probado: 39/39 tablas idénticas                            |
+| Esquema anterior (histórico) | `db/migrations`, `db/seed`, `db/tests`, `db/queries`, `db/scripts` (PostgreSQL 16) | Sólo historial; no se le agregan migraciones               |
 
 Detalle: [`database/MARIADB.md`](database/MARIADB.md).
 
-## Partes temporales (pre-API)
+## API y dominio
 
-Se sustituyen al conectar la API ([`database/MARIADB.md` § 8](database/MARIADB.md)):
+| Qué                         | Dónde                                                               |
+| --------------------------- | ------------------------------------------------------------------- |
+| Servidor y rutas            | `api/server.ts`                                                     |
+| Autenticación, contraseñas  | `api/auth.ts`, `api/password.ts`                                    |
+| Puente de dominio (D13)     | `api/rpc.ts` (unidad de trabajo), `api/tables.ts` (columnas)        |
+| Servicios en el servidor    | `api/domain/index.ts` → `npm run api:build`                         |
+| Lista blanca de operaciones | `src/app/core/api/rpc-methods.ts`                                   |
+| Clientes en el navegador    | `src/app/core/api/rpc-services.ts`, `core/auth/api-auth.service.ts` |
+| Datos de demostración       | `api/demo.ts` (`npm run db:mariadb:demo`)                           |
 
-- `MockDb`, su seed y su latencia simulada → llamadas `HttpClient` dentro de cada servicio (las páginas no cambian).
-- Hash de contraseñas SHA-256 con sal de `password.ts` → argon2id/bcrypt en el servidor.
-- Sesión en `sessionStorage` → cookie HttpOnly y sesión validada en el servidor.
-- `MailerService` / `outbox` → envío real de correo.
-- Las verificaciones de `AuthorizationService` → la API debe repetirlas en cada endpoint (el navegador es manipulable).
+**Lo que sigue siendo temporal:** no hay proveedor de correo real (la recuperación y las invitaciones responden 503
+en producción, D4b/D4c). El trabajo diario de VENCIDO (migración 002) necesita `event_scheduler = ON` en el
+servidor.
 
 ## Requisitos y diagramas
 

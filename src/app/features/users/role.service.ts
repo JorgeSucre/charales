@@ -13,7 +13,10 @@ export interface PermissionMatrix {
   granted: string[];
 }
 
-/** HU-006: role → permission matrix (rol_permiso). Changes apply to sessions started afterwards. */
+/**
+ * HU-006: role → permission matrix (rol_permiso). The API recomputes permissions on every request, so a change
+ * applies to the next action of every session (over MockDb, sessions keep the snapshot of their login).
+ */
 @Injectable({ providedIn: 'root' })
 export class RoleService {
   private db = inject(MockDb);

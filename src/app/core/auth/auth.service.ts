@@ -1,22 +1,26 @@
 import { Injectable, computed, inject } from '@angular/core';
 import { MockDb, UserRow } from '../data/mock-db';
-import { fullName } from '../models';
+import { TokenPurpose, fullName } from '../models';
 import { AuditService } from '../services/audit.service';
 import { MailerService } from '../services/mailer.service';
 import { dateTimeIn, nowDateTime } from '../../shared/dates';
 import { hashPassword, passwordProblem, randomToken, sha256Hex, verifyPassword } from './password';
 import { PERMISSION_CATALOG, PermissionKey } from './permissions';
-import { AuthUser, SessionStore, grants } from './session.store';
+import { AuthUser, SessionStore, grants, homeUrlOf } from './session.store';
 
 /** Session policy (HU-002): absolute lifetime and idle timeout. */
 export const SESSION_HOURS = 8;
 export const IDLE_MINUTES = 30;
 export const RESET_TOKEN_MINUTES = 60;
+/** Initial-access invitations (HU-004, HU-012, HU-022) last a day: D3c. */
+export const INVITATION_MINUTES = 24 * 60;
 
 const INVALID = 'Correo o contraseña incorrectos.';
 
 /**
- * Authentication against the mock backend (HU-001..003, HU-005, HU-072): verifies salted password hashes, creates
+ * Mock authentication. The APP uses ApiAuthService (real API, app.config.ts); this class remains for the domain
+ * services on the server (accessOf, invitations: api/domain) and for the frontend tests, which log in over MockDb.
+ * HU-001..003, HU-005, HU-072 over MockDb: verifies salted password hashes, creates
  * a `sesiones` row (only the token hash is stored), enforces expiry and audits LOGIN/LOGOUT.
  * Roles are NOT a single field: a SEGURIDAD role on the account plus TUTOR/ENTRENADOR from linked profiles.
  * With a real API: login/logout/reset become HTTP calls; the API returns the same AuthUser and an HttpOnly cookie.
@@ -63,13 +67,8 @@ export class AuthService {
     return !!this.store.user()?.roles.includes(role);
   }
 
-  /** Landing page by role: tutors go to the portal, coaches to their panel, staff to the home page. */
   homeUrl(): string {
-    const u = this.store.user();
-    if (!u || u.isStaff) return '/';
-    if (u.coachId && this.can('panel_entrenador.consultar')) return '/coach';
-    if (u.tutorId && this.can('portal.consultar')) return '/portal';
-    return '/';
+    return homeUrlOf(this.store.user());
   }
 
   async login(email: string, password: string): Promise<AuthUser> {
@@ -191,24 +190,34 @@ export class AuthService {
   /** Always resolves the same way, so the UI doesn't reveal whether an account exists. */
   async requestPasswordReset(email: string): Promise<void> {
     const row = this.findByEmail(email);
-    if (row?.active) await this.issueResetToken(row, 'Recupera tu contraseña');
+    if (row?.active) await this.issueResetToken(row, 'Recupera tu contraseña', 'RECUPERACION');
     await this.db.respond(null);
   }
 
-  /** Creates a single-use reset token and e-mails the link. Also used for the initial access of linked accounts (HU-012). */
-  async issueResetToken(row: UserRow, subject: string): Promise<void> {
+  /**
+   * Creates a single-use token and e-mails the link: password recovery (HU-005) or the initial access of a new or
+   * linked account (HU-004, HU-012, HU-022). A new token revokes the earlier live ones of the same purpose (D3b).
+   */
+  async issueResetToken(row: UserRow, subject: string, purpose: TokenPurpose): Promise<void> {
     const token = randomToken();
+    const minutes = purpose === 'INVITACION' ? INVITATION_MINUTES : RESET_TOKEN_MINUTES;
+    const now = nowDateTime();
+    for (const t of this.db.resetTokens)
+      if (t.userId === row.id && t.purpose === purpose && !t.usedAt && t.expiresAt > now)
+        this.db.update(this.db.resetTokens, t.id, { usedAt: now });
     this.db.insert(this.db.resetTokens, {
       userId: row.id,
+      purpose,
       tokenHash: await sha256Hex(token),
-      expiresAt: dateTimeIn(RESET_TOKEN_MINUTES),
+      expiresAt: dateTimeIn(minutes),
       usedAt: null,
-      createdAt: nowDateTime(),
+      createdAt: now,
     });
+    const validity = minutes >= 60 * 24 ? `${minutes / 60} h` : `${minutes} min`;
     this.mailer.send(
       row.email,
       subject,
-      `Abre este enlace para definir tu contraseña (válido ${RESET_TOKEN_MINUTES} min): /reset-password?token=${token}`,
+      `Abre este enlace para definir tu contraseña (válido ${validity}): /reset-password?token=${token}`,
     );
   }
 

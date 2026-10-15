@@ -1,29 +1,53 @@
 # API — contrato de endpoints
 
-Estado: **Milestone 1** (infraestructura + autenticación) + dos `GET` de la práctica de laboratorio. Código en [`api/`](../api); sobre el modelo
-[`MARIADB.md`](database/MARIADB.md) (convenciones de JSON en § 1, sesión en § 8.3). El frontend todavía usa `MockDb`.
+Estado: autenticación y contraseñas, **operaciones de dominio de toda la app** (`POST /api/rpc`, decisión
+[D13](database/MARIADB.md)) y dos `GET` de la práctica de laboratorio. Código en [`api/`](../api); sobre el modelo
+[`MARIADB.md`](database/MARIADB.md) (convenciones de JSON en § 1). El frontend usa esta API para todo: sesión y datos.
 
 ## Ejecutar
 
-Requisitos: Node `>=24.7` (usa `crypto.argon2` y TypeScript sin compilar; probado con 26.11) y MariaDB local.
+Requisitos: Node `^24.15.0` o `>=26` (usa `crypto.argon2` y TypeScript sin compilar; probado con 26.11) y MariaDB
+10.6+ local. Paso a paso: [`SETUP.md`](SETUP.md).
 
 ```bash
 cp .env.example .env              # ajusta DB_* (TCP o DB_SOCKET); .env no se versiona
-npm run db:mariadb:dev-seed       # 010_permisos_app.sql + 020_dev_seed.sql sobre DB_NAME (por defecto escuela_futbol)
-npm run api:start                 # http://localhost:3000
-npm run api:test                  # pruebas en una base temporal ef_apitest_* que se borra al terminar
+npm run db:setup                  # esquema (sólo en base vacía) + migraciones + permisos; nunca borra
+npm run db:admin                  # primer administrador (o `npm run db:setup -- --demo`: datos ficticios, demo1234)
+npm run api:start                 # empaqueta el dominio (api:build) y abre http://localhost:3000
+npm run api:test                  # pruebas en bases temporales ef_* que se borran al terminar
 ```
 
-| Variable                  | Por defecto      | Notas                                                                                                                          |
-| ------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `PORT`                    | `3000`           |                                                                                                                                |
-| `DB_NAME`                 | `escuela_futbol` |                                                                                                                                |
-| `DB_HOST` / `DB_PORT`     | `127.0.0.1:3306` | Se ignoran si hay `DB_SOCKET`                                                                                                  |
-| `DB_SOCKET`               | —                | Socket local (autenticación `unix_socket`)                                                                                     |
-| `DB_USER` / `DB_PASSWORD` | —                | Nunca en el repo                                                                                                               |
-| `DB_POOL_SIZE`            | `5`              |                                                                                                                                |
-| `COOKIE_SECURE`           | `false`          | Siempre `Secure` con `NODE_ENV=production`                                                                                     |
-| `MAIL_CONSOLE`            | `false`          | Sólo desarrollo: imprime en la consola de la API el correo de recuperación (con el enlace). Ignorado con `NODE_ENV=production` |
+`npm run api:build` empaqueta con esbuild los servicios de Angular que ejecuta la API (`api/domain` →
+`api/.build/domain.mjs`, no versionado); `api:start`, `api:test`, `db:setup`, `db:admin` y `db:mariadb:demo` lo
+ejecutan solos. El script `sh` anterior `db:mariadb:migrate` sigue disponible para quien use el cliente `mariadb`.
+`db:mariadb:dev-seed` está **obsoleto** (usa `npm run db:setup -- --demo`) y **sólo sirve para una base nueva**. Es
+`db:setup -- --dev-seed` (`api/setup.ts`, `loadDevSeed` en `api/schema.ts`) y carga `020_dev_seed.sql`, el conjunto
+mínimo que usan `api/api.test.ts` y la colección Postman: 6 cuentas `@example.com` con la contraseña **pública**
+`demo1234` (una de ellas ADMINISTRADOR), 2 entrenadores y 2 tutores vinculados, la temporada 2026-2027 con 3
+categorías y 6 jugadores. Garantías (`api/setup.test.ts`):
+
+- Se **niega** si la base ya tiene algún usuario o jugador. Lo comprueba antes de escribir nada (ni siquiera el
+  `db:setup` previo corre) y otra vez, con bloqueo, dentro de su transacción. Así nunca recrea una cuenta desactivada
+  o con otro correo, ni revincula un perfil, ni devuelve un permiso retirado.
+- Todo o nada: si la semilla no queda completa (p. ej. ya hay otra temporada actual y su `INSERT IGNORE` se omitiría),
+  hace `ROLLBACK` y termina con error sin dejar cambios.
+- No toca `rol_permiso`: la matriz inicial la aplica `db:setup` sólo en la primera instalación.
+- Al terminar incrementa `version_datos`, así que una API en marcha deja de usar su copia en memoria.
+
+No la uses en una base real ni en producción. Aplicar `020_dev_seed.sql` a mano con el cliente `mariadb` no tiene
+ninguna de estas protecciones.
+
+| Variable                  | Por defecto             | Notas                                                                                                                          |
+| ------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `PORT`                    | `3000`                  |                                                                                                                                |
+| `DB_NAME`                 | `escuela_futbol`        |                                                                                                                                |
+| `DB_HOST` / `DB_PORT`     | `127.0.0.1:3306`        | Se ignoran si hay `DB_SOCKET`                                                                                                  |
+| `DB_SOCKET`               | —                       | Socket local (autenticación `unix_socket`)                                                                                     |
+| `DB_USER` / `DB_PASSWORD` | —                       | Nunca en el repo                                                                                                               |
+| `DB_POOL_SIZE`            | `5`                     |                                                                                                                                |
+| `APP_URL`                 | `http://localhost:4200` | Base de los enlaces de los correos (las rutas que escriben los servicios se vuelven absolutas)                                 |
+| `COOKIE_SECURE`           | `false`                 | Siempre `Secure` con `NODE_ENV=production`                                                                                     |
+| `MAIL_CONSOLE`            | `false`                 | Sólo desarrollo: imprime en la consola de la API el correo de recuperación (con el enlace). Ignorado con `NODE_ENV=production` |
 
 Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`, contraseña `demo1234`), creadas por
 [`db/mariadb/020_dev_seed.sql`](../db/mariadb/020_dev_seed.sql). Son ficticias; **nunca** se cargan en producción.
@@ -57,6 +81,7 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
 | `POST /auth/password-reset/confirm` | No     | `{token, newPassword}` → `204` (cierra todas las sesiones y borra la cookie) · `400` política, o «El enlace no es válido o ya expiró.»                          |
 | `GET /api/jugadores`                | Sí     | `200` arreglo de filas de `jugadores` · `401` sin sesión · `403` sin `jugadores.consultar` del rol de seguridad                                                 |
 | `GET /api/categorias`               | Sí     | `200` arreglo de filas de `categorias` · `401` sin sesión · `403` sin ningún permiso de oficina                                                                 |
+| `POST /api/rpc`                     | Sí     | `{service, method, args}` → `200 {result}` · `400` regla de negocio o datos inválidos · `401` · `403` · `404` fuera de la lista · `409` integridad · `503`      |
 
 `AuthUser` es la interfaz de `src/app/core/auth/session.store.ts`: `userId`, `sessionId`, `email`, `displayName`,
 `roles`, `permissions`, `officePermissions`, `tutorId`, `coachId`, `isStaff`, `expiresAt`, `lastUsedAt`. Nunca incluye
@@ -85,8 +110,9 @@ Código: [`api/password.ts`](../api/password.ts). Responsable de la historia: Bo
 - **Correo:** no hay proveedor (D4c pendiente). Sin transporte, la solicitud responde `503` antes de consultar la
   cuenta, y la recuperación queda **deshabilitada en producción**. En desarrollo, `MAIL_CONSOLE=true` imprime el correo
   (con el enlace y su token) en la consola de la API; nunca con `NODE_ENV=production`.
-- **Sólo tokens de recuperación (D3e):** `tokens_recuperacion` no tiene columna de finalidad, así que la API no emite
-  invitaciones. Antes de hacerlo hará falta una migración con finalidad explícita (aprobación propia).
+- **Finalidad del token (D3e, migración 001):** `RECUPERACION` (esta solicitud, 60 min) o `INVITACION` (acceso
+  inicial de una cuenta nueva o ligada: HU-004, HU-012, HU-022; 24 h, D3c). Una solicitud de recuperación sólo revoca
+  tokens de recuperación; `confirm` acepta ambas finalidades, una sola vez.
 - **Registros:** el pool usa `logParam: false`, así que un error de SQL no imprime los parámetros. La API no registra
   contraseñas, cookies ni tokens; la única excepción es la consola de desarrollo anterior.
 - **Concurrencia:** las tres operaciones bloquean primero la fila de `usuarios` (orden `usuarios` → `tokens_recuperacion`
@@ -99,7 +125,34 @@ Código: [`api/password.ts`](../api/password.ts). Responsable de la historia: Bo
   provocaría «Record has changed since last read». Si falla el rollback, se conserva el error original.
 - **Auditoría:** `EDITAR usuarios` «Cambio de contraseña» y «Restablecimiento de contraseña». La solicitud no se audita
   (igual que el mock).
-- Las páginas de contraseña de Angular **siguen usando el mock** hasta que se integre el login real (M4/M5).
+- Las páginas de contraseña de Angular usan estos endpoints (`ApiAuthService`).
+
+## Operaciones de dominio
+
+`POST /api/rpc` con `{ "service": "PlayerService", "method": "search", "args": [{ "query": "Ana" }] }` ejecuta **en la
+API** el método del servicio de dominio de Angular, con el usuario de la cookie, sobre MariaDB (decisión D13,
+[`MARIADB.md`](database/MARIADB.md)). Responde `{ "result": … }` con el mismo modelo que devolvía sobre `MockDb`.
+
+- **Lista blanca:** [`src/app/core/api/rpc-methods.ts`](../src/app/core/api/rpc-methods.ts), 22 servicios y 125
+  métodos: los que usan las páginas. Cada uno verifica permiso y alcance con `AuthorizationService` en su primera
+  línea; los métodos internos (síncronos, `profileAccount`, `AuthService.*`) no se exponen (`404`).
+- **Unidad de trabajo** ([`api/rpc.ts`](../api/rpc.ts)): candado `GET_LOCK` por base → transacción → carga de las
+  tablas ([`api/tables.ts`](../api/tables.ts)) → servicio → INSERT/UPDATE/DELETE sólo de lo que cambió → COMMIT.
+  Las tablas que sólo escribe el puente viven en memoria (inmutables) y se releen cuando cambia `version_datos`
+  (migración 003); un cambio manual con SQL debe incrementarlo o reiniciar la API.
+  Cualquier error deshace todo. Bloqueos por concurrencia con los endpoints de sesión se reintentan (hasta 3 veces).
+- **Errores:** regla de negocio del servicio → `400` con su mensaje; `ForbiddenError` → `403`; argumentos que el
+  servicio no puede usar → `400` «Datos de la solicitud inválidos.» (y se registra); restricción de MariaDB
+  (duplicado, FK, CHECK) → `409` con un mensaje genérico (HU-073); candado ocupado o correo sin transporte → `503`.
+- **Correo:** los mensajes que encola el servicio (invitaciones) se envían **después** del COMMIT; sin transporte, la
+  operación se deshace y responde `503` (D4b).
+- **Respuestas:** nunca incluyen `passwordHash` ni `tokenHash` (se eliminan de todo el resultado).
+- **Argumentos:** vienen del navegador. Los servicios copian sólo los campos de su borrador (nunca `...draft` en una
+  fila), así que un cliente no puede fijar `active`, `createdAt` ni otros campos que la operación no recibe; un nombre
+  de servicio o método fuera de la lista (incluidos `constructor`, `__proto__`…) responde `404`.
+- **Cuerpo:** hasta 200 KB (formularios completos: listas de asistencia, avisos); el resto de los endpoints, 10 KB.
+- **Sesión:** cada operación valida la cookie y renueva su uso (HU-002); un `401` hace que el frontend vuelva al
+  login. Los permisos se recalculan en cada solicitud (HU-006).
 
 ## Práctica de laboratorio: dos endpoints GET
 
@@ -119,7 +172,9 @@ esta API**, no con un proyecto aparte:
 - Devuelven las filas **tal como están en MariaDB** (columnas `snake_case`, `DATETIME` como `"YYYY-MM-DD HH:MM:SS"`,
   `BOOLEAN` como `0/1`) para compararlas 1:1 con la base. El contrato definitivo (`camelCase`, § Convenciones) se aplica
   cuando el frontend consuma estos datos.
-- Datos: `npm run db:mariadb:dev-seed` carga la temporada actual, 3 categorías y 6 jugadores ficticios (los de `MockDb`).
+- Datos: `npm run db:mariadb:dev-seed` (obsoleto; para la app usa `npm run db:setup -- --demo`), sólo sobre una base
+  sin usuarios ni jugadores (ver arriba): carga la temporada actual, 3 categorías y 6 jugadores ficticios (los de
+  `MockDb`).
 
 **Comparar API y base:**
 
@@ -136,32 +191,26 @@ Cada fila de la tabla es un objeto del arreglo, en el mismo orden (`id`), con la
 
 ## Frontend (Angular)
 
-Capa HTTP: [`src/app/core/api/charales-api.service.ts`](../src/app/core/api/charales-api.service.ts) (`CharalesApi`),
-registrada con `provideHttpClient(withFetch())` en `app.config.ts`. Página de demostración: **`/admin/api`** («Datos
-desde la API», menú Sistema, permiso `jugadores.consultar`).
-
 ```text
-Angular :4200 ──/api, /auth, /health──▶ proxy de ng serve (proxy.conf.json) ──▶ API :3000 ──▶ MariaDB escuela_futbol
+Angular :4200 ──/api, /auth, /health──▶ proxy de ng serve (proxy.conf.json) ──▶ API :3000 ──▶ MariaDB
 ```
 
-- **Mismo origen:** el navegador sólo habla con `:4200`; el proxy de `ng serve` reenvía esos prefijos a la API. Por eso
-  la cookie `charales_sid` viaja sola: sin CORS y sin `withCredentials`. Angular nunca lee ni guarda la cookie
-  (`HttpOnly`); sabe si hay sesión con `GET /auth/session` (401 = no hay).
-- **Sesión separada:** el login de la app todavía es el mock (`AuthService` + `MockDb`); la API tiene su propia sesión.
-  La página pide iniciar sesión en la API cuando no hay una. Se unifican al migrar `AuthService`.
-- `CharalesApi` devuelve `Promise` de los modelos existentes (`Player`, `Category`): convierte las filas `snake_case`
-  de la práctica, `DATETIME` → `"YYYY-MM-DDTHH:MM:SS"` y `activo` 0/1 → `boolean`. Los errores son `Error` con el
-  mensaje de la API (401, 403…), o «No se pudo conectar con la API» si no responde (estado 0, o 502/504 del proxy), así
-  que `Submission` y `<app-load-state>` los muestran sin cambios.
-- **Producción:** el proxy sólo existe en `ng serve`; el build debe servirse en el mismo origen que la API (proxy
-  inverso). Detrás de un proxy, la API ve la IP del proxy: el límite de intentos de login necesitará
-  `X-Forwarded-For` de confianza.
-- `PlayerService`, `CategoryService` y el resto siguen sobre `MockDb`; pasarlos a la API es la fase de integración
-  ([`ROADMAP.md`](ROADMAP.md)).
+- **Sesión:** `ApiAuthService` (provisto como `AuthService` en `app.config.ts`) inicia y cierra sesión, cambia y
+  recupera contraseñas por HTTP. Los guards preguntan a la API en cada navegación (`GET /auth/session`): la API valida
+  la cookie (8 h, 30 min de inactividad, cuenta activa) y devuelve el `AuthUser` con los permisos vigentes. Una
+  cookie válida restaura la sesión en otra pestaña. Angular nunca lee la cookie (`HttpOnly`).
+- **Datos:** cada servicio de dominio es un cliente de `POST /api/rpc` con los mismos métodos (`rpcProviders()` en
+  [`rpc-services.ts`](../src/app/core/api/rpc-services.ts)); las páginas no cambiaron. Un `401` de cualquier operación
+  borra la sesión local y lleva al login con `expired=1`.
+- **Mismo origen:** el navegador sólo habla con `:4200`; el proxy reenvía esos prefijos, así que la cookie viaja sola
+  (sin CORS ni `withCredentials`). En producción el build debe servirse en el mismo origen que la API.
+- **Pruebas del frontend:** usan `baseProviders` (sin la API): los servicios corren sobre `MockDb`, que es el mismo
+  código que ejecuta la API. El lado del servidor lo prueban `api/*.test.ts` sobre MariaDB.
+- La página `/admin/api` sigue mostrando la práctica de laboratorio (`CharalesApi.players/categories`).
 
 ```bash
 npm run api:start   # terminal 1: API en :3000
-npm start           # terminal 2: Angular en :4200 con el proxy → /admin/api
+npm start           # terminal 2: Angular en :4200 con el proxy
 ```
 
 ## Postman
@@ -175,15 +224,38 @@ postman collection lint postman/
 postman collection run postman/collections/Charales -e postman/environments/local.environment.yaml   # API corriendo
 ```
 
-La carpeta `Auth` es una secuencia (el orden importa): la cookie que deja el login la reenvía el cookie jar de Postman.
+La carpeta `Dominio` prueba `POST /api/rpc` (sólo lecturas). La carpeta `Auth` es una secuencia (el orden importa): la cookie que deja el login la reenvía el cookie jar de Postman.
 Valores locales distintos: `postman/environments/*.local.environment.yaml` (no se versiona). Cada endpoint nuevo llega
 con su request, ejemplos y `pm.test` en la misma PR; las pruebas propias del backend siguen siendo `api/*.test.ts`.
 
+## Producción y despliegue
+
+**Estado (auditoría 2026-10-15):** desarrollo verificado y preparado para revisión; **no desplegado**. Nada de lo
+anterior corre en producción.
+
+| Requisito del entorno objetivo | Qué hacer                                                                                                                                                                                                                                                                                                             |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mismo origen                   | Servir `dist/project/browser` y la API detrás de un único dominio: el proxy inverso envía `/api`, `/auth` y `/health` a la API (como hace `e2e/app.e2e.ts`). La API no envía cabeceras CORS a propósito.                                                                                                              |
+| HTTPS y cookie                 | `NODE_ENV=production` (o `COOKIE_SECURE=true`): la cookie lleva `Secure`. Sin HTTPS el navegador no la enviaría.                                                                                                                                                                                                      |
+| IP real del cliente            | Detrás del proxy, la API ve la IP del proxy: el límite de intentos (login y recuperación) quedaría compartido por todos. Falta leer `X-Forwarded-For` de un proxy de confianza antes de desplegar.                                                                                                                    |
+| Base de datos                  | Base nueva: `docs/escuela_futbol_mariadb.sql` (**borra sus 39 tablas si la base existe**) + `db/mariadb/scripts/migrate.sh` + `010_permisos_app.sql`. Base existente: **sólo** `migrate.sh` (idempotente). Nunca `020_dev_seed.sql` ni `db:mariadb:demo`.                                                             |
+| Planificador de MariaDB        | `event_scheduler=ON` en la configuración del servidor para el trabajo diario de VENCIDO (migración 002). Ver [`MARIADB.md`](database/MARIADB.md#migraciones).                                                                                                                                                         |
+| Zona horaria                   | Servidor de base de datos y API en la hora de la escuela (`America/Mexico_City`): `DATETIME` guarda hora local sin zona (`MARIADB.md` § 1).                                                                                                                                                                           |
+| Correo (D4c, **pendiente**)    | No hay proveedor. Hace falta: un transporte en `password.mailerFromEnv` (SMTP o API del proveedor, con credenciales fuera del repo) y una URL base de la app para los enlaces, que hoy son relativos (`/reset-password?token=…`). Sin transporte, la recuperación y las invitaciones responden `503` y no crean nada. |
+| Una sola instancia o varias    | Varias instancias son seguras para los datos (`version_datos`, candado por base), pero el límite de intentos vive en la memoria de cada proceso.                                                                                                                                                                      |
+| Respaldo                       | `db/mariadb/scripts/backup.sh` diario; periodicidad y restauración en [`MARIADB.md` § 6](database/MARIADB.md).                                                                                                                                                                                                        |
+
+**Seguridad de la sesión:** cookie `HttpOnly; SameSite=Strict; Path=/` de 8 h (30 min de inactividad), sólo el SHA-256
+del token en `sesiones`. CSRF: además de `SameSite=Strict`, los cuerpos sólo se aceptan como `application/json`, que un
+formulario de otro sitio no puede enviar sin una solicitud previa de CORS (que la API no autoriza). Probado en
+`api/rpc.test.ts` («CSRF and CORS», «session cookie attributes»).
+
 ## Decisiones
 
-- **Sin framework HTTP:** `node:http` y una tabla de rutas exactas; un router entra cuando haya parámetros de ruta.
+- **Sin framework HTTP:** `node:http` y una tabla de rutas exactas; el dominio entra por un solo endpoint (D13), así
+  que sigue sin hacer falta un router.
 - **argon2id con `node:crypto`** (m=19 MiB, t=2, p=1; formato PHC). Sin dependencia nativa.
-- **Permisos recalculados en cada `GET /auth/session`.** `sesiones` no tiene columna para guardar la foto de permisos
+- **Permisos recalculados en cada `GET /auth/session` y en cada operación de dominio.** `sesiones` no tiene columna para guardar la foto de permisos
   del login, así que un cambio de permisos (HU-006) o de perfil se refleja ya en las sesiones abiertas, no sólo en las
   nuevas. Es más estricto que el mock; si se quiere la foto exacta hace falta una columna (cambio de esquema).
 - **El límite de intentos sólo cuenta contraseñas incorrectas:** la contraseña correcta de una cuenta deshabilitada no

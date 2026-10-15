@@ -5,41 +5,44 @@ Contexto, equipo y estado por área: [`../PROJECT_CONTEXT.md`](../PROJECT_CONTEX
 
 ## 0. Qué hay y qué no hay
 
-- **Hay:** frontend Angular que implementa las 76 HU sobre datos simulados en memoria (`MockDb`), el modelo MariaDB
-  probado (DDL, checks, permisos, respaldo) y 138 pruebas.
-- **API (Milestone 1):** `api/` con `GET /health` y autenticación sobre MariaDB, más su colección Postman
-  ([`API.md`](API.md)).
-- **No hay todavía:** conexión del frontend a la API. Los datos de la app se reinician al recargar la página.
+- **Hay:** frontend Angular con las 76 HU, que usa la API para la sesión y los datos; el modelo MariaDB probado (DDL,
+  migraciones, checks, permisos, respaldo); 156 pruebas del frontend, 125 de la API y 13 E2E.
+- **API:** `api/` con autenticación y contraseñas, y `POST /api/rpc`, que ejecuta los servicios de dominio sobre
+  MariaDB (D13), más su colección Postman ([`API.md`](API.md)).
+- **La app usa la API para todo** (sesión y datos): sin la API corriendo, el login muestra «No se pudo conectar con la
+  API». Datos de prueba: `npm run db:mariadb:demo` sobre un esquema vacío.
 
-> **Estado de `main` (2026-10-07):** el `main` local de quien integró está en `18178ba` (fast-forward desde
-> `jorgesucre/fix/audit-go-with-fixes`), **sin publicar**: `origin/main` sigue en `47b926c`, que no tiene el trabajo
-> descrito en esta documentación. Hasta que esos commits lleguen a `origin` (por PR, según
-> [`CONTRIBUTING.md`](../CONTRIBUTING.md)), un clon nuevo de `main` no corresponde a estos documentos.
+> **Estado:** la conexión de toda la app a la API (D13) llega a `main` con el PR #10 (`jorgesucre/api-express`);
+> se instala desde `main` ([`SETUP.md`](SETUP.md)).
 
 ## 1. Requisitos
 
-| Herramienta | Versión                                                                        | Para qué                                           |
-| ----------- | ------------------------------------------------------------------------------ | -------------------------------------------------- |
-| Node.js     | `^22.22.3`, `^24.15.0` o `>=26.0.0` (lo exige Angular 22; probado con 26.10.0) | Frontend y pruebas                                 |
-| npm         | 11 (fijado en `packageManager`: `npm@11.19.1`)                                 | Dependencias y scripts. No se usa pnpm ni yarn     |
-| MariaDB     | 10.6+ con `mariadb` y `mariadb-dump` en el `PATH` (probado con 13.0.2)         | API, checks del esquema y respaldo                 |
-| Postman CLI | Opcional (probado con 1.71.0, sin iniciar sesión)                              | Correr la colección `postman/` contra la API       |
-| `sh`        | macOS/Linux; en Windows, Git Bash o WSL                                        | Scripts de base de datos                           |
-| PostgreSQL  | 16                                                                             | Sólo para el esquema **histórico** (no hace falta) |
+| Herramienta | Versión                                                                       | Para qué                                           |
+| ----------- | ----------------------------------------------------------------------------- | -------------------------------------------------- |
+| Node.js     | `^24.15.0` o `>=26.0.0` (Angular 22 y la API; probado con 26.11)              | Frontend, API y pruebas                            |
+| npm         | 11 (fijado en `packageManager`: `npm@11.19.1`)                                | Dependencias y scripts. No se usa pnpm ni yarn     |
+| MariaDB     | 10.6+ local (probado con 13.0.2); el cliente `mariadb` sólo para scripts `sh` | Base de la app, pruebas, checks y respaldo         |
+| Postman CLI | Opcional (probado con 1.71.0, sin iniciar sesión)                             | Correr la colección `postman/` contra la API       |
+| `sh`        | macOS/Linux; en Windows, Git Bash o WSL                                       | Scripts de base de datos                           |
+| PostgreSQL  | 16                                                                            | Sólo para el esquema **histórico** (no hace falta) |
 
 El frontend no usa variables de entorno y los scripts de MariaDB usan las opciones estándar del cliente `mariadb`. La
 API lee `.env` (no versionado; copia [`.env.example`](../.env.example)): detalle en [`API.md`](API.md).
 
 ## 2. Instalar y ejecutar
 
+Paso a paso (MariaDB por sistema operativo, cuenta, `.env`, base, administrador, arranque y problemas comunes):
+**[`SETUP.md`](SETUP.md)**. Resumen:
+
 ```bash
-git clone <url-del-repo> charales && cd charales
-npm install
-npm start                       # ng serve → http://localhost:4200 (proxy de /api, /auth y /health a :3000)
-npm run api:start               # opcional, otra terminal: API en :3000 para /admin/api (ver docs/API.md)
+npm ci && cp .env.example .env   # pon tu DB_PASSWORD
+npm run db:setup                 # esquema + migraciones + permisos (seguro de repetir)
+npm run db:admin                 # o: npm run db:setup -- --demo  (cuentas de abajo)
+npm run api:start                # terminal 1: API en :3000
+npm start                        # terminal 2: http://localhost:4200 (proxy de /api, /auth y /health a :3000)
 ```
 
-Cuentas de demostración (contraseña `demo1234`):
+Cuentas de demostración de `npm run db:setup -- --demo` (contraseña `demo1234`):
 
 | Cuenta                   | Rol / perfil                                     |
 | ------------------------ | ------------------------------------------------ |
@@ -56,14 +59,15 @@ Todos son los que usa el proyecto (`package.json`, [`CONTRIBUTING.md`](../CONTRI
 
 | Qué                        | Comando                                                                            | Resultado actual                     |
 | -------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------ |
-| Pruebas (una corrida)      | `npx ng test --watch=false`                                                        | 146/146                              |
+| Pruebas (una corrida)      | `npx ng test --watch=false`                                                        | 156/156                              |
 | Pruebas en modo watch      | `npm test` (no termina solo)                                                       | —                                    |
 | Typecheck                  | `npx tsc -p tsconfig.app.json --noEmit` y `npx tsc -p tsconfig.spec.json --noEmit` | Sin errores                          |
 | Formato                    | `npx prettier --check .` (aplicar: `npx prettier --write .`)                       | Todo con formato                     |
 | Build de producción        | `npm run build` (salida en `dist/`)                                                | Sin errores                          |
 | Esquema MariaDB + respaldo | `npm run db:mariadb:test-backup`                                                   | 42/42 checks; 39/39 tablas idénticas |
-| Pruebas de la API          | `npm run api:test` (base temporal `ef_apitest_*`)                                  | 29/29                                |
-| Colección Postman          | `postman collection lint postman/` y `postman collection run …` (ver `API.md`)     | 29 requests, 34/34 aserciones        |
+| Pruebas de la API          | `npm run api:test` (bases temporales `ef_*` que se borran al terminar)             | 125/125                              |
+| E2E en navegador           | `npm run e2e` (necesita Google Chrome; base temporal `ef_e2e_*`)                   | 13/13                                |
+| Colección Postman          | `postman collection lint postman/` y `postman collection run …` (ver `API.md`)     | 37 requests, 42/42 aserciones        |
 | Lint                       | No hay ESLint configurado                                                          | —                                    |
 
 `npm run db:mariadb:test-backup` crea y borra sólo sus propias bases temporales `ef_bktest_*`. Los scripts

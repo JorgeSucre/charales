@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { appConfig } from './app.config';
+import { baseProviders } from './app.config';
 import { AuthService } from './core/auth/auth.service';
 import { MockDb } from './core/data/mock-db';
 import { CategoryService } from './core/services/category.service';
@@ -38,7 +38,7 @@ describe('authorization (independent expectations)', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(2026, 9, 7, 12, 0));
     TestBed.resetTestingModule();
-    TestBed.configureTestingModule({ providers: appConfig.providers });
+    TestBed.configureTestingModule({ providers: baseProviders });
   });
   afterEach(() => vi.useRealTimers());
 

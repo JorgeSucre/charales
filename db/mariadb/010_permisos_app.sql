@@ -1,6 +1,9 @@
 -- 010 · Permisos que usa la app además de los del esquema base, y rol_permiso inicial.
 -- Son DATOS (filas de permisos/rol_permiso), no cambios de esquema. Fuente: src/app/core/auth/permissions.ts
 -- (PERMISSION_CATALOG y DEFAULT_ROLE_PERMISSIONS). Idempotente: INSERT IGNORE.
+-- `npm run db:setup` aplica el catálogo siempre y la sección «rol_permiso inicial» sólo si rol_permiso está vacía,
+-- para no devolver permisos que el administrador retiró (HU-006). Un permiso nuevo para bases existentes va en una
+-- migración de db/mariadb/migrations.
 
 INSERT IGNORE INTO permisos (modulo, accion) VALUES
 ('roles','consultar'),

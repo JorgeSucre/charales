@@ -1,15 +1,20 @@
 # Autorización — contrato por operación
 
-Estado de `main` en `18178ba` (2026-10-07). Toda esta autorización corre en el navegador sobre `MockDb`: **no hay API**
-todavía; cuando exista, debe repetir esta matriz (barrera 3).
+Estado: rama `jorgesucre/api-express` (2026-10-13). Esta autorización **corre en la API** (decisión D13): los
+servicios de dominio se ejecutan en el servidor con el `AuthUser` de la cookie, así que las barreras 2 y 3 son el
+mismo código y el navegador no puede saltarlas.
 
 ## Tres barreras
 
-| Barrera                    | Dónde                                  | Qué garantiza                                                                                 |
-| -------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------- |
-| 1. Rutas y menú            | `core/auth/guards.ts`, `layout/nav.ts` | Experiencia: no se muestran ni se abren pantallas sin permiso                                 |
-| 2. **Dominio (servicios)** | `core/auth/authorization.service.ts`   | Cada operación pública verifica permiso **y** propiedad aunque se invoque directamente        |
-| 3. API (futura)            | backend                                | La única barrera real: el navegador y `MockDb` son manipulables. **Debe repetir esta matriz** |
+| Barrera                      | Dónde                                         | Qué garantiza                                                                                                                                                                         |
+| ---------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Rutas y menú              | `core/auth/guards.ts`, `layout/nav.ts`        | Experiencia: no se muestran ni se abren pantallas sin permiso                                                                                                                         |
+| 2. **Dominio (servicios)**   | `core/auth/authorization.service.ts`          | Cada operación pública verifica permiso **y** propiedad aunque se invoque directamente                                                                                                |
+| 3. **API (la barrera real)** | `api/auth.ts`, `api/rpc.ts`, `rpc-methods.ts` | Cookie válida (401); sólo métodos de la lista blanca (404); los servicios de la barrera 2 corren aquí con la sesión del servidor (403). Ver [`API.md`](API.md#operaciones-de-dominio) |
+
+La identidad que usan los servicios en la API sale de `sesiones` (cookie), nunca del cuerpo de la solicitud. Los
+permisos se recalculan en cada solicitud, así que un cambio de la matriz (HU-006) o la desactivación de una cuenta
+(HU-004.3) aplican a la siguiente operación de las sesiones abiertas.
 
 ## Estrategia
 

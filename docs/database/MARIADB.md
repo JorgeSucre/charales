@@ -86,20 +86,50 @@ No existen entidades `equipos`, `evaluaciones` ni configuración general: la **c
 
 ## 4. Decisiones y contradicciones resueltas (HU ↔ SQL)
 
-| #   | HU pide                                                        | SQL permite                                                                                   | Resolución en el código                                                                                                                                                                                                                                                |
-| --- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | HU-043: conceptos «mensualidad, inscripción, uniforme u otros» | `conceptos_cobro` sólo tiene `recurrente`                                                     | Se eliminó `ConceptKind`. `recurrente` filtra los conceptos para generar mensualidades; en inscripción y pedidos de uniforme el usuario elige el concepto (se preselecciona el que se llama «Uniforme»).                                                               |
-| D2  | HU-020.2: la inscripción «puede vincular pago»                 | `inscripciones` no tiene `cargo_id`                                                           | Se crea un cargo con `temporada_id` y `referencia = 'INS-<id>'`; el vínculo se resuelve por jugador + referencia. Cancelar la inscripción cancela ese cargo si no tiene pagos.                                                                                         |
-| D3  | HU-036/HU-026: «conserva historial» de plantel y asignaciones  | `UNIQUE (jugador_id, competencia_categoria_id)` y `(entrenador_id, competencia_categoria_id)` | Una baja cierra la fila (`fecha_baja`/`fecha_fin`, `activo = FALSE`). Si la persona regresa se **reabre la misma fila**; las fechas anteriores quedan en `auditoria` (antes/después).                                                                                  |
-| D4  | HU-015.1: nombre único por temporada «si aplica»               | Con `temporada_id NULL` el `UNIQUE` no compara                                                | La app también rechaza nombres repetidos sin temporada (decisión pendiente señalada en el script de checks).                                                                                                                                                           |
-| D5  | HU-044.3: estados PENDIENTE/PARCIAL/PAGADO/VENCIDO             | `cargos.estado` almacenado                                                                    | El estado se **deriva** (`billing.rules.chargeStatus`: original − descuentos − pagos aplicados) y se sincroniza en cada escritura y lectura de cobranza. VENCIDO depende de la fecha: en el backend requiere un trabajo diario (`EVENT` de MariaDB).                   |
-| D6  | HU-054.2: «estado pagado se deriva del saldo»                  | `pedidos_uniforme.estado` almacenado                                                          | `UniformService` sincroniza SOLICITADO ↔ PAGADO con el saldo del cargo vinculado (`cargo_id`). La API debe hacerlo dentro de la transacción del pago.                                                                                                                  |
-| D7  | HU-054: pedido gratuito                                        | `cargos.monto_original >= 0` y `cargo_id` nullable                                            | Pedido con total 0 → `cargo_id NULL` (se conserva la decisión de la PR #4).                                                                                                                                                                                            |
-| D8  | HU-019: cambio de categoría                                    | `jugador_categoria` con una vigente por jugador                                               | Transacción: cierra la vigente (`fecha_fin` = día anterior, `activo = FALSE`), abre la nueva, escribe `historial_categoria` y cierra los planteles de la categoría anterior (HU-036.1).                                                                                |
-| D9  | HU-057: «a todos o a audiencias seleccionadas»                 | `aviso_destinatario` GENERAL/CATEGORIA/TUTOR/ENTRENADOR (con su FK)                           | Sin selección = GENERAL; si no, una fila por categoría, tutor o entrenador elegido. «Todos los tutores» sin entrenadores no es expresable sin enumerarlos.                                                                                                             |
-| D10 | HU-031: «solo entrenador asignado o admin» edita la bitácora   | sin columna de autor de la bitácora                                                           | Requiere `asistencias.editar` y alcance de entrenador; la secretaría (sin ese permiso) sólo consulta.                                                                                                                                                                  |
-| D11 | HU-045.1: el pago «captura … fecha»                            | `pagos.fecha_pago DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`: admite un valor explícito     | **Resuelto 2026-10-07:** la fecha y hora del pago se capturan (por omisión, ahora); no puede ser futura; `creado_en` conserva el momento de captura, así un pago registrado con fecha anterior queda trazable. Antes la ponía siempre el servidor y contradecía la HU. |
-| D12 | Roles de oficina (ver abajo)                                   | `rol_permiso` editable                                                                        | Administrador administra el sistema; Secretaría administra la operación de la escuela.                                                                                                                                                                                 |
+| #   | HU pide                                                                | SQL permite                                                                                   | Resolución en el código                                                                                                                                                                                                                                                   |
+| --- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | HU-043: conceptos «mensualidad, inscripción, uniforme u otros»         | `conceptos_cobro` sólo tiene `recurrente`                                                     | Se eliminó `ConceptKind`. `recurrente` filtra los conceptos para generar mensualidades; en inscripción y pedidos de uniforme el usuario elige el concepto (se preselecciona el que se llama «Uniforme»).                                                                  |
+| D2  | HU-020.2: la inscripción «puede vincular pago»                         | `inscripciones` no tiene `cargo_id`                                                           | Se crea un cargo con `temporada_id` y `referencia = 'INS-<id>'`; el vínculo se resuelve por jugador + referencia. Cancelar la inscripción cancela ese cargo si no tiene pagos.                                                                                            |
+| D3  | HU-036/HU-026: «conserva historial» de plantel y asignaciones          | `UNIQUE (jugador_id, competencia_categoria_id)` y `(entrenador_id, competencia_categoria_id)` | Una baja cierra la fila (`fecha_baja`/`fecha_fin`, `activo = FALSE`). Si la persona regresa se **reabre la misma fila**; las fechas anteriores quedan en `auditoria` (antes/después).                                                                                     |
+| D4  | HU-015.1: nombre único por temporada «si aplica»                       | Con `temporada_id NULL` el `UNIQUE` no compara                                                | La app también rechaza nombres repetidos sin temporada (decisión pendiente señalada en el script de checks).                                                                                                                                                              |
+| D5  | HU-044.3: estados PENDIENTE/PARCIAL/PAGADO/VENCIDO                     | `cargos.estado` almacenado                                                                    | El estado se **deriva** (`billing.rules.chargeStatus`: original − descuentos − pagos aplicados) y se sincroniza en cada escritura y lectura de cobranza. VENCIDO depende de la fecha: **resuelto 2026-10-13** con el `EVENT` diario de la migración 002.                  |
+| D6  | HU-054.2: «estado pagado se deriva del saldo»                          | `pedidos_uniforme.estado` almacenado                                                          | `UniformService` sincroniza SOLICITADO ↔ PAGADO con el saldo del cargo vinculado (`cargo_id`). La API debe hacerlo dentro de la transacción del pago.                                                                                                                     |
+| D7  | HU-054: pedido gratuito                                                | `cargos.monto_original >= 0` y `cargo_id` nullable                                            | Pedido con total 0 → `cargo_id NULL` (se conserva la decisión de la PR #4).                                                                                                                                                                                               |
+| D8  | HU-019: cambio de categoría                                            | `jugador_categoria` con una vigente por jugador                                               | Transacción: cierra la vigente (`fecha_fin` = día anterior, `activo = FALSE`), abre la nueva, escribe `historial_categoria` y cierra los planteles de la categoría anterior (HU-036.1).                                                                                   |
+| D9  | HU-057: «a todos o a audiencias seleccionadas»                         | `aviso_destinatario` GENERAL/CATEGORIA/TUTOR/ENTRENADOR (con su FK)                           | Sin selección = GENERAL; si no, una fila por categoría, tutor o entrenador elegido. «Todos los tutores» sin entrenadores no es expresable sin enumerarlos.                                                                                                                |
+| D10 | HU-031: «solo entrenador asignado o admin» edita la bitácora           | sin columna de autor de la bitácora                                                           | Requiere `asistencias.editar` y alcance de entrenador; la secretaría (sin ese permiso) sólo consulta.                                                                                                                                                                     |
+| D11 | HU-045.1: el pago «captura … fecha»                                    | `pagos.fecha_pago DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`: admite un valor explícito     | **Resuelto 2026-10-07:** la fecha y hora del pago se capturan (por omisión, ahora); no puede ser futura; `creado_en` conserva el momento de captura, así un pago registrado con fecha anterior queda trazable. Antes la ponía siempre el servidor y contradecía la HU.    |
+| D12 | Roles de oficina (ver abajo)                                           | `rol_permiso` editable                                                                        | Administrador administra el sistema; Secretaría administra la operación de la escuela.                                                                                                                                                                                    |
+| D13 | Conectar las 76 HU a MariaDB sin reescribir los servicios              | Esquema completo; ningún servicio lo usaba                                                    | **Resuelto 2026-10-13:** la API ejecuta los mismos servicios de dominio (ver abajo).                                                                                                                                                                                      |
+| D14 | HU-037.2 «registra … sede» vs HU-027.4 «sede … cuando esté registrada» | `partidos.sede_id` NULL                                                                       | **Resuelto 2026-10-13:** la sede se registra y valida (si se elige, debe existir y estar activa) y puede quedar «Por definir» hasta conocerse; los datos mínimos son categoría inscrita, rival, fecha, hora y local/visitante. Cierra el pendiente P2 «sede obligatoria». |
+
+### D13 · La API ejecuta los servicios de dominio sobre MariaDB (resuelta 2026-10-13)
+
+El § 8 preveía reescribir en la API las reglas de cada servicio y convertir los servicios del navegador en clientes
+HTTP. Los servicios ya contienen y prueban esas reglas (validación, transacciones, auditoría, `AuthorizationService`);
+reescribirlas duplicaba ~7 000 líneas y abría divergencias. Decisión mínima y compatible:
+
+- **Servidor:** `POST /api/rpc {service, method, args}` ([`API.md`](../API.md#operaciones-de-dominio)) ejecuta en la
+  API el servicio de Angular de la lista blanca
+  ([`rpc-methods.ts`](../../src/app/core/api/rpc-methods.ts): sólo métodos que usan las páginas, todos con verificación
+  de permiso o alcance), con el `AuthUser` de la cookie. Por solicitud, bajo un candado con nombre por base
+  (`GET_LOCK`) y en una transacción: carga las tablas ([`api/tables.ts`](../../api/tables.ts) mapea columna ↔ campo),
+  ejecuta, escribe sólo las filas que cambiaron (INSERT/UPDATE/DELETE en orden de FK) y confirma. Cualquier error →
+  ROLLBACK. MariaDB aplica además sus PK/FK/UNIQUE/CHECK (HU-073).
+- **Navegador:** cada servicio de dominio es un cliente con los mismos métodos (`rpcProviders()`), así que las
+  páginas no cambian; la sesión es la de la API (`ApiAuthService`).
+- **Pruebas:** las del frontend siguen probando las reglas sobre `MockDb` (el mismo código que corre en el servidor);
+  `api/rpc.test.ts` prueba sobre MariaDB real la persistencia, la autorización por HTTP, el rollback, la integridad,
+  la concurrencia y que el mapa de columnas reproduce toda la semilla.
+- **Rendimiento (HU-075):** las tablas que sólo escribe el puente se guardan en memoria y se releen cuando cambia
+  `version_datos` (migración 003; lo incrementan cada escritura y el trabajo diario, así que varias instancias de la API
+  quedan consistentes); las que también escriben los endpoints de sesión se leen siempre (`auditoria`, sólo para
+  `AuditService`). Después de escribir, la API relee de MariaDB las tablas que tocó (dentro de la transacción), así
+  que la copia en memoria es lo que quedó guardado, con valores por omisión y columnas generadas. Con 5 000 jugadores, 20 000 cargos y 10 000 pagos, las consultas habituales tardan 19–67 ms. Un
+  cambio manual con SQL sobre esas tablas debe incrementar `version_datos` o reiniciar la API. Límite que queda: un
+  candado global para las operaciones (suficiente para una escuela).
+- `auditoria` y `tokens_recuperacion` se insertan sin id explícito (también los escriben los endpoints de
+  autenticación, que no toman el candado); ninguna otra tabla los referencia.
 
 ### D12 · Administrador administra el sistema; Secretaría administra la operación (resuelta 2026-10-07)
 
@@ -142,8 +172,9 @@ Resultado: SECRETARIA 42 → 45 permisos (+`temporadas.crear`, +`temporadas.edit
   búsqueda 11 ms · integrantes de categoría 4 ms · adeudos 23 ms · cargos (página 1) 61 ms · estado de cuenta 4 ms ·
   tablero 10 ms. La primera medición encontró algoritmos cuadráticos (cargos 3 151 ms, tablero 988 ms, adeudos 1 234 ms);
   se corrigieron indexando pagos por cargo, nombres y contactos principales por jugador.
-- Lo que **no** se ha medido: tiempo de la API y de MariaDB (red, consultas SQL). Se medirá con la API usando los mismos
-  volúmenes; el objetivo propuesto es < 300 ms por listado paginado.
+- **Medido por la API sobre MariaDB (2026-10-13)** con los mismos volúmenes (`api/hu-fase6.test.ts`, `api/perf-data.sql`):
+  búsqueda 20 ms · integrantes 22 ms · adeudos 40 ms · cargos 30 ms · estado de cuenta 19 ms · tablero 22 ms ·
+  auditoría 67 ms (medianas; objetivo < 300 ms). Sin caché eran ~430 ms (recarga completa por solicitud).
 
 ## 6. Respaldo y restauración (HU-076)
 
@@ -164,19 +195,50 @@ opciones estándar de `mariadb`; no hay contraseñas en el repositorio):
   [`evidence/backup-restore-2026-10-07.txt`](evidence/backup-restore-2026-10-07.txt): checks del esquema **42/42**,
   respaldo restaurado y **39/39 tablas idénticas** (filas y checksum). Reproducible en cualquier máquina con MariaDB.
 
+### Migraciones
+
+El esquema base es `docs/escuela_futbol_mariadb.sql`; los cambios posteriores son migraciones idempotentes en
+[`db/mariadb/migrations/`](../../db/mariadb/migrations), aplicadas en orden con `npm run db:mariadb:migrate`
+(`migrate.sh [base]`). Las pruebas (`test-backup-restore.sh`, `api/*.test.ts`) las aplican después del esquema.
+
+| Migración                 | Qué cambia                                                                                                                                                                             |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `001_token_finalidad.sql` | `tokens_recuperacion.finalidad ENUM('RECUPERACION','INVITACION')` (D3e): la recuperación sólo revoca tokens de recuperación; las invitaciones (HU-004/012/022) duran 24 h (D3c).       |
+| `002_cargos_vencidos.sql` | Procedimiento `marcar_cargos_vencidos()` y `EVENT ev_cargos_vencidos` diario (D5): PENDIENTE/PARCIAL con vencimiento pasado → VENCIDO. Requiere `event_scheduler = ON` en el servidor. |
+| `003_version_datos.sql`   | Tabla `version_datos` (una fila) que invalida la caché de la API (D13, HU-075); `marcar_cargos_vencidos()` la incrementa cuando cambia algo.                                           |
+
+**Cómo se aplican:** no hay tabla de historial; `migrate.sh` ejecuta siempre la secuencia completa, en orden, y cada
+archivo es idempotente (`IF NOT EXISTS`, `INSERT IGNORE`, `DROP PROCEDURE IF EXISTS`). Por eso una base nueva y una
+existente terminan igual. 002 y 003 definen el mismo procedimiento: la versión vigente es la de 003, que queda al final.
+Probado sobre una base con datos (esquema + 010 + 020 + un token previo), aplicando dos veces: sin pérdida de filas, el
+token previo queda `RECUPERACION` (auditoría 2026-10-15).
+
+**Trabajo diario de VENCIDO (002):** `EVENT ev_cargos_vencidos` cada día a las 00:05 de la hora del servidor, que llama
+a `marcar_cargos_vencidos()` (PENDIENTE/PARCIAL con vencimiento anterior a hoy → VENCIDO; incrementa `version_datos`).
+
+- Sólo corre con `event_scheduler=ON` (configuración del servidor, `my.cnf`; no se cambia desde la app). Comprobar:
+  `SELECT @@event_scheduler;` y `SELECT LAST_EXECUTED FROM information_schema.EVENTS WHERE EVENT_NAME = 'ev_cargos_vencidos';`.
+- Con el planificador apagado el evento existe pero no corre: la API sigue recalculando VENCIDO en cada operación de
+  cobranza (`BillingService.syncStatuses`), así que las pantallas son correctas; lo que queda atrasado es el valor
+  guardado para consultas SQL directas hasta la siguiente operación de cobranza.
+- El evento se ejecuta con los permisos de su `DEFINER` (la cuenta que aplicó la migración): esa cuenta debe existir y
+  conservar permisos sobre la base, o el evento falla.
+
 ## 7. Reglas que la API debe garantizar
 
 Las reglas que el esquema no asegura (suma de aplicaciones = pago, no sobrepagar, importe del pedido = cargo, sincronía
 de estados, transiciones, motivos, contactos…) están en [`DOMAIN_RULES.md`](../DOMAIN_RULES.md).
 
-## 8. Para conectar la API real
+## 8. Conexión con la API (hecha, D13)
 
-1. Implementar la API sobre este esquema con las mismas reglas que hoy aplican los servicios (validación, transacciones,
-   alcance por sesión). Las reglas puras de cobranza (`billing.rules.ts`) son la especificación.
-2. En cada servicio, sustituir las llamadas a `MockDb` por `HttpClient` devolviendo los mismos modelos; convertir
-   `DECIMAL` con `parseMoney`/`toDecimal` en el borde. Las páginas no cambian (nunca inyectan `MockDb`).
-3. `AuthService`: login/logout/reset por HTTP con cookie HttpOnly; contraseñas con argon2id/bcrypt en el servidor;
-   limitar intentos. **Hecho en la API** para login, sesión y logout ([`API.md`](../API.md)); falta reset/cambio de
-   contraseña y conectar el frontend. El hash SHA-256 de `core/auth/password.ts` es sólo del mock.
-4. Trabajo diario (EVENT) para pasar cargos a VENCIDO (D5) y sincronizar pedidos (D6) dentro de la transacción del pago.
-5. Mantener `integrityViolations` (o los `CHECK`/FK del esquema) como red de seguridad en las pruebas de la API.
+1. La API ejecuta los servicios de dominio sobre este esquema (D13): mismas reglas, validación, transacciones y
+   alcance por sesión. Las reglas puras de cobranza (`billing.rules.ts`) siguen siendo la especificación.
+2. En el navegador, cada servicio es un cliente de `POST /api/rpc` con los mismos modelos (`rpcProviders()`); las
+   páginas no cambiaron. `DECIMAL` ↔ centavos, `BOOLEAN` ↔ `boolean`, `DATETIME` con `T` y `TIME` `HH:MM` se convierten
+   en el borde (`api/rpc.ts`).
+3. Autenticación: login/logout/sesión/contraseñas por HTTP con cookie HttpOnly y argon2id ([`API.md`](../API.md)); el
+   hash SHA-256 de `core/auth/password.ts` es sólo del mock de las pruebas.
+4. VENCIDO: además del recálculo en cada operación de cobranza, el `EVENT` diario de la migración 002 (D5).
+   Sincronía de pedidos (D6): `BillingService.syncStatuses` la hace en la misma transacción del pago.
+5. `integrityViolations` sigue verificando las restricciones sobre `MockDb` en las pruebas del frontend; en la API las
+   aplica MariaDB.

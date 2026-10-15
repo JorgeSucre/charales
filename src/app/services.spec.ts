@@ -238,6 +238,19 @@ describe('service rules', () => {
   });
 
   describe('UniformService', () => {
+    it('HU-054.2: paying the charge marks the order PAGADO in the same operation (D6), not on the next read', async () => {
+      await login('secretaria');
+      const order = await get(UniformService).createOrder(1, [{ variantId: 1, quantity: 1 }], 3);
+      await get(BillingService).registerPayment({
+        playerId: 1,
+        tutorId: 1,
+        amountCents: 35000,
+        method: 'EFECTIVO',
+        chargeIds: [order.chargeId!],
+      });
+      expect(get(MockDb).uniformOrders.find((o) => o.id === order.id)!.status).toBe('PAGADO');
+    });
+
     it('duplicate size, inactive variant and inactive player are rejected', async () => {
       await login('secretaria');
       const uniforms = get(UniformService);

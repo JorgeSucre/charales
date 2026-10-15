@@ -20,7 +20,7 @@ export function navSections(can: (item: (typeof NAV_ITEMS)[number]) => boolean) 
     <a class="skip-link" href="#main">Saltar al contenido</a>
     <header class="topbar">
       <a routerLink="/" class="brand">⚽ Charales</a>
-      <span class="demo-badge" title="Datos simulados, sin backend">DEMO</span>
+      <span class="demo-badge" title="Entorno de desarrollo con datos de demostración">DEMO</span>
       <div class="spacer"></div>
       @if (auth.user(); as user) {
         <span class="user">{{ user.displayName }} · {{ roles() }}</span>

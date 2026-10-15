@@ -61,10 +61,14 @@ export interface Session {
   userAgent: string | null;
 }
 
+/** tokens_recuperacion.finalidad (migration 001, D3e): password recovery (HU-005) or initial-access invitation. */
+export type TokenPurpose = 'RECUPERACION' | 'INVITACION';
+
 /** tokens_recuperacion */
 export interface PasswordResetToken {
   id: Id;
   userId: Id;
+  purpose: TokenPurpose;
   tokenHash: string;
   expiresAt: DateTime;
   usedAt: DateTime | null;

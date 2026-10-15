@@ -4,9 +4,10 @@
  * ponytail: exact-match route table; add a router when the first path parameter (/players/:id) shows up.
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
-import mariadb, { type Pool } from 'mariadb';
+import mariadb, { type Pool, type PoolConfig } from 'mariadb';
 import * as auth from './auth.ts';
 import * as password from './password.ts';
+import { rpc } from './rpc.ts';
 
 export interface Ctx {
   body: unknown;
@@ -26,6 +27,8 @@ export interface Reply {
 type Handler = (ctx: Ctx, db: Pool) => Promise<Reply>;
 
 const MAX_BODY_BYTES = 10_000;
+/** Domain operations carry whole forms (attendance lists, notice texts). */
+const MAX_RPC_BODY_BYTES = 200_000;
 
 const routes: Record<string, Handler> = {
   'GET /health': health,
@@ -48,6 +51,8 @@ const routes: Record<string, Handler> = {
       status: 200,
       body: await db.query('SELECT * FROM categorias ORDER BY id'),
     },
+  // Domain operations of the app (D13, docs/API.md § Operaciones de dominio): the services run here, on MariaDB.
+  'POST /api/rpc': rpc,
 };
 
 async function health(_ctx: Ctx, db: Pool): Promise<Reply> {
@@ -71,7 +76,7 @@ export function createApp(
       reply = handler
         ? await handler(
             {
-              body: await readJson(req),
+              body: await readJson(req, path === '/api/rpc' ? MAX_RPC_BODY_BYTES : MAX_BODY_BYTES),
               token: cookieValue(req.headers.cookie, auth.COOKIE),
               ip: req.socket.remoteAddress ?? '',
               userAgent: req.headers['user-agent']?.slice(0, 500) ?? null,
@@ -108,12 +113,12 @@ class BadRequest extends Error {
 }
 
 /** JSON bodies only (a cross-site form can't send one without a CORS preflight); anything else reads as undefined. */
-async function readJson(req: IncomingMessage): Promise<unknown> {
+async function readJson(req: IncomingMessage, limit: number): Promise<unknown> {
   if (!req.headers['content-type']?.startsWith('application/json')) return undefined;
   let raw = '';
   for await (const chunk of req) {
     raw += chunk;
-    if (raw.length > MAX_BODY_BYTES) throw new BadRequest(413, 'Solicitud demasiado grande.');
+    if (raw.length > limit) throw new BadRequest(413, 'Solicitud demasiado grande.');
   }
   try {
     return raw ? JSON.parse(raw) : undefined;
@@ -130,8 +135,12 @@ function cookieValue(header: string | undefined, name: string): string | null {
   return null;
 }
 
-export function createPool(env: Record<string, string | undefined> = process.env): Pool {
+export function createPool(
+  env: Record<string, string | undefined> = process.env,
+  extra: Partial<PoolConfig> = {},
+): Pool {
   return mariadb.createPool({
+    ...extra,
     ...(env['DB_SOCKET']
       ? { socketPath: env['DB_SOCKET'] }
       : { host: env['DB_HOST'] ?? '127.0.0.1', port: Number(env['DB_PORT'] ?? 3306) }),

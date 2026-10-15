@@ -709,6 +709,16 @@ export class BillingService {
       if (status !== c.status)
         this.db.update(this.db.charges, c.id, { status, updatedAt: nowDateTime() });
     }
+    // HU-054.2 / D6: a uniform order is PAGADO exactly when its charge is, in the same transaction as the payment,
+    // cancellation or discount that changed it (not only when someone reads the orders).
+    for (const o of this.db.uniformOrders) {
+      if (o.chargeId === null || (ids && !ids.includes(o.chargeId))) continue;
+      if (o.status !== 'SOLICITADO' && o.status !== 'PAGADO') continue;
+      const paid = this.db.charges.find((c) => c.id === o.chargeId)?.status === 'PAGADO';
+      const status = paid ? 'PAGADO' : 'SOLICITADO';
+      if (status !== o.status)
+        this.db.update(this.db.uniformOrders, o.id, { status, updatedAt: nowDateTime() });
+    }
   }
 
   /** `apps`/`names` let list methods compute them once instead of per row (HU-075). */

@@ -3,8 +3,8 @@ import { DateTime, Id } from '../models';
 import { PROFILE_MODULES, PermissionKey } from './permissions';
 
 /**
- * What the app knows about the logged-in user. Built at login from usuarios + roles + profiles + rol_permiso;
- * permissions are a snapshot, so permission changes apply to NEW sessions (HU-006).
+ * What the app knows about the logged-in user. Built by the API at login and on every `GET /auth/session` from
+ * usuarios + roles + profiles + rol_permiso, so permission changes (HU-006) reach open sessions on their next request.
  */
 export interface AuthUser {
   userId: Id;
@@ -35,6 +35,14 @@ export function grants(user: AuthUser | null, permission: PermissionKey): boolea
   return PROFILE_MODULES.includes(permission.split('.')[0])
     ? user.permissions.includes(permission)
     : user.officePermissions.includes(permission);
+}
+
+/** Landing page by role: tutors go to the portal, coaches to their panel, staff to the home page. */
+export function homeUrlOf(user: AuthUser | null): string {
+  if (!user || user.isStaff) return '/';
+  if (user.coachId && grants(user, 'panel_entrenador.consultar')) return '/coach';
+  if (user.tutorId && grants(user, 'portal.consultar')) return '/portal';
+  return '/';
 }
 
 const KEY = 'charales.session';

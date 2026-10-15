@@ -347,6 +347,11 @@ export function integrityViolations(db: MockDb): string[] {
   );
   for (const x of db.sessions) check(`chk_sesion_expira (${x.id})`, x.expiresAt > x.startedAt);
   for (const x of db.resetTokens) check(`chk_token_expira (${x.id})`, x.expiresAt > x.createdAt);
+  for (const x of db.resetTokens)
+    check(
+      `tokens_recuperacion.finalidad (${x.id})`,
+      ['RECUPERACION', 'INVITACION'].includes(x.purpose),
+    );
   fk('historial_estatus', db.statusHistory, 'changedBy', db.users, true);
   fk('historial_categoria', db.categoryHistory, 'playerId', db.players);
   fk('historial_categoria', db.categoryHistory, 'changedBy', db.users, true);

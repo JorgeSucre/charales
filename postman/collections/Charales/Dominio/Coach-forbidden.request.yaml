@@ -1,0 +1,20 @@
+$kind: http-request
+name: 'POST /api/rpc PlayerService.search (entrenador)'
+method: POST
+url: '{{baseUrl}}/api/rpc'
+order: 6000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    { "service": "PlayerService", "method": "search", "args": [{}] }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('403: la autorización corre en el servidor (D12)', () => {
+        pm.response.to.have.status(403);
+        pm.expect(pm.response.json().error).to.eql('No tienes permiso para esta operación.');
+      });

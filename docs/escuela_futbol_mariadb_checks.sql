@@ -1,10 +1,11 @@
 -- ============================================================
 -- ESCUELA DE FÚTBOL - PRUEBAS DE INTEGRIDAD DEL ESQUEMA
--- Valida las restricciones de docs/escuela_futbol_mariadb.sql.
+-- Valida las restricciones de docs/escuela_futbol_mariadb.sql más db/mariadb/migrations (migrate.sh).
 -- Probado en MariaDB 10.6.28 y 13.0.2 con resultados idénticos.
 --
 -- Ejecutar SOLO sobre una copia vacía (inserta datos de prueba):
 --   sed 's/escuela_futbol/ef_checks/g' docs/escuela_futbol_mariadb.sql | mariadb
+--   sh db/mariadb/scripts/migrate.sh ef_checks
 --   mariadb ef_checks < docs/escuela_futbol_mariadb_checks.sql
 -- Termina con error (exit != 0) si algún caso no se comporta como se espera.
 --

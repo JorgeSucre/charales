@@ -1,0 +1,6 @@
+$kind: collection
+order: 6000
+description: |-
+  Operaciones de dominio (docs/API.md § Operaciones de dominio, decisión D13): `POST /api/rpc` ejecuta en la API el
+  servicio de dominio de la lista blanca, con la sesión de la cookie, sobre MariaDB. Sólo lecturas: la colección se
+  puede repetir sin cambiar datos. Secuencia: administrador → entrenador → sin sesión.

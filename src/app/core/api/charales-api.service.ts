@@ -1,7 +1,8 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
+import { Router } from '@angular/router';
 import { Observable, firstValueFrom } from 'rxjs';
-import { AuthUser } from '../auth/session.store';
+import { AuthUser, SessionStore } from '../auth/session.store';
 import { Category, Player } from '../models';
 
 /**
@@ -10,11 +11,14 @@ import { Category, Player } from '../models';
  * CORS nor `withCredentials`. Returns Promises and throws `Error` with the API's message, like every other service,
  * so `Submission` and `<app-load-state>` show it as is.
  *
- * The API session is independent from the app's (mock) AuthService until that service is migrated (ROADMAP).
+ * The app's session IS the API session: ApiAuthService logs in here and every domain service of the app is a client
+ * of `POST /api/rpc` (rpc-services.ts, decision D13).
  */
 @Injectable({ providedIn: 'root' })
 export class CharalesApi {
   private http = inject(HttpClient);
+  private store = inject(SessionStore);
+  private router = inject(Router);
 
   /** The API session behind the cookie, or null when there is none (401). */
   async session(): Promise<AuthUser | null> {
@@ -32,6 +36,45 @@ export class CharalesApi {
 
   logout(): Promise<void> {
     return this.call(this.http.post<void>('/auth/logout', null));
+  }
+
+  /** HU-005: change with the current password; the API keeps this session and closes the others (D2). */
+  changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    return this.call(this.http.post<void>('/auth/password', { currentPassword, newPassword }));
+  }
+
+  /** HU-005: always succeeds the same way, whether the account exists or not (D7); 503 without mail transport. */
+  requestPasswordReset(email: string): Promise<void> {
+    return this.call(this.http.post<void>('/auth/password-reset/request', { email }));
+  }
+
+  /** HU-005 recovery and the initial access of new accounts (D3e): single-use token from the e-mail link. */
+  confirmPasswordReset(token: string, newPassword: string): Promise<void> {
+    return this.call(this.http.post<void>('/auth/password-reset/confirm', { token, newPassword }));
+  }
+
+  /**
+   * One domain operation, run by the API with this session (docs/API.md § Operaciones de dominio). Trailing
+   * `undefined` arguments are dropped so the service's defaults apply on the server too. A 401 means the session
+   * expired or was closed (HU-002.4): it is cleared and the user goes back to the login.
+   */
+  async rpc<T>(service: string, method: string, args: unknown[]): Promise<T> {
+    const sent = [...args];
+    while (sent.length && sent.at(-1) === undefined) sent.pop();
+    try {
+      const { result } = await this.call(
+        this.http.post<{ result: T }>('/api/rpc', { service, method, args: sent }),
+      );
+      return result;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401 && this.store.user()) {
+        this.store.set(null);
+        void this.router.navigate(['/login'], {
+          queryParams: { expired: 1, returnUrl: this.router.url },
+        });
+      }
+      throw e;
+    }
   }
 
   async players(): Promise<Player[]> {
