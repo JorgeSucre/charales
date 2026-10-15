@@ -85,7 +85,14 @@ export class CategoryService {
     )
       throw new Error('Ya existe una categoría con ese nombre en la temporada.');
     const now = nowDateTime();
-    const data = { ...draft, name };
+    // Only the draft's fields (no `active`, `createdAt`… from the client: setActive is the audited way).
+    const data = {
+      seasonId: draft.seasonId,
+      name,
+      minAge: draft.minAge,
+      maxAge: draft.maxAge,
+      maxCapacity: draft.maxCapacity,
+    };
     let category: Category;
     if (draft.id) {
       const before = this.db.get(this.db.categories, draft.id, 'Categoría');

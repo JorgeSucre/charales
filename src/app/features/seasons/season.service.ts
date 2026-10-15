@@ -60,7 +60,14 @@ export class SeasonService {
       if (draft.isCurrent)
         for (const s of this.db.seasons.filter((s) => s.isCurrent && s.id !== draft.id))
           this.db.update(this.db.seasons, s.id, { isCurrent: false });
-      const data = { ...draft, name };
+      // Only the draft's fields: a client of the API can't set createdAt or anything else (mass assignment).
+      const data = {
+        name,
+        startDate: draft.startDate,
+        endDate: draft.endDate,
+        active: draft.active,
+        isCurrent: draft.isCurrent,
+      };
       if (draft.id) {
         const before = this.db.get(this.db.seasons, draft.id, 'Temporada');
         const saved = this.db.update(this.db.seasons, draft.id, data);

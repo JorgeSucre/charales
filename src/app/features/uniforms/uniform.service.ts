@@ -353,13 +353,6 @@ export class UniformService {
 
   /** SOLICITADO ↔ PAGADO follows the linked charge (paid in full or not); the API does it in the payment transaction. */
   private syncPaid(): void {
-    const balances = this.billing.balancesById();
-    for (const o of this.db.uniformOrders) {
-      if (o.chargeId === null || (o.status !== 'SOLICITADO' && o.status !== 'PAGADO')) continue;
-      const paid = balances.get(o.chargeId)?.status === 'PAGADO';
-      const status: UniformOrderStatus = paid ? 'PAGADO' : 'SOLICITADO';
-      if (status !== o.status)
-        this.db.update(this.db.uniformOrders, o.id, { status, updatedAt: nowDateTime() });
-    }
+    this.billing.syncStatuses();
   }
 }

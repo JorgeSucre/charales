@@ -107,7 +107,7 @@ export class UserService {
         createdAt: now,
         updatedAt: now,
       });
-      await this.auth.issueResetToken(row, 'Tu cuenta en Charales');
+      await this.auth.issueResetToken(row, 'Tu cuenta en Charales', 'INVITACION');
       this.audit.log(
         'CREAR',
         'usuarios',
@@ -188,7 +188,7 @@ export class UserService {
       null,
       publicUser(user),
     );
-    await this.auth.issueResetToken(user, 'Acceso a Charales');
+    await this.auth.issueResetToken(user, 'Acceso a Charales', 'INVITACION');
     return { user, created: true };
   }
 

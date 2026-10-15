@@ -88,7 +88,12 @@ export class MatchService {
     this.validate(draft);
     const now = nowDateTime();
     const match = this.db.insert(this.db.matches, {
-      ...draft,
+      competitionCategoryId: draft.competitionCategoryId,
+      opponentId: draft.opponentId,
+      venueId: draft.venueId,
+      date: draft.date,
+      time: draft.time,
+      homeAway: draft.homeAway,
       notes: optional(draft.notes, 'Las observaciones', 2000),
       goalsFor: null,
       goalsAgainst: null,

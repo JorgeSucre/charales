@@ -53,10 +53,18 @@ export class ScheduleService {
     if (!isTime(draft.startTime) || !isTime(draft.endTime)) throw new Error('Horas inválidas.');
     if (draft.endTime <= draft.startTime)
       throw new Error('La hora de fin debe ser posterior a la de inicio.');
+    // Only the draft's fields (no `active`, `createdAt`… from the client: setActive is the audited way).
+    const data = {
+      categoryId: draft.categoryId,
+      venueId: draft.venueId,
+      weekday: draft.weekday,
+      startTime: draft.startTime,
+      endTime: draft.endTime,
+    };
     let schedule: TrainingSchedule;
     if (draft.id) {
       const before = this.db.get(this.db.schedules, draft.id, 'Horario');
-      schedule = this.db.update(this.db.schedules, draft.id, draft);
+      schedule = this.db.update(this.db.schedules, draft.id, data);
       this.audit.log(
         'EDITAR',
         'categorias',
@@ -68,7 +76,7 @@ export class ScheduleService {
       );
     } else {
       schedule = this.db.insert(this.db.schedules, {
-        ...draft,
+        ...data,
         active: true,
         createdAt: nowDateTime(),
       });

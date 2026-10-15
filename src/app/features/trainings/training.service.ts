@@ -133,7 +133,13 @@ export class TrainingService {
     this.validate(draft);
     const now = nowDateTime();
     const session = this.db.insert(this.db.trainingSessions, {
-      ...draft,
+      categoryId: draft.categoryId,
+      venueId: draft.venueId,
+      coachId: draft.coachId,
+      scheduleId: draft.scheduleId,
+      date: draft.date,
+      startTime: draft.startTime,
+      endTime: draft.endTime,
       objective: optional(draft.objective, 'El objetivo'),
       status: 'PROGRAMADO',
       notes: null,
@@ -244,7 +250,9 @@ export class TrainingService {
   ): Promise<void> {
     const before = this.db.get(this.db.trainingSessions, id, 'Sesión');
     if (!this.canRecord(before))
-      throw new Error('Sólo el entrenador asignado o un administrador pueden editar la sesión.');
+      throw new ForbiddenError(
+        'Sólo el entrenador asignado o un administrador pueden editar la sesión.',
+      );
     const updated = this.db.update(this.db.trainingSessions, id, {
       objective: optional(draft.objective, 'El objetivo'),
       notes: optional(draft.notes, 'Las observaciones', 5000),
