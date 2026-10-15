@@ -1,22 +1,17 @@
 /**
- * API integration tests (node:test) on a temporary database `ef_apitest_<pid>`: schema + 010 + 020 dev seed,
- * dropped at the end. Never touches escuela_futbol. Run: `npm run api:test` (needs a local MariaDB; the `mariadb` CLI
- * and the API both use the DB_* variables / client defaults, like db/mariadb/scripts).
+ * API integration tests (node:test) on a temporary database `ef_apitest_<pid>`: prepared like `npm run db:setup`
+ * plus the 020 dev seed, dropped at the end. Never touches escuela_futbol. Run: `npm run api:test` (needs a local
+ * MariaDB and, in .env, an account allowed to create and drop the ef_* test databases: docs/SETUP.md).
  */
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import type { Pool } from 'mariadb';
 import { createApp, createPool } from './server.ts';
+import { dropTestDatabase, runSqlFile, setupDatabase } from './schema.ts';
 
 const DB = `ef_apitest_${process.pid}`;
-const root = new URL('../', import.meta.url);
-const sql = (file: string) => readFileSync(new URL(file, root), 'utf8');
-const mariadbCli = (input: string, db = '') =>
-  execSync(`mariadb ${db}`, { input, stdio: ['pipe', 'ignore', 'inherit'] });
 
 let db: Pool;
 let server: Server;
@@ -25,9 +20,9 @@ let base: string;
 const mail: { to: string; subject: string; text: string }[] = [];
 
 before(async () => {
-  mariadbCli(sql('docs/escuela_futbol_mariadb.sql').replaceAll('escuela_futbol', DB));
-  mariadbCli(sql('db/mariadb/010_permisos_app.sql'), DB);
-  mariadbCli(sql('db/mariadb/020_dev_seed.sql'), DB);
+  await dropTestDatabase(process.env, DB);
+  await setupDatabase({ ...process.env, DB_NAME: DB });
+  await runSqlFile(process.env, DB, 'db/mariadb/020_dev_seed.sql');
   db = createPool({ ...process.env, DB_NAME: DB });
   server = createApp(db, {
     secureCookie: false,
@@ -40,7 +35,7 @@ before(async () => {
 after(async () => {
   server?.close();
   await db?.end();
-  mariadbCli(`DROP DATABASE IF EXISTS \`${DB}\``);
+  await dropTestDatabase(process.env, DB);
 });
 
 function login(email: string, password = 'demo1234') {
@@ -308,6 +303,29 @@ test('reset (D3a/D3b/D8): a new request revokes the earlier token; single use; c
   assert.equal(total, used, 'revoked and used tokens are kept (usado_en), not deleted');
 });
 
+test('D3e: a recovery request never revokes a pending invitation; the invitation is confirmed like a reset', async () => {
+  const invitation = 'invitacion-pendiente-de-prueba';
+  await db.query(
+    `INSERT INTO usuarios (rol_id, nombre, email, password_hash)
+     SELECT id, 'Invitada', 'invitada@example.com', 'sin-contrasena' FROM roles WHERE nombre = 'SECRETARIA'`,
+  );
+  await db.query(
+    `INSERT INTO tokens_recuperacion (usuario_id, finalidad, token_hash, creado_en, expira_en)
+     SELECT id, 'INVITACION', SHA2(?, 256), NOW(), NOW() + INTERVAL 1 DAY FROM usuarios WHERE email = 'invitada@example.com'`,
+    [invitation],
+  );
+  await requestReset('invitada@example.com');
+  const [{ usado_en }] = await db.query(
+    'SELECT usado_en FROM tokens_recuperacion WHERE token_hash = SHA2(?, 256)',
+    [invitation],
+  );
+  assert.equal(usado_en, null, 'the invitation is still pending after a recovery request');
+  assert.equal((await login('invitada@example.com', 'Invitada123')).status, 401);
+  assert.equal((await confirmReset(invitation, 'Invitada123')).status, 204);
+  assert.equal((await login('invitada@example.com', 'Invitada123')).status, 200);
+  assert.equal((await confirmReset(invitation, 'Otra12345')).status, 400, 'single use');
+});
+
 test('reset: an expired token is rejected and the password does not change', async () => {
   await requestReset('marta@example.com');
   const token = tokenFor('marta@example.com');
@@ -363,6 +381,16 @@ test('the console mail transport exists only in development with MAIL_CONSOLE=tr
   assert.equal(mailerFromEnv({ MAIL_CONSOLE: 'false' }), null);
   assert.equal(mailerFromEnv({ MAIL_CONSOLE: 'true', NODE_ENV: 'production' }), null);
   assert.equal(typeof mailerFromEnv({ MAIL_CONSOLE: 'true' }), 'function');
+});
+
+test('e-mail links are absolute: APP_URL + the path the service wrote', async () => {
+  const { withAppUrl } = await import('./password.ts');
+  const sent: string[] = [];
+  const mailer = withAppUrl((_to, _s, text) => void sent.push(text), 'https://charales.example/');
+  await mailer('a@example.com', 'x', 'Abre este enlace (válido 60 min): /reset-password?token=abc');
+  assert.deepEqual(sent, [
+    'Abre este enlace (válido 60 min): https://charales.example/reset-password?token=abc',
+  ]);
 });
 
 test('database errors do not echo query parameters into logs (logParam: false, D4d)', async () => {
