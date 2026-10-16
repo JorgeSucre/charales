@@ -191,6 +191,7 @@ test('HU-046/047: statement — charges and payments, balance, overdue, filters;
   const filtered = await t.ok<{ charges: { conceptId: number }[] }>(
     t.call(secretaria, 'BillingService', 'statement', 3, { conceptId: 2 }),
   );
+  assert.ok(filtered.charges.length > 0, '4) the concept filter keeps that concept'); // else .every() is vacuous
   assert.ok(
     filtered.charges.every((c) => c.conceptId === 2),
     '4) filter by concept',
@@ -548,5 +549,131 @@ test('D5 / HU-044.3: the daily job marks unpaid charges past their due date VENC
   assert.deepEqual(
     { ...event },
     { EVENT_NAME: 'ev_cargos_vencidos', INTERVAL_VALUE: '1', INTERVAL_FIELD: 'DAY' },
+  );
+});
+
+test('HU-046.1/4: statement date filter — inclusive from/to on the charge date and the local payment date', async () => {
+  // Own player and rows, so the expected sets are exact. Charges dated on both sides of September 2026 (charge date =
+  // cargos.fecha_cargo, set with SQL: the API dates new charges today). Payments through the API at the edges of the
+  // school's local day (pagos.fecha_pago is a local DATETIME: a UTC shift would move them across the boundary).
+  const player = await t.ok<{ id: number }>(
+    t.call(secretaria, 'PlayerService', 'create', {
+      firstName: 'Periodo',
+      lastName1: 'Filtro',
+      lastName2: null,
+      birthDate: '2016-04-04',
+      sex: 'M',
+      phone: null,
+      email: null,
+      address: null,
+    }),
+  );
+  const [a, b] = (await t.db.query(
+    'SELECT id FROM conceptos_cobro WHERE activo = 1 ORDER BY id LIMIT 2',
+  )) as { id: number }[];
+  assert.ok(a && b, 'fixture: two active concepts');
+  const charge: Record<string, number> = {};
+  for (const [day, concept] of [
+    ['2026-08-31', a.id],
+    ['2026-09-01', a.id],
+    ['2026-09-15', b.id],
+    ['2026-09-30', a.id],
+    ['2026-10-01', a.id],
+  ] as const) {
+    const r = await t.db.query(
+      `INSERT INTO cargos (jugador_id, concepto_id, fecha_cargo, monto_original, estado)
+       VALUES (?, ?, ?, 100.00, 'PENDIENTE')`,
+      [player.id, concept, day],
+    );
+    charge[day] = Number(r.insertId);
+  }
+  // A write outside the API must bump the data version, or the bridge keeps its cached tables (docs/API.md).
+  await t.db.query('UPDATE version_datos SET version = version + 1 WHERE id = 1');
+  const payment: Record<string, number> = {};
+  for (const [paidAt, day] of [
+    ['2026-08-31T23:59:59', '2026-08-31'],
+    ['2026-09-01T00:00:00', '2026-09-01'],
+    ['2026-09-30T23:59:59', '2026-09-30'],
+    ['2026-10-01T00:00:00', '2026-10-01'],
+  ] as const) {
+    const p = await t.ok<{ id: number }>(
+      t.call(secretaria, 'BillingService', 'registerPayment', {
+        playerId: player.id,
+        tutorId: null,
+        amountCents: 1_000,
+        method: 'EFECTIVO',
+        chargeIds: [charge[day]],
+        paidAt,
+      }),
+    );
+    payment[paidAt] = p.id;
+  }
+
+  type Statement = {
+    charges: { id: number; balanceCents: number }[];
+    payments: { id: number }[];
+    totals: { chargedCents: number; paidCents: number; balanceCents: number };
+  };
+  const statement = (filter: object) =>
+    t.ok<Statement>(t.call(secretaria, 'BillingService', 'statement', player.id, filter));
+  const ids = (s: Statement) => ({
+    charges: s.charges.map((c) => c.id).sort((x, y) => x - y),
+    payments: s.payments.map((p) => p.id).sort((x, y) => x - y),
+  });
+  const expect = (days: string[], paidAts: string[]) => ({
+    charges: days.map((d) => charge[d]!).sort((x, y) => x - y),
+    payments: paidAts.map((p) => payment[p]!).sort((x, y) => x - y),
+  });
+
+  // No dates: everything of the player (the behaviour without filters is unchanged).
+  assert.deepEqual(
+    ids(await statement({})),
+    expect(Object.keys(charge), Object.keys(payment)),
+    'no filter',
+  );
+  // September: both edges included, 08-31 (even at 23:59:59) and 10-01 (even at 00:00:00) excluded.
+  const september = await statement({ from: '2026-09-01', to: '2026-09-30' });
+  assert.deepEqual(
+    ids(september),
+    expect(
+      ['2026-09-01', '2026-09-15', '2026-09-30'],
+      ['2026-09-01T00:00:00', '2026-09-30T23:59:59'],
+    ),
+    'from and to, inclusive',
+  );
+  // 2) the balance is the one of the listed charges: 3 × 100.00 charged, 2 × 10.00 paid.
+  assert.deepEqual(
+    {
+      charged: september.totals.chargedCents,
+      paid: september.totals.paidCents,
+      balance: september.totals.balanceCents,
+    },
+    { charged: 30_000, paid: 2_000, balance: 28_000 },
+  );
+  assert.equal(
+    september.totals.balanceCents,
+    september.charges.reduce((s, c) => s + c.balanceCents, 0),
+  );
+  // Only `from`, only `to`, and a single day (from = to).
+  assert.deepEqual(
+    ids(await statement({ from: '2026-09-30' })),
+    expect(['2026-09-30', '2026-10-01'], ['2026-09-30T23:59:59', '2026-10-01T00:00:00']),
+    'only from',
+  );
+  assert.deepEqual(
+    ids(await statement({ to: '2026-09-01' })),
+    expect(['2026-08-31', '2026-09-01'], ['2026-08-31T23:59:59', '2026-09-01T00:00:00']),
+    'only to',
+  );
+  assert.deepEqual(
+    ids(await statement({ from: '2026-09-30', to: '2026-09-30' })),
+    expect(['2026-09-30'], ['2026-09-30T23:59:59']),
+    'a single day',
+  );
+  // 4) date and concept together: only the September charge of concept b.
+  assert.deepEqual(
+    ids(await statement({ from: '2026-09-01', to: '2026-09-30', conceptId: b.id })).charges,
+    [charge['2026-09-15']],
+    'date + concept',
   );
 });
