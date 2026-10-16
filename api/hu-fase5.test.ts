@@ -55,15 +55,21 @@ test('HU-057: publish — title, message, publication and validity; all or selec
     1,
     '2) no selection = all',
   );
-  await t.refused(t.call(secretaria, 'NoticeService', 'save', notice('')), 400);
   await t.refused(
-    t.call(
-      secretaria,
-      'NoticeService',
-      'save',
-      notice('Fechas', { startsAt: '2026-12-01T00:00:00', endsAt: '2026-11-01T00:00:00' }),
-    ),
+    () => t.call(secretaria, 'NoticeService', 'save', notice('')),
     400,
+    /^El título es obligatorio\.$/,
+  );
+  await t.refused(
+    () =>
+      t.call(
+        secretaria,
+        'NoticeService',
+        'save',
+        notice('Fechas', { startsAt: '2026-12-01T00:00:00', endsAt: '2026-11-01T00:00:00' }),
+      ),
+    400,
+    /^La vigencia termina antes de empezar\.$/,
   );
   await t.ok(t.call(secretaria, 'NoticeService', 'setPublished', n.id, false));
   assert.ok(
@@ -74,7 +80,11 @@ test('HU-057: publish — title, message, publication and validity; all or selec
   const list = await t.ok<{ publishedAt: string }[]>(t.call(secretaria, 'NoticeService', 'list'));
   const dates = list.map((x) => x.publishedAt);
   assert.deepEqual(dates, [...dates].sort().reverse(), '4) ordered by date, newest first');
-  await t.refused(t.call(tutor, 'NoticeService', 'save', notice('X')), 403);
+  await t.refused(
+    () => t.call(tutor, 'NoticeService', 'save', notice('X')),
+    403,
+    /^No tienes permiso para esta operación\.$/,
+  );
 });
 
 test('HU-058: category notice — several categories; only related tutors and coaches see it; validity kept', async () => {
@@ -135,14 +145,22 @@ test('HU-059: family notices — only current ones, general + their children cat
   );
   const dates = list.map((x) => x.publishedAt);
   assert.deepEqual(dates, [...dates].sort().reverse(), '3) newest first');
-  await t.refused(t.call(tutor, 'NoticeService', 'setPublished', 1, false), 403);
+  await t.refused(
+    () => t.call(tutor, 'NoticeService', 'setPublished', 1, false),
+    403,
+    /^No tienes permiso para esta operación\.$/,
+  );
 });
 
 test('HU-060: coach notices — current, general + assigned categories, ordered, read-only', async () => {
   const names = titles(await t.ok(t.call(coach, 'CoachPanelService', 'notices')));
   assert.ok(names.includes('Sub-10: entrenamiento del sábado en Unidad Norte'));
   assert.ok(!names.includes('Fotos de equipo (vencido)'));
-  await t.refused(t.call(coach, 'NoticeService', 'list'), 403);
+  await t.refused(
+    () => t.call(coach, 'NoticeService', 'list'),
+    403,
+    /^No tienes permiso para esta operación\.$/,
+  );
 });
 
 test('HU-061: family home — one card per child with category, next match, balance and recent notices', async () => {
@@ -181,7 +199,11 @@ test('HU-062/063: child sporting data and competitions — category, schedule, v
     t.call(tutor, 'PortalService', 'child', 2),
   );
   assert.ok(lucia.competitions.length >= 1);
-  await t.refused(t.call(tutor, 'PortalService', 'child', 5), 403);
+  await t.refused(
+    () => t.call(tutor, 'PortalService', 'child', 5),
+    403,
+    /^No tienes acceso a la información de este jugador\.$/,
+  );
 });
 
 test('HU-064: tutor profile — contact only, format validated, change recorded, player identity untouched', async () => {
@@ -206,8 +228,10 @@ test('HU-064: tutor profile — contact only, format validated, change recorded,
     },
   );
   await t.refused(
-    t.call(tutor, 'PortalService', 'updateProfile', { phone: null, email: 'mal', address: null }),
+    () =>
+      t.call(tutor, 'PortalService', 'updateProfile', { phone: null, email: 'mal', address: null }),
     400,
+    /^Correo inválido\.$/,
   );
   assert.ok(
     (await t.count(
@@ -215,6 +239,14 @@ test('HU-064: tutor profile — contact only, format validated, change recorded,
     )) >= 1,
     '4) recorded',
   );
-  await t.refused(t.call(tutor, 'PlayerService', 'update', 1, {}), 403);
-  await t.refused(t.call(tutor, 'TutorService', 'save', { id: 1 }), 403);
+  await t.refused(
+    () => t.call(tutor, 'PlayerService', 'update', 1, {}),
+    403,
+    /^No tienes permiso para esta operación\.$/,
+  );
+  await t.refused(
+    () => t.call(tutor, 'TutorService', 'save', { id: 1 }),
+    403,
+    /^No tienes permiso para esta operación\.$/,
+  );
 });

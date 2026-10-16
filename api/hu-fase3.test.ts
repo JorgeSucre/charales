@@ -49,12 +49,14 @@ test('HU-028: program a session — category, date, time, venue, coach; from sch
     { categoria_id: 1, sede_id: 1, entrenador_id: 1, fecha: '2026-10-20', hora_inicio: '17:00:00' },
   );
   await t.refused(
-    t.call(secretaria, 'TrainingService', 'program', session({ date: '2026-02-30' })),
+    () => t.call(secretaria, 'TrainingService', 'program', session({ date: '2026-02-30' })),
     400,
+    /^Fecha inválida\.$/,
   );
   await t.refused(
-    t.call(secretaria, 'TrainingService', 'program', session({ endTime: '16:00' })),
+    () => t.call(secretaria, 'TrainingService', 'program', session({ endTime: '16:00' })),
     400,
+    /^La hora de fin debe ser posterior a la de inicio\.$/,
   );
   const gen = await t.ok<{ created: number; skipped: number }>(
     t.call(secretaria, 'TrainingService', 'generateFromSchedules', '2026-10-26', '2026-11-01', 1),
@@ -65,12 +67,12 @@ test('HU-028: program a session — category, date, time, venue, coach; from sch
   );
   assert.equal(again.created, 0, 'not duplicated');
   await t.refused(
-    t.call(secretaria, 'TrainingService', 'setStatus', s.id, 'REALIZADO'),
+    () => t.call(secretaria, 'TrainingService', 'setStatus', s.id, 'REALIZADO'),
     400,
     /futur/i,
   );
   await t.refused(
-    t.call(secretaria, 'TrainingService', 'setStatus', s.id, 'CANCELADO', ''),
+    () => t.call(secretaria, 'TrainingService', 'setStatus', s.id, 'CANCELADO', ''),
     400,
     /motivo/i,
   );
@@ -95,14 +97,19 @@ test('HU-029: coach sessions — by date, only own, status, group players', asyn
     t.call(coach, 'TrainingService', 'get', 3),
   );
   assert.ok(Array.isArray(detail.roster ?? detail.players), '4) players of the group');
-  await t.refused(t.call(coach, 'TrainingService', 'get', 2), 403);
+  await t.refused(
+    () => t.call(coach, 'TrainingService', 'get', 2),
+    403,
+    /^No tienes acceso a esta sesión\.$/,
+  );
 });
 
 test('HU-030/031: attendance and notes — assigned coach, one per player and session, audited corrections', async () => {
   await t.refused(
-    t.call(marta, 'AttendanceService', 'record', 3, [
-      { playerId: 1, status: 'PRESENTE', notes: null },
-    ]),
+    () =>
+      t.call(marta, 'AttendanceService', 'record', 3, [
+        { playerId: 1, status: 'PRESENTE', notes: null },
+      ]),
     403,
     /No puedes registrar/,
   );
@@ -133,11 +140,12 @@ test('HU-030/031: attendance and notes — assigned coach, one per player and se
     '4) corrections audited',
   );
   await t.refused(
-    t.call(coach, 'AttendanceService', 'record', 3, [
-      { playerId: 2, status: 'PRESENTE', notes: null },
-    ]),
+    () =>
+      t.call(coach, 'AttendanceService', 'record', 3, [
+        { playerId: 2, status: 'PRESENTE', notes: null },
+      ]),
     400,
-    undefined,
+    /^Hay jugadores que no pertenecen al grupo de la sesión\.$/,
   );
   // HU-031: objective and notes, only the assigned coach (or admin); the secretary only reads.
   await t.ok(
@@ -151,12 +159,14 @@ test('HU-030/031: attendance and notes — assigned coach, one per player and se
   );
   assert.deepEqual({ ...n }, { objetivo: 'Pases cortos', observaciones: 'Buen ritmo' });
   await t.refused(
-    t.call(secretaria, 'TrainingService', 'saveNotes', 3, { objective: 'X', notes: null }),
+    () => t.call(secretaria, 'TrainingService', 'saveNotes', 3, { objective: 'X', notes: null }),
     403,
+    /^Sólo el entrenador asignado o un administrador pueden editar la sesión\.$/,
   );
   await t.refused(
-    t.call(marta, 'TrainingService', 'saveNotes', 3, { objective: 'X', notes: null }),
+    () => t.call(marta, 'TrainingService', 'saveNotes', 3, { objective: 'X', notes: null }),
     403,
+    /^Sólo el entrenador asignado o un administrador pueden editar la sesión\.$/,
   );
 });
 
@@ -178,7 +188,11 @@ test('HU-032: attendance report — filters, percentage, justified apart', async
     t.call(secretaria, 'AttendanceService', 'report', { playerId: 1 }),
   );
   assert.deepEqual([...new Set(one.map((r) => r.playerId))], [1], '1) by player');
-  await t.refused(t.call(tutor, 'AttendanceService', 'report', {}), 403);
+  await t.refused(
+    () => t.call(tutor, 'AttendanceService', 'report', {}),
+    403,
+    /^No tienes permiso para esta operación\.$/,
+  );
 });
 
 test('HU-033: tutor attendance — own children only, date and status, period percentage, read-only', async () => {
@@ -186,8 +200,16 @@ test('HU-033: tutor attendance — own children only, date and status, period pe
     t.call(tutor, 'PortalService', 'attendance', 1, '2026-10-01', '2026-10-31'),
   );
   assert.ok(a);
-  await t.refused(t.call(tutor, 'PortalService', 'attendance', 3, '2026-10-01', '2026-10-31'), 403);
-  await t.refused(t.call(tutor, 'AttendanceService', 'record', 1, []), 403);
+  await t.refused(
+    () => t.call(tutor, 'PortalService', 'attendance', 3, '2026-10-01', '2026-10-31'),
+    403,
+    /^No tienes acceso a la información de este jugador\.$/,
+  );
+  await t.refused(
+    () => t.call(tutor, 'AttendanceService', 'record', 1, []),
+    403,
+    /^No puedes registrar asistencia de esta sesión\.$/,
+  );
 });
 
 test('HU-034: competitions — name, type, season, organizer, status; valid dates; never deleted', async () => {
@@ -218,18 +240,20 @@ test('HU-034: competitions — name, type, season, organizer, status; valid date
     },
   );
   await t.refused(
-    t.call(secretaria, 'CompetitionService', 'save', {
-      seasonId: 2,
-      name: 'Fechas mal',
-      type: 'LIGA',
-      organizer: null,
-      contact: null,
-      startDate: '2026-12-01',
-      endDate: '2026-11-01',
-      status: 'PLANIFICADA',
-      notes: null,
-    }),
+    () =>
+      t.call(secretaria, 'CompetitionService', 'save', {
+        seasonId: 2,
+        name: 'Fechas mal',
+        type: 'LIGA',
+        organizer: null,
+        contact: null,
+        startDate: '2026-12-01',
+        endDate: '2026-11-01',
+        status: 'PLANIFICADA',
+        notes: null,
+      }),
     400,
+    /^La fecha de fin no puede ser anterior al inicio\.$/,
   );
 });
 
@@ -251,13 +275,15 @@ test('HU-035/036: participations and rosters — unique, date, eligible players 
     { fecha_inscripcion: '2026-10-13', costo: '500.00', estatus: 'INSCRITA' },
   );
   await t.refused(
-    t.call(secretaria, 'CompetitionService', 'register', {
-      competitionId: 2,
-      categoryId: 1,
-      registeredOn: '2026-10-13',
-      costCents: null,
-    }),
+    () =>
+      t.call(secretaria, 'CompetitionService', 'register', {
+        competitionId: 2,
+        categoryId: 1,
+        registeredOn: '2026-10-13',
+        costCents: null,
+      }),
     400,
+    /^Sub-10 ya está inscrita en Copa Otoño\.$/,
   );
   const eligible = await t.ok<{ id: number }[]>(
     t.call(secretaria, 'CompetitionService', 'eligiblePlayers', p.id),
@@ -269,8 +295,16 @@ test('HU-035/036: participations and rosters — unique, date, eligible players 
   const entry = await t.ok<{ id: number }>(
     t.call(secretaria, 'CompetitionService', 'addToRoster', p.id, 1, '2026-10-13'),
   );
-  await t.refused(t.call(secretaria, 'CompetitionService', 'addToRoster', p.id, 1), 400);
-  await t.refused(t.call(secretaria, 'CompetitionService', 'addToRoster', p.id, 2), 400, undefined);
+  await t.refused(
+    () => t.call(secretaria, 'CompetitionService', 'addToRoster', p.id, 1),
+    400,
+    /^Diego Hernández López ya está en el plantel\.$/,
+  );
+  await t.refused(
+    () => t.call(secretaria, 'CompetitionService', 'addToRoster', p.id, 2),
+    400,
+    /^Lucía Hernández López no pertenece a la categoría de esta participación\.$/,
+  );
   await t.ok(t.call(secretaria, 'CompetitionService', 'removeFromRoster', entry.id, '2026-10-20'));
   const [r] = await t.db.query(
     'SELECT fecha_baja, activo FROM jugador_competencia_categoria WHERE id = ?',
@@ -302,25 +336,60 @@ test('HU-037: matches — registered category, opponent/date/time/venue, statuse
   );
   assert.deepEqual({ ...row }, { rival_id: 2, sede_id: 1, fecha: '2026-11-08', hora: '10:00:00' });
   await t.refused(
-    t.call(secretaria, 'MatchService', 'schedule', {
-      competitionCategoryId: 999,
-      opponentId: 2,
-      venueId: 1,
-      date: '2026-11-08',
-      time: '10:00',
-      homeAway: 'LOCAL',
-      notes: null,
-    }),
+    () =>
+      t.call(secretaria, 'MatchService', 'schedule', {
+        competitionCategoryId: 999,
+        opponentId: 2,
+        venueId: 1,
+        date: '2026-11-08',
+        time: '10:00',
+        homeAway: 'LOCAL',
+        notes: null,
+      }),
     400,
+    /^Participación no encontrado\.$/,
+  );
+  // HU-037.1 «categoría inscrita»: a participation that exists but is not INSCRITA (here PENDIENTE) is refused too.
+  const [free] = await t.db.query(
+    `SELECT c.id AS comp, cat.id AS cat FROM competencias c
+       JOIN categorias cat ON cat.temporada_id = c.temporada_id AND cat.activo = 1
+      WHERE c.estado IN ('PLANIFICADA', 'ACTIVA') AND NOT EXISTS
+        (SELECT 1 FROM competencia_categoria cc WHERE cc.competencia_id = c.id AND cc.categoria_id = cat.id)
+      ORDER BY c.id, cat.id LIMIT 1`,
+  );
+  const pending = await t.ok<{ id: number }>(
+    t.call(secretaria, 'CompetitionService', 'register', {
+      competitionId: free.comp,
+      categoryId: free.cat,
+      registeredOn: '2026-10-13',
+      costCents: null,
+      status: 'PENDIENTE',
+    }),
   );
   await t.refused(
-    t.call(secretaria, 'MatchService', 'reschedule', m.id, {
-      date: '2026-11-09',
-      time: '11:00',
-      venueId: 1,
-      reason: '',
-    }),
+    () =>
+      t.call(secretaria, 'MatchService', 'schedule', {
+        competitionCategoryId: pending.id,
+        opponentId: 2,
+        venueId: 1,
+        date: '2026-11-08',
+        time: '10:00',
+        homeAway: 'LOCAL',
+        notes: null,
+      }),
     400,
+    /^La categoría no está inscrita en esa competencia\.$/,
+  );
+  await t.refused(
+    () =>
+      t.call(secretaria, 'MatchService', 'reschedule', m.id, {
+        date: '2026-11-09',
+        time: '11:00',
+        venueId: 1,
+        reason: '',
+      }),
+    400,
+    /^El motivo es obligatorio\.$/,
   );
   await t.ok(
     t.call(secretaria, 'MatchService', 'reschedule', m.id, {
@@ -347,12 +416,14 @@ test('HU-037: matches — registered category, opponent/date/time/venue, statuse
 
 test('HU-040: results — played matches only, both scores, no negatives, notes', async () => {
   await t.refused(
-    t.call(secretaria, 'MatchService', 'recordResult', 3, {
-      goalsFor: 1,
-      goalsAgainst: 0,
-      notes: null,
-    }),
+    () =>
+      t.call(secretaria, 'MatchService', 'recordResult', 3, {
+        goalsFor: 1,
+        goalsAgainst: 0,
+        notes: null,
+      }),
     400,
+    /^No se registra resultado de un partido futuro\.$/,
   );
   const m = await t.ok<{ id: number }>(
     t.call(secretaria, 'MatchService', 'schedule', {
@@ -366,12 +437,14 @@ test('HU-040: results — played matches only, both scores, no negatives, notes'
     }),
   );
   await t.refused(
-    t.call(secretaria, 'MatchService', 'recordResult', m.id, {
-      goalsFor: -1,
-      goalsAgainst: 0,
-      notes: null,
-    }),
+    () =>
+      t.call(secretaria, 'MatchService', 'recordResult', m.id, {
+        goalsFor: -1,
+        goalsAgainst: 0,
+        notes: null,
+      }),
     400,
+    /^El marcador debe ser un entero entre 0 y 99\.$/,
   );
   await t.ok(
     t.call(secretaria, 'MatchService', 'recordResult', m.id, {
@@ -388,7 +461,7 @@ test('HU-040: results — played matches only, both scores, no negatives, notes'
     { ...r },
     { estado: 'JUGADO', goles_favor: 2, goles_contra: 1, observaciones: 'Remontada' },
   );
-  await t.refused(t.call(secretaria, 'MatchService', 'cancel', m.id, 'x'), 400, /resultado/);
+  await t.refused(() => t.call(secretaria, 'MatchService', 'cancel', m.id, 'x'), 400, /resultado/);
 });
 
 test('HU-038/041: coach calendar and results — only assigned categories, filters, past and upcoming', async () => {
@@ -413,7 +486,11 @@ test('HU-038/041: coach calendar and results — only assigned categories, filte
   );
   const played = all.filter((m) => m.status === 'JUGADO');
   assert.ok(played.length >= 1, 'HU-041 results with score');
-  await t.refused(t.call(coach, 'MatchService', 'list', {}), 403);
+  await t.refused(
+    () => t.call(coach, 'MatchService', 'list', {}),
+    403,
+    /^No tienes permiso para esta operación\.$/,
+  );
 });
 
 test('HU-039/042: family matches and results — only through the child roster, read-only', async () => {
@@ -423,9 +500,19 @@ test('HU-039/042: family matches and results — only through the child roster, 
     results?: unknown[];
   }>(t.call(tutor, 'PortalService', 'child', 2));
   assert.ok(child.results !== undefined, 'HU-042 results present');
-  await t.refused(t.call(tutor, 'PortalService', 'child', 6), 403);
   await t.refused(
-    t.call(tutor, 'MatchService', 'recordResult', 3, { goalsFor: 1, goalsAgainst: 0, notes: null }),
+    () => t.call(tutor, 'PortalService', 'child', 6),
     403,
+    /^No tienes acceso a la información de este jugador\.$/,
+  );
+  await t.refused(
+    () =>
+      t.call(tutor, 'MatchService', 'recordResult', 3, {
+        goalsFor: 1,
+        goalsAgainst: 0,
+        notes: null,
+      }),
+    403,
+    /^No tienes permiso para esta operación\.$/,
   );
 });

@@ -46,7 +46,12 @@ test('HU-065: dashboard — KPIs with source and link, straight from the databas
     t.call(secretaria, 'ReportService', 'dashboard', '2026-09-01', '2026-09-30'),
   );
   assert.ok(sept.kpis.length === d2.kpis.length, '3) period filter');
-  await t.refused(t.call(await t.login('tutor@example.com'), 'ReportService', 'dashboard'), 403);
+  const tutorCookie = await t.login('tutor@example.com'); // before: a login writes its audit row
+  await t.refused(
+    () => t.call(tutorCookie, 'ReportService', 'dashboard'),
+    403,
+    /^No tienes permiso para esta operación\.$/,
+  );
 });
 
 test('HU-066: players by category — category/status filters, primary tutor and contact, totals', async () => {
@@ -193,8 +198,16 @@ test('HU-074: the critical flows on MariaDB — login, registration + enrollment
   );
   // 5) tutor restricted to own children
   const tutor = await t.login('tutor@example.com');
-  await t.refused(t.call(tutor, 'PortalService', 'child', p.id), 403);
-  await t.refused(t.call(tutor, 'PlayerService', 'search', {}), 403);
+  await t.refused(
+    () => t.call(tutor, 'PortalService', 'child', p.id),
+    403,
+    /^No tienes acceso a la información de este jugador\.$/,
+  );
+  await t.refused(
+    () => t.call(tutor, 'PlayerService', 'search', {}),
+    403,
+    /^No tienes permiso para esta operación\.$/,
+  );
 });
 
 test('D13 cache: what the API keeps in memory always equals MariaDB, also across two API instances', async () => {

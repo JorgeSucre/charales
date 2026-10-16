@@ -59,12 +59,14 @@ test('HU-043: concepts — name, suggested amount, recurring, status; used ones 
   );
   await t.ok(t.call(secretaria, 'BillingService', 'setConceptActive', 1, true));
   await t.refused(
-    t.call(secretaria, 'BillingService', 'saveConcept', {
-      name: 'Torneo',
-      suggestedAmountCents: 1,
-      recurring: false,
-    }),
+    () =>
+      t.call(secretaria, 'BillingService', 'saveConcept', {
+        name: 'Torneo',
+        suggestedAmountCents: 1,
+        recurring: false,
+      }),
     400,
+    /^Ya existe un concepto con ese nombre\.$/,
   );
 });
 
@@ -114,14 +116,16 @@ test('HU-044: monthly fees — one per player/concept/period, amount and due dat
     1,
   );
   await t.refused(
-    t.call(secretaria, 'BillingService', 'generateMonthlyFees', {
-      conceptId: 1,
-      period: '2026-12',
-      dueDate: '2026-12-10',
-      excludedPlayerIds: [1],
-      exclusionReason: '',
-    }),
+    () =>
+      t.call(secretaria, 'BillingService', 'generateMonthlyFees', {
+        conceptId: 1,
+        period: '2026-12',
+        dueDate: '2026-12-10',
+        excludedPlayerIds: [1],
+        exclusionReason: '',
+      }),
     400,
+    /^Indica la regla autorizada para excluir jugadores\.$/,
   );
   const [overdue] = await t.db.query('SELECT estado FROM cargos WHERE id = 2');
   assert.equal(overdue.estado, 'VENCIDO', '3) overdue status');
@@ -163,14 +167,16 @@ test('HU-045: payment — payer, concept, date, amount, method; partial; balance
   );
   assert.equal(st.totals.balanceCents, 60_000 - 25_000 + 35_000 + 65_000);
   await t.refused(
-    t.call(secretaria, 'BillingService', 'registerPayment', {
-      playerId: 2,
-      tutorId: 1,
-      amountCents: 25_000,
-      method: 'EFECTIVO',
-      paidAt: '2099-01-01T00:00:00',
-    }),
+    () =>
+      t.call(secretaria, 'BillingService', 'registerPayment', {
+        playerId: 2,
+        tutorId: 1,
+        amountCents: 25_000,
+        method: 'EFECTIVO',
+        paidAt: '2099-01-01T00:00:00',
+      }),
     400,
+    /^La fecha de pago no puede ser futura\.$/,
   );
 });
 
@@ -193,15 +199,21 @@ test('HU-046/047: statement — charges and payments, balance, overdue, filters;
     t.call(tutor, 'PortalService', 'child', 2),
   );
   assert.ok(child.statement.totals.balanceCents > 0, 'HU-047.2');
-  await t.refused(t.call(tutor, 'BillingService', 'statement', 3), 403);
   await t.refused(
-    t.call(tutor, 'BillingService', 'registerPayment', {
-      playerId: 1,
-      tutorId: 1,
-      amountCents: 1,
-      method: 'EFECTIVO',
-    }),
+    () => t.call(tutor, 'BillingService', 'statement', 3),
     403,
+    /^No tienes acceso a la información de este jugador\.$/,
+  );
+  await t.refused(
+    () =>
+      t.call(tutor, 'BillingService', 'registerPayment', {
+        playerId: 1,
+        tutorId: 1,
+        amountCents: 1,
+        method: 'EFECTIVO',
+      }),
+    403,
+    /^No tienes permiso para esta operación\.$/,
   );
 });
 
@@ -225,8 +237,16 @@ test('HU-048: receipt — folio, date, player, concept, amount, method; by folio
 
 test('HU-049: cancel a payment — admin only, reason, reverts balance, kept as CANCELADO with audit', async () => {
   const before = (await t.db.query('SELECT estado FROM cargos WHERE id = 3'))[0].estado;
-  await t.refused(t.call(secretaria, 'BillingService', 'cancelPayment', 2, 'x'), 403);
-  await t.refused(t.call(admin, 'BillingService', 'cancelPayment', 2, ''), 400);
+  await t.refused(
+    () => t.call(secretaria, 'BillingService', 'cancelPayment', 2, 'x'),
+    403,
+    /^No tienes permiso para esta operación\.$/,
+  );
+  await t.refused(
+    () => t.call(admin, 'BillingService', 'cancelPayment', 2, ''),
+    400,
+    /^El motivo de cancelación es obligatorio\.$/,
+  );
   await t.ok(t.call(admin, 'BillingService', 'cancelPayment', 2, 'Cheque devuelto'));
   const [p] = await t.db.query('SELECT estado, motivo_cancelacion FROM pagos WHERE id = 2');
   assert.deepEqual({ ...p }, { estado: 'CANCELADO', motivo_cancelacion: 'Cheque devuelto' });
@@ -295,13 +315,15 @@ test('HU-050: debts — period/category filters, primary tutor and contact, over
 
 test('HU-051: discounts — type and reason, original and final kept, authorized users only', async () => {
   await t.refused(
-    t.call(secretaria, 'BillingService', 'addDiscount', {
-      chargeId: 2,
-      type: 'DESCUENTO',
-      reason: 'x',
-      adjustmentCents: 100,
-    }),
+    () =>
+      t.call(secretaria, 'BillingService', 'addDiscount', {
+        chargeId: 2,
+        type: 'DESCUENTO',
+        reason: 'x',
+        adjustmentCents: 100,
+      }),
     403,
+    /^No tienes permiso para esta operación\.$/,
   );
   await t.ok(
     t.call(admin, 'BillingService', 'addDiscount', {
@@ -331,13 +353,15 @@ test('HU-051: discounts — type and reason, original and final kept, authorized
     '2) original kept',
   );
   await t.refused(
-    t.call(admin, 'BillingService', 'addDiscount', {
-      chargeId: 2,
-      type: 'BECA',
-      reason: 'Demasiado',
-      adjustmentCents: 10_000_000,
-    }),
+    () =>
+      t.call(admin, 'BillingService', 'addDiscount', {
+        chargeId: 2,
+        type: 'BECA',
+        reason: 'Demasiado',
+        adjustmentCents: 10_000_000,
+      }),
     400,
+    /^El descuento no puede ser mayor al saldo pendiente\.$/,
   );
   await t.ok(t.call(secretaria, 'BillingService', 'discounts'));
 });
@@ -364,12 +388,14 @@ test('HU-052: uniform catalog — product with sizes and price, status, used pro
     }),
   );
   await t.refused(
-    t.call(secretaria, 'UniformService', 'saveVariant', {
-      productId: p.id,
-      size: 'CH',
-      priceCents: 1,
-    }),
+    () =>
+      t.call(secretaria, 'UniformService', 'saveVariant', {
+        productId: p.id,
+        size: 'CH',
+        priceCents: 1,
+      }),
     400,
+    /^Esa talla ya existe para el producto\.$/,
   );
   assert.equal(
     await t.count('SELECT COUNT(*) AS n FROM variantes_uniforme WHERE producto_id = ?', [p.id]),
@@ -428,7 +454,11 @@ test('HU-053/054/055: orders — price snapshot, charge = total, paid from the b
     2 * 35_000 + 15_000,
     'HU-054.1/4 charge = total',
   );
-  await t.refused(t.call(secretaria, 'UniformService', 'deliver', 9999, 'x'), 400);
+  await t.refused(
+    () => t.call(secretaria, 'UniformService', 'deliver', 9999, 'x'),
+    400,
+    /^Pedido no encontrado\.$/,
+  );
   await t.ok(
     t.call(secretaria, 'BillingService', 'registerPayment', {
       playerId: 1,
@@ -464,7 +494,11 @@ test('HU-053/054/055: orders — price snapshot, charge = total, paid from the b
     (await t.db.query('SELECT estado FROM cargos WHERE id = ?', [other.chargeId]))[0].estado,
     'CANCELADO',
   );
-  await t.refused(t.call(secretaria, 'UniformService', 'deliver', other.id, 'x'), 400, undefined);
+  await t.refused(
+    () => t.call(secretaria, 'UniformService', 'deliver', other.id, 'x'),
+    400,
+    /^El pedido está cancelado\.$/,
+  );
 });
 
 test('HU-056: family uniforms — own children only, product/size/quantity, status, read-only', async () => {
@@ -475,10 +509,15 @@ test('HU-056: family uniforms — own children only, product/size/quantity, stat
     child.uniforms.length >= 1 &&
       child.uniforms[0]!.lines.every((l) => l.product && l.size && l.quantity > 0),
   );
-  await t.refused(t.call(tutor, 'UniformService', 'orders', {}), 403);
   await t.refused(
-    t.call(tutor, 'UniformService', 'createOrder', 1, [{ variantId: 1, quantity: 1 }], 3),
+    () => t.call(tutor, 'UniformService', 'orders', {}),
     403,
+    /^No tienes permiso para esta operación\.$/,
+  );
+  await t.refused(
+    () => t.call(tutor, 'UniformService', 'createOrder', 1, [{ variantId: 1, quantity: 1 }], 3),
+    403,
+    /^No tienes permiso para esta operación\.$/,
   );
 });
 
