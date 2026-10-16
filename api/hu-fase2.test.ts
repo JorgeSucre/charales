@@ -112,10 +112,7 @@ test('HU-010: status change — reason, history kept, inactive player cannot joi
     { ...hist },
     { estatus_anterior: 'ACTIVO', estatus_nuevo: 'BAJA_TEMPORAL', motivo: 'Lesión' },
   );
-  assert.ok(
-    (await t.count('SELECT COUNT(*) AS n FROM cargos WHERE jugador_id = 5')) >= 0,
-    '4) nothing deleted',
-  );
+  // 3) tournaments and 4) history kept: «HU-010.3 …» and «HU-010.4 …» at the end of this file.
   await t.refused(
     () =>
       t.call(admin, 'PlayerCategoryService', 'assign', {
@@ -837,5 +834,152 @@ test('HU-070: seasons — name and dates, one current (must be active), history 
       active: true,
       isCurrent: true,
     }),
+  );
+});
+
+// HU-010.3 and HU-010.4 (T5). Last in this file: they leave players in BAJA, which earlier tests must not see.
+
+test('HU-010.3: a player in BAJA does not join a tournament roster — not offered, 400, nothing written', async () => {
+  // An INSCRITA participation and an ACTIVO member of its category who is not in its roster yet: eligible today.
+  const [pick] = await t.db.query(
+    `SELECT cc.id AS participation, jc.jugador_id AS player
+       FROM competencia_categoria cc
+       JOIN jugador_categoria jc ON jc.categoria_id = cc.categoria_id AND jc.fecha_fin IS NULL
+       JOIN jugadores j ON j.id = jc.jugador_id AND j.estatus = 'ACTIVO'
+      WHERE cc.estatus = 'INSCRITA' AND NOT EXISTS (SELECT 1 FROM jugador_competencia_categoria r
+             WHERE r.competencia_categoria_id = cc.id AND r.jugador_id = jc.jugador_id)
+      ORDER BY cc.id, jc.jugador_id LIMIT 1`,
+  );
+  assert.ok(pick, 'fixture: an ACTIVO player who could join an INSCRITA participation');
+  const { participation, player } = pick as { participation: number; player: number };
+  const offered = async () =>
+    (
+      await t.ok<{ id: number }[]>(
+        t.call(secretaria, 'CompetitionService', 'eligiblePlayers', participation),
+      )
+    ).map((p) => p.id);
+  const inRoster = () =>
+    t.count(
+      'SELECT COUNT(*) AS n FROM jugador_competencia_categoria WHERE jugador_id = ? AND competencia_categoria_id = ?',
+      [player, participation],
+    );
+  assert.ok((await offered()).includes(player), 'while ACTIVO the player is eligible');
+
+  // Both kinds of BAJA (the transition between them is allowed today; reactivation is not used: decision pending).
+  for (const status of ['BAJA_TEMPORAL', 'BAJA_DEFINITIVA'] as const) {
+    await t.ok(t.call(secretaria, 'PlayerService', 'changeStatus', player, status, `T5 ${status}`));
+    assert.ok(!(await offered()).includes(player), `${status}: no longer offered for the roster`);
+    // The real flow (CompetitionService.addToRoster): refused with its rule, nothing written (t.refused checks it).
+    await t.refused(
+      () =>
+        t.call(
+          secretaria,
+          'CompetitionService',
+          'addToRoster',
+          participation,
+          player,
+          '2026-10-13',
+        ),
+      400,
+      /^Sólo jugadores activos pueden integrarse al plantel\.$/,
+    );
+    assert.equal(await inRoster(), 0, `${status}: not in the roster`);
+  }
+});
+
+test('HU-010.4: a BAJA keeps the payment, charge and match history exactly (no row deleted, changed or duplicated)', async () => {
+  // A player with charges, payments, a discount and a roster whose participation has matches (demo seed: Sofía).
+  // One simple count per table: four EXISTS in one query kept MariaDB 13's optimizer busy for minutes.
+  const has = async (sql: string, id: number) => (await t.count(sql, [id])) > 0;
+  let player = 0;
+  for (const { id } of await t.db.query(
+    "SELECT id FROM jugadores WHERE estatus = 'ACTIVO' ORDER BY id",
+  )) {
+    if (
+      (await has('SELECT COUNT(*) AS n FROM cargos WHERE jugador_id = ?', id)) &&
+      (await has('SELECT COUNT(*) AS n FROM pagos WHERE jugador_id = ?', id)) &&
+      (await has(
+        'SELECT COUNT(*) AS n FROM descuentos d JOIN cargos c ON c.id = d.cargo_id WHERE c.jugador_id = ?',
+        id,
+      )) &&
+      (await has(
+        `SELECT COUNT(*) AS n FROM partidos m JOIN jugador_competencia_categoria r
+           ON r.competencia_categoria_id = m.competencia_categoria_id WHERE r.jugador_id = ?`,
+        id,
+      ))
+    ) {
+      player = Number(id);
+      break;
+    }
+  }
+  assert.ok(player, 'fixture: a player with charges, payments, a discount and matches');
+  const rows = async (sql: string) =>
+    (await t.db.query(sql, [player])).map((r: object) => ({ ...r }));
+  // Every column of every row, by id: a deleted, changed or duplicated row makes the comparison fail.
+  const history = async () => ({
+    charges: await rows('SELECT * FROM cargos WHERE jugador_id = ? ORDER BY id'),
+    payments: await rows('SELECT * FROM pagos WHERE jugador_id = ? ORDER BY id'),
+    applications: await rows('SELECT * FROM pago_aplicacion WHERE jugador_id = ? ORDER BY id'),
+    discounts: await rows(
+      'SELECT d.* FROM descuentos d JOIN cargos c ON c.id = d.cargo_id WHERE c.jugador_id = ? ORDER BY d.id',
+    ),
+    roster: await rows(
+      'SELECT * FROM jugador_competencia_categoria WHERE jugador_id = ? ORDER BY id',
+    ),
+    matches: await rows(
+      `SELECT m.* FROM partidos m WHERE m.competencia_categoria_id IN
+         (SELECT competencia_categoria_id FROM jugador_competencia_categoria WHERE jugador_id = ?) ORDER BY m.id`,
+    ),
+    attendance: await rows('SELECT * FROM asistencias WHERE jugador_id = ? ORDER BY id'),
+    statusHistory: await rows('SELECT * FROM historial_estatus WHERE jugador_id = ? ORDER BY id'),
+  });
+  // What the office sees (HU-013 record): charges, payments and competitions.
+  type Record = { charges: unknown[]; payments: unknown[]; competitions: unknown[] };
+  const record = async () => {
+    const r = await t.ok<Record>(t.call(secretaria, 'PlayerService', 'record', player));
+    return { charges: r.charges, payments: r.payments, competitions: r.competitions };
+  };
+
+  const before = await history();
+  const seen = await record();
+  for (const key of [
+    'charges',
+    'payments',
+    'applications',
+    'discounts',
+    'roster',
+    'matches',
+  ] as const)
+    assert.ok(before[key].length > 0, `fixture: ${key} to keep`);
+
+  await t.ok(
+    t.call(secretaria, 'PlayerService', 'changeStatus', player, 'BAJA_DEFINITIVA', 'T5: historial'),
+  );
+
+  const after = await history();
+  const { statusHistory, ...kept } = after;
+  const { statusHistory: previous, ...expected } = before;
+  assert.deepEqual(
+    kept,
+    expected,
+    'payments, charges, applications, discounts, roster, matches, attendance',
+  );
+  // The status history only grows by the new change; earlier entries are untouched.
+  assert.deepEqual(statusHistory.slice(0, previous.length), previous);
+  assert.equal(statusHistory.length, previous.length + 1);
+  assert.deepEqual(
+    (({ estatus_anterior, estatus_nuevo, motivo }) => ({
+      estatus_anterior,
+      estatus_nuevo,
+      motivo,
+    }))(
+      statusHistory.at(-1) as { estatus_anterior: string; estatus_nuevo: string; motivo: string },
+    ),
+    { estatus_anterior: 'ACTIVO', estatus_nuevo: 'BAJA_DEFINITIVA', motivo: 'T5: historial' },
+  );
+  assert.deepEqual(
+    await record(),
+    seen,
+    'the record (HU-013) shows the same charges, payments and competitions',
   );
 });
