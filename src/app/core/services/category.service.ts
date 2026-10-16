@@ -5,7 +5,7 @@ import { Category, Id, ISODate, fullName } from '../models';
 import { AuditService } from './audit.service';
 import { ageOn, nowDateTime, today } from '../../shared/dates';
 import { matches } from '../../shared/page';
-import { required } from '../../shared/validate';
+import { flag, required } from '../../shared/validate';
 
 export type CategoryDraft = Pick<
   Category,
@@ -129,6 +129,7 @@ export class CategoryService {
   /** Inactive categories keep their history but accept no new players (HU-015.3). */
   async setActive(id: Id, active: boolean): Promise<void> {
     this.authz.require('categorias.editar');
+    flag(active, 'Valor de «activo» inválido.');
     const before = this.db.get(this.db.categories, id, 'Categoría');
     this.db.update(this.db.categories, id, { active, updatedAt: nowDateTime() });
     this.audit.log(

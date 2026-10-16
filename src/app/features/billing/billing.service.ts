@@ -20,7 +20,7 @@ import { PlayerService } from '../../core/services/player.service';
 import { isISODate, normalizeDateTime, nowDateTime, today } from '../../shared/dates';
 import { MAX_CENTS, assertCents, sumCents } from '../../shared/money';
 import { Page, matches, paginate } from '../../shared/page';
-import { optional, required } from '../../shared/validate';
+import { flag, oneOf, optional, required } from '../../shared/validate';
 import {
   ChargeDraft,
   PERIOD_PATTERN,
@@ -130,6 +130,7 @@ export class BillingService {
     draft: Pick<ChargeConcept, 'name' | 'suggestedAmountCents' | 'recurring'> & { id?: Id },
   ): Promise<ChargeConcept> {
     this.authz.require(draft.id ? 'cobranza.editar' : 'cobranza.crear');
+    flag(draft.recurring, 'Valor de «recurrente» inválido.');
     const name = required(draft.name, 'El nombre', 100);
     this.assertAmount(draft.suggestedAmountCents, true);
     if (
@@ -176,6 +177,7 @@ export class BillingService {
   /** HU-043.3: concepts are deactivated, never deleted (charges reference them). */
   async setConceptActive(id: Id, active: boolean): Promise<void> {
     this.authz.require('cobranza.editar');
+    flag(active, 'Valor de «activo» inválido.');
     this.db.get(this.db.concepts, id, 'Concepto');
     this.db.update(this.db.concepts, id, { active });
     this.audit.log(
@@ -404,7 +406,7 @@ export class BillingService {
   async registerPayment(draft: PaymentDraft): Promise<Payment> {
     this.authz.require('pagos.crear');
     const player = this.db.get(this.db.players, draft.playerId, 'Jugador');
-    if (!METHOD_LABELS[draft.method]) throw new Error('Forma de pago inválida.');
+    oneOf(draft.method, METHOD_LABELS, 'Forma de pago inválida.');
     this.assertAmount(draft.amountCents, false);
     if (
       draft.tutorId !== null &&
@@ -647,6 +649,7 @@ export class BillingService {
     adjustmentCents: Cents;
   }): Promise<Discount> {
     this.authz.require('descuentos.crear');
+    oneOf(draft.type, ['DESCUENTO', 'BECA'], 'Tipo de ajuste inválido.');
     const reason = required(draft.reason, 'El motivo');
     this.assertAmount(draft.adjustmentCents, false);
     const charge = this.db.get(this.db.charges, draft.chargeId, 'Cargo');

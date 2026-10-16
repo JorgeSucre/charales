@@ -4,7 +4,7 @@ import { MockDb } from '../../core/data/mock-db';
 import { Id, Venue } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
 import { nowDateTime } from '../../shared/dates';
-import { optional, required } from '../../shared/validate';
+import { flag, optional, required } from '../../shared/validate';
 
 export type VenueDraft = Pick<Venue, 'name' | 'location' | 'reference'>;
 
@@ -71,6 +71,7 @@ export class VenueService {
 
   async setActive(id: Id, active: boolean): Promise<void> {
     this.authz.require('sedes.editar');
+    flag(active, 'Valor de «activo» inválido.');
     const before = this.db.get(this.db.venues, id, 'Sede');
     this.db.update(this.db.venues, id, { active });
     this.audit.log(

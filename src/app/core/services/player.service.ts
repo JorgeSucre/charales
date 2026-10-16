@@ -17,7 +17,14 @@ import {
 import { AuditService } from './audit.service';
 import { ageOn, isISODate, nowDateTime, today } from '../../shared/dates';
 import { Page, matches, paginate } from '../../shared/page';
-import { optional, optionalEmail, optionalPhone, required, sameName } from '../../shared/validate';
+import {
+  oneOf,
+  optional,
+  optionalEmail,
+  optionalPhone,
+  required,
+  sameName,
+} from '../../shared/validate';
 import {
   chargeBalance,
   chargeStatus,
@@ -193,6 +200,7 @@ export class PlayerService {
   /** HU-008: validates, rejects evident duplicates (same name + birth date) and generates the identifier. */
   async create(draft: PlayerDraft, status: PlayerStatus = 'ACTIVO'): Promise<Player> {
     this.authz.require('jugadores.crear');
+    oneOf(status, STATUS_LABELS, 'Estatus inválido.');
     const data = this.validate(draft);
     const duplicate = this.db.players.find(
       (p) => p.birthDate === data.birthDate && sameName(fullName(p), fullName(data)),

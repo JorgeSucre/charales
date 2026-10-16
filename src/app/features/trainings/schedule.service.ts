@@ -4,6 +4,7 @@ import { MockDb } from '../../core/data/mock-db';
 import { Id, TrainingSchedule } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
 import { isTime, nowDateTime } from '../../shared/dates';
+import { flag } from '../../shared/validate';
 
 export type ScheduleDraft = Pick<
   TrainingSchedule,
@@ -96,6 +97,7 @@ export class ScheduleService {
   /** HU-016.4: deactivate instead of delete (past sessions may point to it). */
   async setActive(id: Id, active: boolean): Promise<void> {
     this.authz.require('categorias.editar');
+    flag(active, 'Valor de «activo» inválido.');
     this.db.get(this.db.schedules, id, 'Horario');
     this.db.update(this.db.schedules, id, { active });
     this.audit.log(

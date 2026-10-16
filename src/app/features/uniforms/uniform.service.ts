@@ -15,7 +15,7 @@ import {
 import { AuditService } from '../../core/services/audit.service';
 import { isISODate, nowDateTime, today } from '../../shared/dates';
 import { assertCents, multiplyCents, sumCents } from '../../shared/money';
-import { optional, required } from '../../shared/validate';
+import { flag, optional, required } from '../../shared/validate';
 import { BillingService } from '../billing/billing.service';
 
 export interface OrderLineView {
@@ -116,6 +116,7 @@ export class UniformService {
 
   async setProductActive(id: Id, active: boolean): Promise<void> {
     this.authz.require('uniformes.editar');
+    flag(active, 'Valor de «activo» inválido.');
     this.db.update(this.db.uniformProducts, id, { active });
     this.audit.log(
       'EDITAR',
@@ -180,6 +181,7 @@ export class UniformService {
 
   async setVariantActive(id: Id, active: boolean): Promise<void> {
     this.authz.require('uniformes.editar');
+    flag(active, 'Valor de «activo» inválido.');
     this.db.update(this.db.uniformVariants, id, { active });
     this.audit.log(
       'EDITAR',

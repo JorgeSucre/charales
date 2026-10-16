@@ -21,7 +21,7 @@ import {
   weekday,
   isCurrentAssignment,
 } from '../../shared/dates';
-import { optional, required } from '../../shared/validate';
+import { oneOf, optional, required } from '../../shared/validate';
 
 export interface SessionView extends TrainingSession {
   categoryName: string;
@@ -219,6 +219,7 @@ export class TrainingService {
 
   async setStatus(id: Id, status: TrainingStatus, reason = ''): Promise<void> {
     this.authz.require('entrenamientos.editar');
+    oneOf(status, TRAINING_STATUS_LABELS, 'Estado inválido.');
     const before = this.db.get(this.db.trainingSessions, id, 'Sesión');
     if (before.status === status) return this.db.respond(undefined);
     if (status === 'REALIZADO' && before.date > today())
