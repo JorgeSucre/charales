@@ -123,6 +123,64 @@ test('HU-010: status change — reason, history kept, inactive player cannot joi
   await t.ok(t.call(secretaria, 'PlayerService', 'changeStatus', 5, 'ACTIVO', 'Alta médica'));
 });
 
+test('HU-010: status change — unknown status (400) or no permission (403) writes nothing; admin keeps history', async () => {
+  const snapshot = async (id: number) => ({
+    player: { ...(await t.db.query('SELECT * FROM jugadores WHERE id = ?', [id]))[0] },
+    history: await t.count('SELECT COUNT(*) AS n FROM historial_estatus WHERE jugador_id = ?', [
+      id,
+    ]),
+    audit: await t.count(
+      "SELECT COUNT(*) AS n FROM auditoria WHERE entidad = 'jugadores' AND entidad_id = ?",
+      [id],
+    ),
+  });
+  const before = await snapshot(5);
+  // ['BAJA_TEMPORAL']: an array holding a valid status is still not a status.
+  for (const bad of ['SUSPENDIDO', 'activo', 'toString', null, ['BAJA_TEMPORAL']])
+    await t.refused(
+      t.call(secretaria, 'PlayerService', 'changeStatus', 5, bad, 'Motivo'),
+      400,
+      /estatus inválido/i,
+    );
+  assert.deepEqual(await snapshot(5), before, 'unknown status: nothing written');
+
+  // A tutor can't change it, not even for their own child (tutor 1 → player 1).
+  const tutor = await t.login('tutor@example.com');
+  const child = await snapshot(1);
+  await t.refused(t.call(tutor, 'PlayerService', 'changeStatus', 1, 'BAJA_TEMPORAL', 'x'), 403);
+  assert.deepEqual(await snapshot(1), child, 'forbidden: nothing written');
+
+  const [{ id: adminId }] = await t.db.query(
+    "SELECT id FROM usuarios WHERE email = 'admin@example.com'",
+  );
+  await t.ok(t.call(admin, 'PlayerService', 'changeStatus', 5, 'BAJA_TEMPORAL', 'Viaje'));
+  await t.ok(t.call(admin, 'PlayerService', 'changeStatus', 5, 'ACTIVO', 'Regresó'));
+  const rows = await t.db.query(
+    'SELECT estatus_anterior, estatus_nuevo, motivo, cambiado_por FROM historial_estatus WHERE jugador_id = 5 ORDER BY id DESC LIMIT 2',
+  );
+  assert.deepEqual(
+    rows.map((r: object) => ({ ...r })),
+    [
+      {
+        estatus_anterior: 'BAJA_TEMPORAL',
+        estatus_nuevo: 'ACTIVO',
+        motivo: 'Regresó',
+        cambiado_por: adminId,
+      },
+      {
+        estatus_anterior: 'ACTIVO',
+        estatus_nuevo: 'BAJA_TEMPORAL',
+        motivo: 'Viaje',
+        cambiado_por: adminId,
+      },
+    ],
+  );
+  const after = await snapshot(5);
+  assert.equal(after.player.estatus, 'ACTIVO');
+  assert.equal(after.history, before.history + 2);
+  assert.equal(after.audit, before.audit + 2);
+});
+
 test('HU-011: tutors — N:M, one primary contact per player, contact validation', async () => {
   const tutor = await t.ok<{ id: number }>(
     t.call(secretaria, 'TutorService', 'save', {

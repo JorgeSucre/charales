@@ -155,6 +155,12 @@ describe('authorization (independent expectations)', () => {
       await expect(get(MatchService).list()).rejects.toThrow(DENIED);
       expect((await get(CoachPanelService).myMatches({ categoryId: 2 })).length).toBe(0);
       await expect(get(PlayerService).update(2, {} as never)).rejects.toThrow(DENIED);
+      // HU-010: jugadores.editar is office-only; the permission is checked before the status value.
+      await expect(get(PlayerService).changeStatus(1, 'BAJA_TEMPORAL', 'x')).rejects.toThrow(
+        DENIED,
+      );
+      await expect(get(PlayerService).changeStatus(1, 'X' as never, 'x')).rejects.toThrow(DENIED);
+      expect(get(MockDb).players.find((p) => p.id === 1)?.status).toBe('ACTIVO');
       expect(() => get(NoticeService).forCoach(2)).toThrow(DENIED);
     });
   });
@@ -222,6 +228,9 @@ describe('authorization (independent expectations)', () => {
 
     it('no session: every service rejects', async () => {
       await expect(get(PlayerService).search()).rejects.toThrow('Sesión no iniciada');
+      await expect(get(PlayerService).changeStatus(1, 'BAJA_TEMPORAL', 'x')).rejects.toThrow(
+        'Sesión no iniciada',
+      );
       await expect(get(BillingService).statement(1)).rejects.toThrow('Sesión no iniciada');
       await expect(get(PortalService).overview()).rejects.toThrow('Sesión no iniciada');
     });
