@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { AuthorizationService, ForbiddenError } from '../../core/auth/authorization.service';
+import { AuthorizationService } from '../../core/auth/authorization.service';
 import { MockDb } from '../../core/data/mock-db';
 import { AttendanceStatus, Id, ISODate, fullName } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
@@ -65,9 +65,11 @@ export class AttendanceService {
    * actualizado_en and are audited with before/after (HU-030.4). Only players of the session's group.
    */
   async record(sessionId: Id, entries: AttendanceEntry[]): Promise<void> {
-    const session = this.db.get(this.db.trainingSessions, sessionId, 'Sesión');
-    if (!this.trainings.canRecord(session))
-      throw new ForbiddenError('No puedes registrar asistencia de esta sesión.');
+    const session = this.trainings.sessionFor(
+      sessionId,
+      (s) => this.trainings.canRecord(s),
+      'No puedes registrar asistencia de esta sesión.',
+    );
     if (session.status === 'CANCELADO') throw new Error('La sesión está cancelada.');
     if (session.date > today()) throw new Error('No se registra asistencia de una sesión futura.');
     const group = new Set([
