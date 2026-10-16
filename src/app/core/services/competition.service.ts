@@ -211,8 +211,12 @@ export class CompetitionService {
     status: ParticipationStatus;
   }): Promise<CompetitionCategory> {
     this.authz.require('competencias.editar');
-    // HU-035.4: the status is optional (omitted → the column's default, INSCRITA); when sent, it must be a real one.
-    if (draft.status !== undefined) oneOf(draft.status, PARTICIPATION_LABELS, 'Estatus inválido.');
+    // HU-035.4: the status is optional; omitted → INSCRITA (the column's default), also when re-registering a
+    // participation in BAJA (an UPDATE, where the default doesn't apply). When sent, it must be a real one.
+    const status =
+      draft.status === undefined
+        ? 'INSCRITA'
+        : oneOf(draft.status, PARTICIPATION_LABELS, 'Estatus inválido.');
     const competition = this.db.get(this.db.competitions, draft.competitionId, 'Competencia');
     const category = this.db.get(this.db.categories, draft.categoryId, 'Categoría');
     if (competition.status === 'CANCELADA' || competition.status === 'FINALIZADA')
@@ -233,7 +237,7 @@ export class CompetitionService {
     const data = {
       registeredOn: draft.registeredOn,
       costCents: draft.costCents,
-      status: draft.status,
+      status,
     };
     const row = existing
       ? this.db.update(this.db.competitionCategories, existing.id, data)

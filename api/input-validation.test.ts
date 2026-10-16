@@ -613,6 +613,54 @@ test('T2 booleans: a real false is stored as false (and true as true) — «"fal
   assert.equal(await primary(), link.isPrimary ? 1 : 0, 'TutorService.save(isPrimary: original)');
 });
 
+test('HU-035.4: register — status optional (omitted → INSCRITA, also re-registering a BAJA); sent → must be valid', async () => {
+  const pair = await one(
+    `SELECT c.id AS comp, cat.id AS cat FROM competencias c
+       JOIN categorias cat ON cat.temporada_id = c.temporada_id AND cat.activo = 1
+      WHERE c.estado IN ('PLANIFICADA', 'ACTIVA')
+        AND NOT EXISTS (SELECT 1 FROM competencia_categoria cc WHERE cc.competencia_id = c.id AND cc.categoria_id = cat.id)
+      ORDER BY c.id, cat.id LIMIT 1`,
+  );
+  const draft = (extra: object) => ({
+    competitionId: pair['comp'],
+    categoryId: pair['cat'],
+    registeredOn: '2026-10-02',
+    costCents: null,
+    ...extra,
+  });
+  const status = async (id: number) =>
+    (await one('SELECT estatus FROM competencia_categoria WHERE id = ?', [id]))['estatus'];
+
+  // null or an array is not "omitted": 400, nothing written.
+  const before = await snapshot();
+  for (const bad of [null, ['INSCRITA']])
+    await t.refused(
+      t.call(admin, 'CompetitionService', 'register', draft({ status: bad })),
+      400,
+      /^Estatus inválido\.$/,
+    );
+  assert.equal(await snapshot(), before);
+
+  const created = await t.ok<{ id: number; status: string }>(
+    t.call(admin, 'CompetitionService', 'register', draft({})),
+  );
+  assert.equal(created.status, 'INSCRITA', 'the response carries the status');
+  assert.equal(await status(created.id), 'INSCRITA');
+
+  // Re-registering a participation in BAJA without a status: INSCRITA again (was a 500: estatus = NULL).
+  await t.ok(t.call(admin, 'CompetitionService', 'setParticipationStatus', created.id, 'BAJA'));
+  const again = await t.ok<{ id: number }>(
+    t.call(admin, 'CompetitionService', 'register', draft({})),
+  );
+  assert.equal(again.id, created.id, 'the same row, history kept (MARIADB.md D3)');
+  assert.equal(await status(created.id), 'INSCRITA');
+
+  // A sent status is kept as sent.
+  await t.ok(t.call(admin, 'CompetitionService', 'setParticipationStatus', created.id, 'BAJA'));
+  await t.ok(t.call(admin, 'CompetitionService', 'register', draft({ status: 'PENDIENTE' })));
+  assert.equal(await status(created.id), 'PENDIENTE');
+});
+
 test('T1: every API connection runs in strict mode, on top of the caller’s initSql (the fixed clock)', async () => {
   const conn = await t.db.getConnection();
   try {

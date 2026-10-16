@@ -162,6 +162,10 @@ real false is stored as false…» y «T1: every API connection runs in strict m
 | HU-070 | `SeasonService.save` (`active`, `isCurrent`)                                                  | IV         |
 | HU-073 | Modo estricto en cada conexión de la API (defensa adicional; un error ahí sigue siendo `500`) | IV «T1: …» |
 
+HU-035: reinscribir una participación en `BAJA` **sin** `status` respondía `500` (`estatus = NULL`); ahora queda
+`INSCRITA`, como al inscribir por primera vez (HU-035.4, valor por omisión de la columna). Prueba: IV «HU-035.4:
+register — status optional (omitted → INSCRITA, also re-registering a BAJA); sent → must be valid».
+
 ## Decisiones de permisos (D12, 2026-10-07)
 
 Resolución funcional posterior a la tabla oficial (que no se modifica). Detalle:

@@ -164,7 +164,7 @@ API** el método del servicio de dominio de Angular, con el usuario de la cookie
   `VenueService`; `UniformService.setProductActive/setVariantActive`; `NoticeService.save` (`published`) y
   `setPublished`; `RoleService.setPermission` (`granted`); `SeasonService.save` (`active`, `isCurrent`);
   `TutorService.save` (`isPrimary` de cada vínculo). `CompetitionService.register` permite **omitir** `status`
-  (HU-035.4): al inscribir queda `INSCRITA` (valor por omisión de la columna); `null` no cuenta como omitido. Los
+  (HU-035.4): queda `INSCRITA`, también al reinscribir una participación en `BAJA`; `null` no cuenta como omitido. Los
   filtros de las consultas (listas, búsquedas) no se validan con estas reglas. Pruebas: `api/input-validation.test.ts`.
 - **Modo estricto:** cada conexión de la API agrega `STRICT_TRANS_TABLES` a su `sql_mode` (`createPool`, después de
   cualquier `initSql`), aunque el servidor no lo tenga: si un valor inválido llegara a MariaDB, se rechaza en lugar de
