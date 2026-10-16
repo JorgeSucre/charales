@@ -4,7 +4,7 @@ import { MockDb } from '../../core/data/mock-db';
 import { AttendanceStatus, Id, ISODate, fullName } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
 import { nowDateTime, today } from '../../shared/dates';
-import { optional } from '../../shared/validate';
+import { oneOf, optional } from '../../shared/validate';
 import { TrainingService } from './training.service';
 
 export interface AttendanceEntry {
@@ -79,7 +79,7 @@ export class AttendanceService {
     for (const e of entries) {
       if (!group.has(e.playerId))
         throw new Error('Hay jugadores que no pertenecen al grupo de la sesión.');
-      if (!ATTENDANCE_LABELS[e.status]) throw new Error('Estado de asistencia inválido.');
+      oneOf(e.status, ATTENDANCE_LABELS, 'Estado de asistencia inválido.');
     }
     const now = nowDateTime();
     const userId = this.audit.currentUserId();

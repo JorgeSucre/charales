@@ -8,7 +8,7 @@ import { DateTime, Id, Role, User, fullName } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
 import { nowDateTime } from '../../shared/dates';
 import { matches } from '../../shared/page';
-import { EMAIL_PATTERN, required } from '../../shared/validate';
+import { EMAIL_PATTERN, flag, required } from '../../shared/validate';
 
 export interface UserView extends User {
   displayName: string;
@@ -125,6 +125,7 @@ export class UserService {
   async setActive(id: Id, active: boolean): Promise<void> {
     this.authz.require(active ? 'usuarios.editar' : 'usuarios.cancelar');
     this.authz.assertCanManageAccount(id);
+    flag(active, 'Valor de «activo» inválido.');
     const before = this.db.get(this.db.users, id, 'Usuario');
     if (!active) {
       if (id === this.session.user()?.userId)

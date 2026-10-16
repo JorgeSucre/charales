@@ -5,7 +5,7 @@ import { Id, Tutor, fullName } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
 import { nowDateTime } from '../../shared/dates';
 import { matches } from '../../shared/page';
-import { optional, optionalEmail, optionalPhone, required } from '../../shared/validate';
+import { flag, optional, optionalEmail, optionalPhone, required } from '../../shared/validate';
 import { UserService } from '../users/user.service';
 
 export interface TutorLinkDraft {
@@ -78,6 +78,7 @@ export class TutorService {
     for (const link of draft.links) {
       this.db.get(this.db.players, link.playerId, 'Jugador');
       required(link.relationship, 'El parentesco', 50);
+      flag(link.isPrimary, 'Valor de «contacto principal» inválido.');
       if (!link.isPrimary) continue;
       const taken = this.db.tutorPlayers.find(
         (tp) => tp.playerId === link.playerId && tp.isPrimary && tp.tutorId !== draft.id,

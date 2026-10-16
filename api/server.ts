@@ -154,8 +154,15 @@ export function createPool(
     insertIdAsNumber: true,
     // Errors must not echo query parameters (e-mails, hashes, IPs) into the logs (M0 D4d). The driver's default is true.
     logParam: false,
+    // Defense in depth (T1): the services validate their input, but a server configured without strict mode would
+    // store '' for an ENUM value they let through instead of rejecting it. Runs last, after any caller's initSql.
+    initSql: [...[extra.initSql ?? []].flat(), STRICT_MODE],
   });
 }
+
+/** Adds STRICT_TRANS_TABLES to whatever sql_mode the server has. */
+export const STRICT_MODE =
+  "SET SESSION sql_mode = IF(@@sql_mode = '', 'STRICT_TRANS_TABLES', CONCAT(@@sql_mode, ',STRICT_TRANS_TABLES'))";
 
 if (import.meta.main) {
   const env = process.env;

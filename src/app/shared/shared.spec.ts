@@ -2,7 +2,7 @@ import { addDays, ageOn, dateTimeIn, isISODate, isTime, overlaps, today, weekday
 import { parseMoney, sumCents, toDecimal } from './money';
 import { matches, paginate } from './page';
 import { centsFromInput } from './ui';
-import { optionalEmail, optionalPhone, sameName } from './validate';
+import { flag, oneOf, optionalEmail, optionalPhone, sameName } from './validate';
 
 describe('money (DECIMAL(12,2) ↔ integer cents)', () => {
   it('never does float arithmetic: 0.10 + 0.20 is exactly 0.30', () => {
@@ -62,5 +62,20 @@ describe('search, pagination and validation helpers', () => {
     expect(optionalPhone('55 1234-5678')).toBe('5512345678');
     expect(() => optionalPhone('123')).toThrow();
     expect(sameName('José  Pérez', 'jose perez')).toBe(true);
+  });
+
+  it('accepts only exact catalog values and real booleans (arguments come from the browser)', () => {
+    const labels = { ACTIVO: 'Activo', BAJA: 'Baja' };
+    expect(oneOf('ACTIVO', labels, 'Estatus inválido.')).toBe('ACTIVO');
+    expect(oneOf('BECA', ['DESCUENTO', 'BECA'], 'Tipo inválido.')).toBe('BECA');
+    for (const bad of ['XX', 'activo', 'toString', '__proto__', ['ACTIVO'], null, 1, {}])
+      expect(() => oneOf(bad, labels, 'Estatus inválido.')).toThrow('Estatus inválido.');
+    expect(() => oneOf(['BECA'], ['DESCUENTO', 'BECA'], 'Tipo inválido.')).toThrow(
+      'Tipo inválido.',
+    );
+    expect(flag(true, 'x')).toBe(true);
+    expect(flag(false, 'x')).toBe(false);
+    for (const bad of ['false', 'true', '', 0, 1, null, undefined, [], {}])
+      expect(() => flag(bad, 'Valor inválido.')).toThrow('Valor inválido.');
   });
 });

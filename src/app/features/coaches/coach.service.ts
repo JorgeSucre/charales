@@ -10,7 +10,14 @@ import {
   today,
 } from '../../shared/dates';
 import { matches } from '../../shared/page';
-import { optional, optionalEmail, optionalPhone, required, sameName } from '../../shared/validate';
+import {
+  flag,
+  optional,
+  optionalEmail,
+  optionalPhone,
+  required,
+  sameName,
+} from '../../shared/validate';
 import { UserService } from '../users/user.service';
 
 export type CoachDraft = Pick<Coach, 'firstName' | 'lastName1' | 'lastName2' | 'phone' | 'email'>;
@@ -114,6 +121,7 @@ export class CoachService {
   /** Sporting status. An inactive coach loses the ENTRENADOR profile at next login but keeps history. */
   async setActive(id: Id, active: boolean): Promise<void> {
     this.authz.require('entrenadores.editar');
+    flag(active, 'Valor de «activo» inválido.');
     const before = this.db.get(this.db.coaches, id, 'Entrenador');
     this.db.update(this.db.coaches, id, { active, updatedAt: nowDateTime() });
     this.audit.log(

@@ -14,7 +14,7 @@ import { AuditService } from '../../core/services/audit.service';
 import { isISODate, nowDateTime } from '../../shared/dates';
 import { assertCents } from '../../shared/money';
 import { matches } from '../../shared/page';
-import { required } from '../../shared/validate';
+import { oneOf, required } from '../../shared/validate';
 import { BillingService } from '../billing/billing.service';
 
 export interface EnrollmentDraft {
@@ -83,6 +83,8 @@ export class EnrollmentService {
 
   async enroll(draft: EnrollmentDraft): Promise<Enrollment> {
     this.authz.require('inscripciones.crear');
+    // A new enrollment starts PENDIENTE or ACTIVA (EnrollmentDraft); CANCELADA/FINALIZADA only through setStatus.
+    oneOf(draft.status, ['PENDIENTE', 'ACTIVA'], 'Estatus inválido.');
     const player = this.db.get(this.db.players, draft.playerId, 'Jugador');
     const season = this.db.get(this.db.seasons, draft.seasonId, 'Temporada');
     if (player.status !== 'ACTIVO') throw new Error('Sólo se inscriben jugadores activos.');
@@ -139,6 +141,7 @@ export class EnrollmentService {
    */
   async setStatus(id: Id, status: EnrollmentStatus, reason = ''): Promise<void> {
     this.authz.require('inscripciones.editar');
+    oneOf(status, ENROLLMENT_LABELS, 'Estatus inválido.');
     const before = this.db.get(this.db.enrollments, id, 'Inscripción');
     if (before.status === status) return this.db.respond(undefined);
     const allowed: Record<EnrollmentStatus, EnrollmentStatus[]> = {

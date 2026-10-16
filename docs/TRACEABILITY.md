@@ -119,6 +119,53 @@ nada está en producción; sin proveedor de correo (D4c) la recuperación de con
 012, 022) responden 503 en producción; el trabajo diario de VENCIDO necesita `event_scheduler = ON`. Ninguna HU fue
 revisada todavía por su responsable (gestión del proyecto, no estado técnico).
 
+## Validación de entrada (HU-010 y T1/T2, 2026-10-15)
+
+La segunda auditoría funcional encontró que varias operaciones aceptaban, por llamada directa a la API, valores que la
+interfaz nunca envía: un estatus fuera del catálogo respondía `500` y un booleano como `"false"` se guardaba como
+`true` (p. ej. desactivar una cuenta la dejaba activa). Contrato: [`API.md` › Operaciones de dominio](API.md#operaciones-de-dominio).
+
+**HU-010 · PR #12** (fusionado en `main` como `b9d1afa`; commits `fd7a5bc` y `4a53bae`): `PlayerService.changeStatus`
+acepta sólo un texto de `STATUS_LABELS` → si no, `400` «Estatus inválido.» sin escribir en `jugadores`,
+`historial_estatus` ni `auditoria`. Pruebas: HU2 «HU-010: status change — unknown status (400) or no permission (403)
+writes nothing; admin keeps history» (incluye `['BAJA_TEMPORAL']`), DR «HU-010: status change needs a reason…» y AZ
+(permiso antes que el valor). Siguen pendientes las pruebas de HU-010.3 en plantel y HU-010.4 (pagos y partidos
+conservados).
+
+**T1/T2** (`oneOf` y `flag` en `shared/validate.ts`; modo estricto en `api/server.ts#createPool`). Pruebas en
+`api/input-validation.test.ts` (`IV`): por operación, «T2 catalog value: …» o «T2 boolean: …» (400, mensaje y ninguna
+tabla modificada salvo `sesiones`); además «T2: the permission is checked before the value — all 25 operations…»
+(un tutor, y Secretaría en las tres operaciones sólo de Administrador, reciben 403 sin escrituras), «T2 catalog
+values: enroll stores the status it was given…», «T2 catalog values: the valid ones keep working…», «T2 booleans: a
+real false is stored as false…» y «T1: every API connection runs in strict mode…»; `SH` cubre los validadores.
+
+| HU     | Operación (campo)                                                                             | Pruebas    |
+| ------ | --------------------------------------------------------------------------------------------- | ---------- |
+| HU-004 | `UserService.setActive` (`active`)                                                            | IV         |
+| HU-006 | `RoleService.setPermission` (`granted`)                                                       | IV         |
+| HU-008 | `PlayerService.create` (estatus)                                                              | IV         |
+| HU-011 | `TutorService.save` (`isPrimary`)                                                             | IV         |
+| HU-015 | `CategoryService.setActive`                                                                   | IV         |
+| HU-016 | `ScheduleService.setActive`                                                                   | IV         |
+| HU-020 | `EnrollmentService.enroll` (sólo `PENDIENTE`/`ACTIVA`), `setStatus`                           | IV         |
+| HU-022 | `CoachService.setActive`                                                                      | IV         |
+| HU-028 | `TrainingService.setStatus`                                                                   | IV         |
+| HU-030 | `AttendanceService.record` (estado de cada jugador; también alimenta HU-032)                  | IV         |
+| HU-034 | `CompetitionService.save` (tipo, estatus)                                                     | IV         |
+| HU-035 | `CompetitionService.register` (estatus opcional), `setParticipationStatus`                    | IV         |
+| HU-043 | `BillingService.saveConcept` (`recurring`), `setConceptActive`                                | IV         |
+| HU-045 | `BillingService.registerPayment` (forma de pago)                                              | IV         |
+| HU-051 | `BillingService.addDiscount` (tipo)                                                           | IV         |
+| HU-052 | `UniformService.setProductActive`, `setVariantActive`                                         | IV         |
+| HU-057 | `NoticeService.save` (`published`), `setPublished`                                            | IV         |
+| HU-069 | `VenueService.setActive`                                                                      | IV         |
+| HU-070 | `SeasonService.save` (`active`, `isCurrent`)                                                  | IV         |
+| HU-073 | Modo estricto en cada conexión de la API (defensa adicional; un error ahí sigue siendo `500`) | IV «T1: …» |
+
+HU-035: reinscribir una participación en `BAJA` **sin** `status` respondía `500` (`estatus = NULL`); ahora queda
+`INSCRITA`, como al inscribir por primera vez (HU-035.4, valor por omisión de la columna). Prueba: IV «HU-035.4:
+register — status optional (omitted → INSCRITA, also re-registering a BAJA); sent → must be valid».
+
 ## Decisiones de permisos (D12, 2026-10-07)
 
 Resolución funcional posterior a la tabla oficial (que no se modifica). Detalle:

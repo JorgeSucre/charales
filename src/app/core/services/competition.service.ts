@@ -16,7 +16,7 @@ import {
 import { AuditService } from './audit.service';
 import { isISODate, nowDateTime, today } from '../../shared/dates';
 import { assertCents } from '../../shared/money';
-import { optional, required } from '../../shared/validate';
+import { oneOf, optional, required } from '../../shared/validate';
 
 export type CompetitionDraft = Pick<
   Competition,
@@ -117,8 +117,8 @@ export class CompetitionService {
       status: draft.status,
       notes: optional(draft.notes, 'Las observaciones', 2000),
     };
-    if (!TYPE_LABELS[data.type]) throw new Error('Tipo inválido.');
-    if (!COMPETITION_STATUS_LABELS[data.status]) throw new Error('Estatus inválido.');
+    oneOf(data.type, TYPE_LABELS, 'Tipo inválido.');
+    oneOf(data.status, COMPETITION_STATUS_LABELS, 'Estatus inválido.');
     if (
       (data.startDate && !isISODate(data.startDate)) ||
       (data.endDate && !isISODate(data.endDate))
@@ -211,6 +211,12 @@ export class CompetitionService {
     status: ParticipationStatus;
   }): Promise<CompetitionCategory> {
     this.authz.require('competencias.editar');
+    // HU-035.4: the status is optional; omitted → INSCRITA (the column's default), also when re-registering a
+    // participation in BAJA (an UPDATE, where the default doesn't apply). When sent, it must be a real one.
+    const status =
+      draft.status === undefined
+        ? 'INSCRITA'
+        : oneOf(draft.status, PARTICIPATION_LABELS, 'Estatus inválido.');
     const competition = this.db.get(this.db.competitions, draft.competitionId, 'Competencia');
     const category = this.db.get(this.db.categories, draft.categoryId, 'Categoría');
     if (competition.status === 'CANCELADA' || competition.status === 'FINALIZADA')
@@ -231,7 +237,7 @@ export class CompetitionService {
     const data = {
       registeredOn: draft.registeredOn,
       costCents: draft.costCents,
-      status: draft.status,
+      status,
     };
     const row = existing
       ? this.db.update(this.db.competitionCategories, existing.id, data)
@@ -255,6 +261,7 @@ export class CompetitionService {
 
   async setParticipationStatus(id: Id, status: ParticipationStatus): Promise<void> {
     this.authz.require('competencias.editar');
+    oneOf(status, PARTICIPATION_LABELS, 'Estatus inválido.');
     const before = this.db.get(this.db.competitionCategories, id, 'Participación');
     this.db.update(this.db.competitionCategories, id, { status });
     this.audit.log(

@@ -4,7 +4,7 @@ import { MockDb } from '../../core/data/mock-db';
 import { DateTime, Id, Notice, NoticeAudience, NoticeRecipient, fullName } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
 import { nowDateTime, isCurrentAssignment } from '../../shared/dates';
-import { required } from '../../shared/validate';
+import { flag, required } from '../../shared/validate';
 
 export interface NoticeDraft {
   title: string;
@@ -50,6 +50,7 @@ export class NoticeService {
 
   async save(draft: NoticeDraft & { id?: Id }): Promise<Notice> {
     this.authz.require(draft.id ? 'avisos.editar' : 'avisos.crear');
+    flag(draft.published, 'Valor de «publicado» inválido.');
     const title = required(draft.title, 'El título', 200);
     const message = required(draft.message, 'El mensaje', 10000);
     const startsAt = draft.startsAt || null;
@@ -104,6 +105,7 @@ export class NoticeService {
   /** HU-057.3: publish / unpublish without deleting. */
   async setPublished(id: Id, published: boolean): Promise<void> {
     this.authz.require('avisos.editar');
+    flag(published, 'Valor de «publicado» inválido.');
     this.db.get(this.db.notices, id, 'Aviso');
     this.db.update(this.db.notices, id, { published, updatedAt: nowDateTime() });
     this.audit.log('EDITAR', 'avisos', 'avisos', id, published ? 'Publicado' : 'Despublicado');

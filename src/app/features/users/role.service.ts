@@ -5,6 +5,7 @@ import { MockDb } from '../../core/data/mock-db';
 import { BaseRole, Id, Permission, Role } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
 import { nowDateTime } from '../../shared/dates';
+import { flag } from '../../shared/validate';
 
 export interface PermissionMatrix {
   roles: Role[];
@@ -36,6 +37,7 @@ export class RoleService {
 
   async setPermission(roleId: Id, permissionId: Id, granted: boolean): Promise<void> {
     this.authz.require('roles.editar');
+    flag(granted, 'Valor de «otorgado» inválido.');
     const role = this.db.get(this.db.roles, roleId, 'Rol');
     const permission = this.db.get(this.db.permissions, permissionId, 'Permiso');
     const key = `${permission.module}.${permission.action}` as PermissionKey;

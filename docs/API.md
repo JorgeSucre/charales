@@ -150,6 +150,26 @@ API** el método del servicio de dominio de Angular, con el usuario de la cookie
 - **Argumentos:** vienen del navegador. Los servicios copian sólo los campos de su borrador (nunca `...draft` en una
   fila), así que un cliente no puede fijar `active`, `createdAt` ni otros campos que la operación no recibe; un nombre
   de servicio o método fuera de la lista (incluidos `constructor`, `__proto__`…) responde `404`.
+- **Valores de catálogo y booleanos (T1/T2):** un argumento que va a una columna `ENUM` debe ser **un texto** igual a
+  uno de sus valores (no un arreglo como `["ACTIVO"]`, ni `null`, ni otra capitalización, ni nombres como
+  `toString`); uno que va a una columna `BOOLEAN` debe ser `true` o `false` (no `"false"`, `0` ni `null`). Si no,
+  `400` con el mensaje de la operación («Estatus inválido.», «Estado inválido.», «Tipo inválido.», «Forma de pago
+  inválida.», «Tipo de ajuste inválido.», «Estado de asistencia inválido.», «Valor de «activo» inválido.»…) y no se
+  escribe nada. El permiso se verifica antes que el valor (`403` primero). Validadores: `oneOf` y `flag` de
+  `src/app/shared/validate.ts`. Operaciones: `PlayerService.create` (estatus) y `changeStatus`;
+  `EnrollmentService.enroll` (sólo `PENDIENTE` o `ACTIVA`) y `setStatus`; `TrainingService.setStatus`;
+  `AttendanceService.record`; `CompetitionService.save` (tipo y estatus), `register` y `setParticipationStatus`;
+  `BillingService.registerPayment` (forma de pago), `addDiscount` (tipo), `saveConcept` (`recurring`) y
+  `setConceptActive`; `setActive` de `UserService`, `CategoryService`, `ScheduleService`, `CoachService` y
+  `VenueService`; `UniformService.setProductActive/setVariantActive`; `NoticeService.save` (`published`) y
+  `setPublished`; `RoleService.setPermission` (`granted`); `SeasonService.save` (`active`, `isCurrent`);
+  `TutorService.save` (`isPrimary` de cada vínculo). `CompetitionService.register` permite **omitir** `status`
+  (HU-035.4): queda `INSCRITA`, también al reinscribir una participación en `BAJA`; `null` no cuenta como omitido. Los
+  filtros de las consultas (listas, búsquedas) no se validan con estas reglas. Pruebas: `api/input-validation.test.ts`.
+- **Modo estricto:** cada conexión de la API agrega `STRICT_TRANS_TABLES` a su `sql_mode` (`createPool`, después de
+  cualquier `initSql`), aunque el servidor no lo tenga: si un valor inválido llegara a MariaDB, se rechaza en lugar de
+  guardarse como `''`. Ese error no se traduce a `400`: responde `500` y se registra, porque indica una validación
+  que falta en el servicio.
 - **Cuerpo:** hasta 200 KB (formularios completos: listas de asistencia, avisos); el resto de los endpoints, 10 KB.
 - **Sesión:** cada operación valida la cookie y renueva su uso (HU-002); un `401` hace que el frontend vuelva al
   login. Los permisos se recalculan en cada solicitud (HU-006).

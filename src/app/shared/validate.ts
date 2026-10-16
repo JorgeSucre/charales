@@ -37,6 +37,29 @@ export function optionalPhone(value: string | null | undefined): string | null {
   return phone;
 }
 
+/**
+ * A value of a fixed catalog (an ENUM column): a string that is exactly one of `allowed` — a list or a `*_LABELS` map.
+ * Arguments come from the browser: `LABELS[x]` would accept 'toString', and `Object.hasOwn` alone turns ['ACTIVO']
+ * into 'ACTIVO'.
+ */
+export function oneOf<T extends string>(
+  value: unknown,
+  allowed: readonly T[] | Record<T, string>,
+  message: string,
+): T {
+  const ok =
+    typeof value === 'string' &&
+    (Array.isArray(allowed) ? allowed.includes(value as T) : Object.hasOwn(allowed, value));
+  if (!ok) throw new Error(message);
+  return value as T;
+}
+
+/** A real boolean (BOOLEAN column): 'false', 0 or null would otherwise be stored as their truthiness. */
+export function flag(value: unknown, message: string): boolean {
+  if (typeof value !== 'boolean') throw new Error(message);
+  return value;
+}
+
 /** Same name ignoring case, accents and extra spaces — for "evident duplicates" (HU-008, HU-022). */
 export function sameName(a: string, b: string): boolean {
   const norm = (s: string) =>
