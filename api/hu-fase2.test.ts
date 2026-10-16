@@ -53,12 +53,16 @@ test('HU-008: register a player — data, age, evident duplicates, internal iden
   const rec = await t.ok<{ age: number }>(t.call(secretaria, 'PlayerService', 'record', p.id));
   assert.equal(typeof rec.age, 'number', '2) age is computed');
   await t.refused(
-    t.call(secretaria, 'PlayerService', 'create', player('Nuevo')),
+    () => t.call(secretaria, 'PlayerService', 'create', player('Nuevo')),
     400,
     /existe|duplicad/i,
   );
   assert.equal(await t.count("SELECT COUNT(*) AS n FROM jugadores WHERE nombre = 'Nuevo'"), 1);
-  await t.refused(t.call(secretaria, 'PlayerService', 'create', player('')), 400);
+  await t.refused(
+    () => t.call(secretaria, 'PlayerService', 'create', player('')),
+    400,
+    /^El nombre es obligatorio\.$/,
+  );
 });
 
 test('HU-009: edit a player — authorized fields, same id, modification date, required fields', async () => {
@@ -88,14 +92,15 @@ test('HU-009: edit a player — authorized fields, same id, modification date, r
     1,
   );
   await t.refused(
-    t.call(secretaria, 'PlayerService', 'update', 3, { ...player('Mateo'), birthDate: '' }),
+    () => t.call(secretaria, 'PlayerService', 'update', 3, { ...player('Mateo'), birthDate: '' }),
     400,
+    /^Fecha de nacimiento inválida\.$/,
   );
 });
 
 test('HU-010: status change — reason, history kept, inactive player cannot join categories', async () => {
   await t.refused(
-    t.call(secretaria, 'PlayerService', 'changeStatus', 5, 'BAJA_TEMPORAL', ''),
+    () => t.call(secretaria, 'PlayerService', 'changeStatus', 5, 'BAJA_TEMPORAL', ''),
     400,
     /motivo/i,
   );
@@ -112,13 +117,15 @@ test('HU-010: status change — reason, history kept, inactive player cannot joi
     '4) nothing deleted',
   );
   await t.refused(
-    t.call(admin, 'PlayerCategoryService', 'assign', {
-      playerId: 5,
-      categoryId: 3,
-      date: '2026-10-13',
-      exceptionReason: null,
-    }),
+    () =>
+      t.call(admin, 'PlayerCategoryService', 'assign', {
+        playerId: 5,
+        categoryId: 3,
+        date: '2026-10-13',
+        exceptionReason: null,
+      }),
     400,
+    /^Sólo jugadores activos pueden inscribirse a una categoría\.$/,
   );
   await t.ok(t.call(secretaria, 'PlayerService', 'changeStatus', 5, 'ACTIVO', 'Alta médica'));
 });
@@ -138,7 +145,7 @@ test('HU-010: status change — unknown status (400) or no permission (403) writ
   // ['BAJA_TEMPORAL']: an array holding a valid status is still not a status.
   for (const bad of ['SUSPENDIDO', 'activo', 'toString', null, ['BAJA_TEMPORAL']])
     await t.refused(
-      t.call(secretaria, 'PlayerService', 'changeStatus', 5, bad, 'Motivo'),
+      () => t.call(secretaria, 'PlayerService', 'changeStatus', 5, bad, 'Motivo'),
       400,
       /estatus inválido/i,
     );
@@ -147,7 +154,11 @@ test('HU-010: status change — unknown status (400) or no permission (403) writ
   // A tutor can't change it, not even for their own child (tutor 1 → player 1).
   const tutor = await t.login('tutor@example.com');
   const child = await snapshot(1);
-  await t.refused(t.call(tutor, 'PlayerService', 'changeStatus', 1, 'BAJA_TEMPORAL', 'x'), 403);
+  await t.refused(
+    () => t.call(tutor, 'PlayerService', 'changeStatus', 1, 'BAJA_TEMPORAL', 'x'),
+    403,
+    /^No tienes permiso para esta operación\.$/,
+  );
   assert.deepEqual(await snapshot(1), child, 'forbidden: nothing written');
 
   const [{ id: adminId }] = await t.db.query(
@@ -209,19 +220,20 @@ test('HU-011: tutors — N:M, one primary contact per player, contact validation
   assert.equal(email.email, 'rosa@example.com');
   // 3) one primary contact per player: Teresa already is Diego's, so a second one is refused and nothing changes.
   await t.refused(
-    t.call(secretaria, 'TutorService', 'save', {
-      id: tutor.id,
-      firstName: 'Rosa',
-      lastName1: 'Méndez',
-      lastName2: null,
-      phone: '5511112222',
-      email: 'rosa@example.com',
-      address: null,
-      links: [
-        { playerId: 1, relationship: 'Abuela', isPrimary: true },
-        { playerId: 3, relationship: 'Abuela', isPrimary: false },
-      ],
-    }),
+    () =>
+      t.call(secretaria, 'TutorService', 'save', {
+        id: tutor.id,
+        firstName: 'Rosa',
+        lastName1: 'Méndez',
+        lastName2: null,
+        phone: '5511112222',
+        email: 'rosa@example.com',
+        address: null,
+        links: [
+          { playerId: 1, relationship: 'Abuela', isPrimary: true },
+          { playerId: 3, relationship: 'Abuela', isPrimary: false },
+        ],
+      }),
     400,
     /contacto principal/,
   );
@@ -233,15 +245,16 @@ test('HU-011: tutors — N:M, one primary contact per player, contact validation
     [1],
   );
   await t.refused(
-    t.call(secretaria, 'TutorService', 'save', {
-      firstName: 'Mal',
-      lastName1: 'Correo',
-      lastName2: null,
-      phone: null,
-      email: 'no-es-correo',
-      address: null,
-      links: [{ playerId: 2, relationship: 'Tío', isPrimary: false }],
-    }),
+    () =>
+      t.call(secretaria, 'TutorService', 'save', {
+        firstName: 'Mal',
+        lastName1: 'Correo',
+        lastName2: null,
+        phone: null,
+        email: 'no-es-correo',
+        address: null,
+        links: [{ playerId: 2, relationship: 'Tío', isPrimary: false }],
+      }),
     400,
     /correo/i,
   );
@@ -264,13 +277,21 @@ test('HU-012: portal account for a tutor — only registered tutors, no duplicat
   const jorge = await t.login('jorge.tutor@example.com', 'Portal12345');
   const kids = await t.ok<{ playerId: number }[]>(t.call(jorge, 'PortalService', 'overview'));
   assert.deepEqual(kids.map((k) => k.playerId).sort(), [3, 6], '4) sees only his children');
-  await t.refused(t.call(jorge, 'PortalService', 'child', 1), 403);
   await t.refused(
-    t.call(secretaria, 'TutorService', 'linkAccount', 9999, 'x@example.com'),
+    () => t.call(jorge, 'PortalService', 'child', 1),
+    403,
+    /^No tienes acceso a la información de este jugador\.$/,
+  );
+  await t.refused(
+    () => t.call(secretaria, 'TutorService', 'linkAccount', 9999, 'x@example.com'),
     400,
     /no encontrado/i,
   );
-  await t.refused(t.call(secretaria, 'TutorService', 'linkAccount', 2, 'otro@example.com'), 400);
+  await t.refused(
+    () => t.call(secretaria, 'TutorService', 'linkAccount', 2, 'otro@example.com'),
+    400,
+    /^El tutor ya tiene una cuenta vinculada\.$/,
+  );
   assert.equal(
     await t.count("SELECT COUNT(*) AS n FROM usuarios WHERE email = 'jorge.tutor@example.com'"),
     1,
@@ -297,7 +318,12 @@ test('HU-013: player record — data, categories, payments and debts, uniforms a
     '4) uniforms and competitions',
   );
   assert.ok(rec.tutors.length >= 1);
-  await t.refused(t.call(await t.login('tutor@example.com'), 'PlayerService', 'record', 2), 403);
+  const tutorCookie = await t.login('tutor@example.com'); // before: a login writes its audit row
+  await t.refused(
+    () => t.call(tutorCookie, 'PlayerService', 'record', 2),
+    403,
+    /^No tienes acceso a la información de este jugador\.$/,
+  );
 });
 
 test('HU-014: search — partial name, combinable filters, pagination', async () => {
@@ -330,23 +356,26 @@ test('HU-015: categories — unique per season, valid ranges, active flag', asyn
     }),
   );
   await t.refused(
-    t.call(secretaria, 'CategoryService', 'save', {
-      seasonId: 2,
-      name: 'Sub-14',
-      minAge: 12,
-      maxAge: 14,
-      maxCapacity: null,
-    }),
+    () =>
+      t.call(secretaria, 'CategoryService', 'save', {
+        seasonId: 2,
+        name: 'Sub-14',
+        minAge: 12,
+        maxAge: 14,
+        maxCapacity: null,
+      }),
     400,
+    /^Ya existe una categoría con ese nombre en la temporada\.$/,
   );
   await t.refused(
-    t.call(secretaria, 'CategoryService', 'save', {
-      seasonId: 2,
-      name: 'Al revés',
-      minAge: 14,
-      maxAge: 12,
-      maxCapacity: null,
-    }),
+    () =>
+      t.call(secretaria, 'CategoryService', 'save', {
+        seasonId: 2,
+        name: 'Al revés',
+        minAge: 14,
+        maxAge: 12,
+        maxCapacity: null,
+      }),
     400,
     /edad/i,
   );
@@ -384,14 +413,16 @@ test('HU-016: training schedules — day, times and venue; end after start; seve
   );
   assert.deepEqual({ ...row }, { hora_inicio: '16:00:00', hora_fin: '17:00:00' });
   await t.refused(
-    t.call(secretaria, 'ScheduleService', 'save', {
-      categoryId: 3,
-      venueId: 1,
-      weekday: 2,
-      startTime: '18:00',
-      endTime: '17:00',
-    }),
+    () =>
+      t.call(secretaria, 'ScheduleService', 'save', {
+        categoryId: 3,
+        venueId: 1,
+        weekday: 2,
+        startTime: '18:00',
+        endTime: '17:00',
+      }),
     400,
+    /^La hora de fin debe ser posterior a la de inicio\.$/,
   );
   await t.ok(t.call(secretaria, 'ScheduleService', 'setActive', s.id, false));
   assert.equal(
@@ -411,13 +442,15 @@ test('HU-017/021: category membership — active only, age rule with authorized 
   );
   assert.equal(elig.ageOk, false, '2) age validated against the category');
   await t.refused(
-    t.call(secretaria, 'PlayerCategoryService', 'assign', {
-      playerId: newbie.id,
-      categoryId: 1,
-      date: '2026-10-13',
-      exceptionReason: null,
-    }),
+    () =>
+      t.call(secretaria, 'PlayerCategoryService', 'assign', {
+        playerId: newbie.id,
+        categoryId: 1,
+        date: '2026-10-13',
+        exceptionReason: null,
+      }),
     400,
+    /^La edad \(7\) está fuera del rango 8–10; registra una excepción autorizada\.$/,
   );
   await t.ok(
     t.call(secretaria, 'PlayerCategoryService', 'assign', {
@@ -433,14 +466,15 @@ test('HU-017/021: category membership — active only, age rule with authorized 
   );
   assert.deepEqual({ ...m }, { fecha_inicio: '2026-10-13', fecha_fin: null }, '4) start date');
   await t.refused(
-    t.call(secretaria, 'PlayerCategoryService', 'assign', {
-      playerId: newbie.id,
-      categoryId: 3,
-      date: '2026-10-14',
-      exceptionReason: null,
-    }),
+    () =>
+      t.call(secretaria, 'PlayerCategoryService', 'assign', {
+        playerId: newbie.id,
+        categoryId: 3,
+        date: '2026-10-14',
+        exceptionReason: null,
+      }),
     400,
-    undefined,
+    /^Gol Ramírez ya tiene una categoría vigente; usa «Cambiar de categoría»\.$/,
   );
   // HU-021: Sub-12 holds 2 and has 2 → warns (full) and only an authorized exception lets someone in.
   const full = await t.ok<{ full: boolean; occupancy: number; capacity: number }>(
@@ -528,16 +562,18 @@ test('HU-020: annual enrollment — season, date, amount, status, linked charge,
     '2) linked charge',
   );
   await t.refused(
-    t.call(secretaria, 'EnrollmentService', 'enroll', {
-      playerId: kid.id,
-      seasonId: 2,
-      enrolledOn: '2026-10-13',
-      amountCents: 0,
-      status: 'PENDIENTE',
-      conceptId: null,
-      dueDate: null,
-    }),
+    () =>
+      t.call(secretaria, 'EnrollmentService', 'enroll', {
+        playerId: kid.id,
+        seasonId: 2,
+        enrolledOn: '2026-10-13',
+        amountCents: 0,
+        status: 'PENDIENTE',
+        conceptId: null,
+        dueDate: null,
+      }),
     400,
+    /^El jugador ya está inscrito en esta temporada\.$/,
   );
   assert.equal(
     await t.count('SELECT COUNT(*) AS n FROM jugador_categoria WHERE jugador_id = ?', [kid.id]),
@@ -559,14 +595,16 @@ test('HU-022/023: coaches — contact, status, account, duplicates; several per 
   const [row] = await t.db.query('SELECT email, activo FROM entrenadores WHERE id = ?', [c.id]);
   assert.deepEqual({ ...row }, { email: 'ivan@example.com', activo: 1 });
   await t.refused(
-    t.call(secretaria, 'CoachService', 'save', {
-      firstName: 'Iván',
-      lastName1: 'Soto',
-      lastName2: null,
-      phone: null,
-      email: 'ivan@example.com',
-    }),
+    () =>
+      t.call(secretaria, 'CoachService', 'save', {
+        firstName: 'Iván',
+        lastName1: 'Soto',
+        lastName2: null,
+        phone: null,
+        email: 'ivan@example.com',
+      }),
     400,
+    /^Posible duplicado de Iván Soto\.$/,
   );
   await t.ok(t.call(secretaria, 'CoachService', 'linkAccount', c.id, 'ivan@example.com'));
   assert.equal(
@@ -592,12 +630,13 @@ test('HU-022/023: coaches — contact, status, account, duplicates; several per 
     'HU-023.1',
   );
   await t.refused(
-    t.call(secretaria, 'CoachService', 'assignCategory', {
-      coachId: c.id,
-      categoryId: 1,
-      responsibility: null,
-      startDate: '2026-10-14',
-    }),
+    () =>
+      t.call(secretaria, 'CoachService', 'assignCategory', {
+        coachId: c.id,
+        categoryId: 1,
+        responsibility: null,
+        startDate: '2026-10-14',
+      }),
     400,
     /ya está asignado/,
   );
@@ -621,20 +660,30 @@ test('HU-024/025/027: coach views — own categories, players, weekly schedule, 
   );
   assert.ok(cats.length >= 1);
   await t.ok(t.call(coach, 'CategoryService', 'members', 1));
-  await t.refused(t.call(coach, 'CategoryService', 'members', 2), 403, undefined);
+  await t.refused(
+    () => t.call(coach, 'CategoryService', 'members', 2),
+    403,
+    /^No tienes acceso a esta categoría\.$/,
+  );
   const week = await t.ok<unknown[]>(t.call(coach, 'CoachPanelService', 'weeklySchedule'));
   assert.ok(Array.isArray(week) && week.length >= 1, 'HU-025 weekly schedule');
   await t.ok(t.call(coach, 'CoachPanelService', 'myCompetitions'));
-  await t.refused(t.call(coach, 'PlayerService', 'update', 1, player('X')), 403);
   await t.refused(
-    t.call(coach, 'CategoryService', 'save', {
-      seasonId: 2,
-      name: 'X',
-      minAge: 1,
-      maxAge: 2,
-      maxCapacity: null,
-    }),
+    () => t.call(coach, 'PlayerService', 'update', 1, player('X')),
     403,
+    /^No tienes permiso para esta operación\.$/,
+  );
+  await t.refused(
+    () =>
+      t.call(coach, 'CategoryService', 'save', {
+        seasonId: 2,
+        name: 'X',
+        minAge: 1,
+        maxAge: 2,
+        maxCapacity: null,
+      }),
+    403,
+    /^No tienes permiso para esta operación\.$/,
   );
 });
 
@@ -644,12 +693,14 @@ test('HU-026: coach ↔ competition/category — current assignment required, se
   );
   assert.ok(cc, 'seed has a participation of Sub-10');
   await t.refused(
-    t.call(admin, 'CoachService', 'assignCompetition', {
-      coachId: 2,
-      competitionCategoryId: cc.id,
-      startDate: '2026-10-13',
-    }),
+    () =>
+      t.call(admin, 'CoachService', 'assignCompetition', {
+        coachId: 2,
+        competitionCategoryId: cc.id,
+        startDate: '2026-10-13',
+      }),
     400,
+    /^Marta Díaz no tiene asignación vigente a Sub-10 \(HU-023\)\.$/,
   );
   const existing = await t.count(
     'SELECT COUNT(*) AS n FROM entrenador_competencia_categoria WHERE competencia_categoria_id = ? AND activo',
@@ -670,12 +721,14 @@ test('HU-026: coach ↔ competition/category — current assignment required, se
     existing + 1,
   );
   await t.refused(
-    t.call(admin, 'CoachService', 'assignCompetition', {
-      coachId: 3,
-      competitionCategoryId: cc.id,
-      startDate: '2026-10-13',
-    }),
+    () =>
+      t.call(admin, 'CoachService', 'assignCompetition', {
+        coachId: 3,
+        competitionCategoryId: cc.id,
+        startDate: '2026-10-13',
+      }),
     400,
+    /^Esa asignación ya existe\.$/,
   );
 });
 
@@ -698,12 +751,14 @@ test('HU-069: venues — create, edit, deactivate instead of delete, reused by s
   const [row] = await t.db.query('SELECT ubicacion, referencia FROM sedes WHERE id = ?', [v.id]);
   assert.deepEqual({ ...row }, { ubicacion: 'Av. Sur 12', referencia: 'Junto al parque' });
   await t.refused(
-    t.call(secretaria, 'VenueService', 'save', {
-      name: 'Cancha Sur',
-      location: null,
-      reference: null,
-    }),
+    () =>
+      t.call(secretaria, 'VenueService', 'save', {
+        name: 'Cancha Sur',
+        location: null,
+        reference: null,
+      }),
     400,
+    /^Ya existe una sede con ese nombre\.$/,
   );
   await t.ok(t.call(secretaria, 'VenueService', 'setActive', 1, false));
   assert.equal(
@@ -729,14 +784,16 @@ test('HU-070: seasons — name and dates, one current (must be active), history 
     }),
   );
   await t.refused(
-    t.call(secretaria, 'SeasonService', 'save', {
-      name: 'Mala',
-      startDate: '2028-08-01',
-      endDate: '2027-06-30',
-      active: true,
-      isCurrent: false,
-    }),
+    () =>
+      t.call(secretaria, 'SeasonService', 'save', {
+        name: 'Mala',
+        startDate: '2028-08-01',
+        endDate: '2027-06-30',
+        active: true,
+        isCurrent: false,
+      }),
     400,
+    /^La fecha de fin no puede ser anterior al inicio\.$/,
   );
   await t.ok(
     t.call(secretaria, 'SeasonService', 'save', {
@@ -755,15 +812,17 @@ test('HU-070: seasons — name and dates, one current (must be active), history 
     '2) exactly one current season',
   );
   await t.refused(
-    t.call(secretaria, 'SeasonService', 'save', {
-      id: s.id,
-      name: 'Temporada 2027-2028',
-      startDate: '2027-08-01',
-      endDate: '2028-06-30',
-      active: false,
-      isCurrent: true,
-    }),
+    () =>
+      t.call(secretaria, 'SeasonService', 'save', {
+        id: s.id,
+        name: 'Temporada 2027-2028',
+        startDate: '2027-08-01',
+        endDate: '2028-06-30',
+        active: false,
+        isCurrent: true,
+      }),
     400,
+    /^La temporada actual debe estar activa\.$/,
   );
   const list = await t.ok<{ id: number; categories: number }[]>(
     t.call(secretaria, 'SeasonService', 'list'),

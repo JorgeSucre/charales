@@ -109,17 +109,6 @@ before(async () => {
 });
 after(() => t?.close());
 
-/** Checksum of every table but `sesiones` (each request renews its last use). */
-async function snapshot(): Promise<string> {
-  const tables: { t: string }[] = await t.db.query(
-    "SELECT TABLE_NAME AS t FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME <> 'sesiones' AND TABLE_TYPE = 'BASE TABLE' ORDER BY 1",
-  );
-  const rows: { Checksum: number }[] = await t.db.query(
-    `CHECKSUM TABLE ${tables.map((r) => `\`${r.t}\``).join(', ')}`,
-  );
-  return JSON.stringify(rows.map((r) => r.Checksum));
-}
-
 const newPlayer = (n: string) => ({
   firstName: `Validación${n}`,
   lastName1: 'Entrada',
@@ -342,10 +331,9 @@ for (const [kind, cases, bad] of [
   for (const c of cases)
     test(`T2 ${kind}: ${c.op} ${c.message.source.replace(/[\\^$]/g, '')} — 400 for each invalid value, nothing written`, async () => {
       const [service, method] = svc(c.op);
-      const before = await snapshot();
+      // t.refused also checks that nothing was written (T3).
       for (const value of bad(c.valid))
-        await t.refused(t.call(admin, service, method, ...c.args(value)), 400, c.message);
-      assert.equal(await snapshot(), before, 'a rejected value writes nothing');
+        await t.refused(() => t.call(admin, service, method, ...c.args(value)), 400, c.message);
     });
 
 /** HU-010 (PR #12) validates the same way; its own tests are in api/hu-fase2.test.ts. */
@@ -366,18 +354,18 @@ test('T2: the permission is checked before the value — all 25 operations answe
   ]);
   const cases = [...CATALOG, CHANGE_STATUS, ...BOOLEANS];
   assert.equal(new Set(cases.map((c) => c.op)).size, 25, 'the 25 operations of T1/T2');
-  const before = await snapshot();
-  for (const c of cases) {
-    const [service, method] = svc(c.op);
-    const invalid = BOOLEANS.includes(c) ? 'false' : 'XX';
-    for (const who of officeOnlyAdmin.has(c.op) ? [tutor, secretaria] : [tutor]) {
-      const res = await t.call(who, service, method, ...c.args(invalid));
-      const body = await res.json();
-      assert.equal(res.status, 403, `${c.op}: ${JSON.stringify(body)}`);
-      assert.doesNotMatch(body.error, c.message, `${c.op}: the value was not looked at`);
+  await t.unchanged(async () => {
+    for (const c of cases) {
+      const [service, method] = svc(c.op);
+      const invalid = BOOLEANS.includes(c) ? 'false' : 'XX';
+      for (const who of officeOnlyAdmin.has(c.op) ? [tutor, secretaria] : [tutor]) {
+        const res = await t.call(who, service, method, ...c.args(invalid));
+        const body = await res.json();
+        assert.equal(res.status, 403, `${c.op}: ${JSON.stringify(body)}`);
+        assert.doesNotMatch(body.error, c.message, `${c.op}: the value was not looked at`);
+      }
     }
-  }
-  assert.equal(await snapshot(), before, 'a refused operation writes nothing');
+  });
 });
 
 test('T2 catalog values: enroll stores the status it was given (PENDIENTE and ACTIVA)', async () => {
@@ -441,15 +429,16 @@ test('T2 catalog values: the valid ones keep working and are stored as sent', as
     t.call(admin, 'PlayerService', 'create', newPlayer('D')),
   );
   await t.refused(
-    t.call(admin, 'EnrollmentService', 'enroll', {
-      playerId: other.id,
-      seasonId: ids['season'],
-      enrolledOn: '2026-10-01',
-      amountCents: 0,
-      status: 'CANCELADA',
-      conceptId: null,
-      dueDate: null,
-    }),
+    () =>
+      t.call(admin, 'EnrollmentService', 'enroll', {
+        playerId: other.id,
+        seasonId: ids['season'],
+        enrolledOn: '2026-10-01',
+        amountCents: 0,
+        status: 'CANCELADA',
+        conceptId: null,
+        dueDate: null,
+      }),
     400,
     /^Estatus inválido\.$/,
   );
@@ -631,15 +620,13 @@ test('HU-035.4: register — status optional (omitted → INSCRITA, also re-regi
   const status = async (id: number) =>
     (await one('SELECT estatus FROM competencia_categoria WHERE id = ?', [id]))['estatus'];
 
-  // null or an array is not "omitted": 400, nothing written.
-  const before = await snapshot();
+  // null or an array is not "omitted": 400, nothing written (t.refused checks both).
   for (const bad of [null, ['INSCRITA']])
     await t.refused(
-      t.call(admin, 'CompetitionService', 'register', draft({ status: bad })),
+      () => t.call(admin, 'CompetitionService', 'register', draft({ status: bad })),
       400,
       /^Estatus inválido\.$/,
     );
-  assert.equal(await snapshot(), before);
 
   const created = await t.ok<{ id: number; status: string }>(
     t.call(admin, 'CompetitionService', 'register', draft({})),

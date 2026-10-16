@@ -10,7 +10,7 @@ import type { Pool } from 'mariadb';
 import { createApp } from './server.ts';
 import { grantsOf } from './demo.ts';
 import { applyChanges, cachedTables, columns, domain, loadTables, unitOfWork } from './rpc.ts';
-import { TEST_NOW, openTestDb, type TestDb } from './test-db.ts';
+import { TEST_NOW, TYPE_ERROR, openTestDb, type TestDb } from './test-db.ts';
 
 let t: TestDb;
 let db: Pool;
@@ -77,6 +77,31 @@ test('rpc: 401 without session, 404 outside the allowlist, 400 malformed', async
   const missing = await call(admin, 'AttendanceService', 'record', 1);
   assert.equal(missing.status, 400);
   assert.deepEqual(await missing.json(), { error: 'Datos de la solicitud inválidos.' });
+});
+
+test('T3 harness: refused() never takes a TypeError for a rejection, needs a message for a 400, and catches writes', async () => {
+  const admin = await login('admin@example.com');
+  // AttendanceService.record without its list: the service throws a TypeError → the generic 400 of api/rpc.ts.
+  const typeError = () => call(admin, 'AttendanceService', 'record', 1);
+  await assert.rejects(t.refused(typeError, 400, /^Estatus inválido\.$/), /TypeError/);
+  await assert.rejects(
+    t.refused(typeError, 400, /inválid/),
+    /TypeError/,
+    'a loose pattern is not enough',
+  );
+  await t.refused(typeError, 400, TYPE_ERROR); // only an explicit expectation accepts it
+  // A business rejection: its own message is checked; a 400 without one doesn't pass.
+  const unnamed = () => call(admin, 'PlayerService', 'create', newPlayer(''));
+  await t.refused(unnamed, 400, /^El nombre es obligatorio\.$/);
+  // (The types already refuse `refused(send, 400)`; this checks the runtime guard behind them.)
+  const untyped = t.refused as (send: () => Promise<Response>, status: number) => Promise<void>;
+  await assert.rejects(untyped(unnamed, 400), /message/);
+  // A wrong status fails, and an operation that writes is caught by unchanged().
+  await assert.rejects(t.refused(unnamed, 403), /400/);
+  await assert.rejects(
+    t.unchanged(() => ok(call(admin, 'PlayerService', 'create', newPlayer('Escritura')))),
+    /wrote to the database/,
+  );
 });
 
 test('HU-008: a player created through the API is stored in MariaDB with its audit row', async () => {

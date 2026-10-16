@@ -46,7 +46,7 @@ test('HU-021.3: a full category only takes a player with an authorized exception
   );
   const draft = { playerId: kid.id, categoryId: 2, date: '2026-10-13' };
   await t.refused(
-    t.call(admin, 'PlayerCategoryService', 'assign', { ...draft, exceptionReason: null }),
+    () => t.call(admin, 'PlayerCategoryService', 'assign', { ...draft, exceptionReason: null }),
     400,
     /cupo|lleno|excep/i,
   );

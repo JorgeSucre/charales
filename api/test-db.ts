@@ -26,8 +26,24 @@ export interface TestDb {
     ...args: unknown[]
   ): Promise<Response>;
   ok<T = unknown>(res: Promise<Response>): Promise<T>;
-  /** 4xx with the message of the API. */
-  refused(res: Promise<Response>, status: number, message?: RegExp): Promise<void>;
+  /**
+   * A rejected operation (T3): `status` with the operation's own error, and nothing written (see `unchanged`).
+   * `send` is a function so the tables are read before the request goes out. A 400 must name its reason — `message`
+   * is required — and the bridge's generic answer to a TypeError ({@link TYPE_ERROR_MESSAGE}: the service hit a
+   * programming error with those arguments, api/rpc.ts) never passes as a rejection unless `message` is exactly
+   * {@link TYPE_ERROR} (a loose pattern such as /inválid/ is not enough).
+   */
+  refused(send: () => Promise<Response>, status: 400, message: RegExp): Promise<void>;
+  refused(
+    send: () => Promise<Response>,
+    status: 401 | 403 | 404 | 409 | 413 | 503,
+    message?: RegExp,
+  ): Promise<void>;
+  /**
+   * Runs `action` and checks that no table changed (CHECKSUM TABLE: row order doesn't matter, NULL ≠ ''), except
+   * `except` — by default `sesiones`, whose last use every request renews. Returns what `action` returned.
+   */
+  unchanged<T>(action: () => Promise<T>, except?: readonly string[]): Promise<T>;
   count(sql: string, params?: unknown[]): Promise<number>;
   /** Moves the fixed clock forward (Node and MariaDB stay in step). */
   advance(ms: number): Promise<void>;
@@ -40,6 +56,12 @@ export interface TestDb {
  * instant (`SET timestamp`), so NOW()/CURDATE() agree with the services. 12:00 at the school (America/Mexico_City, UTC−6).
  */
 export const TEST_NOW = new Date('2026-10-13T18:00:00Z');
+/** What api/rpc.ts answers (400) when a service throws a TypeError on the arguments it got. */
+export const TYPE_ERROR_MESSAGE = 'Datos de la solicitud inválidos.';
+/** The only `message` that lets `refused` accept {@link TYPE_ERROR_MESSAGE}: a test that wants that answer says so. */
+export const TYPE_ERROR = /^Datos de la solicitud inválidos\.$/;
+/** Written by every authenticated request (last use of the session), so never part of «nothing written». */
+const VOLATILE = ['sesiones'] as const;
 const wallClock = (d: Date) => d.toLocaleString('sv-SE', { timeZone: 'America/Mexico_City' });
 
 export async function openTestDb(
@@ -73,6 +95,24 @@ export async function openTestDb(
       headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
       body: JSON.stringify({ service, method, args }),
     });
+  /** Checksum of every table of the test database but `except`, by name. */
+  const checksums = async (except: readonly string[]) => {
+    const tables: { t: string }[] = await db.query(
+      `SELECT TABLE_NAME AS t FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME`,
+    );
+    const names = tables.map((r) => r.t).filter((n) => !except.includes(n));
+    const rows: { Table: string; Checksum: number }[] = await db.query(
+      `CHECKSUM TABLE ${names.map((n) => `\`${n}\``).join(', ')}`,
+    );
+    return Object.fromEntries(rows.map((r) => [r.Table.split('.').pop(), r.Checksum]));
+  };
+  const unchanged: TestDb['unchanged'] = async (action, except = VOLATILE) => {
+    const before = await checksums(except);
+    const result = await action();
+    assert.deepEqual(await checksums(except), before, 'the operation wrote to the database');
+    return result;
+  };
   return {
     name,
     db,
@@ -94,11 +134,23 @@ export async function openTestDb(
       assert.equal(r.status, 200, JSON.stringify(body));
       return body.result as T;
     },
-    async refused(res, status, message) {
-      const r = await res;
-      const body = await r.json();
-      assert.equal(r.status, status, JSON.stringify(body));
-      if (message) assert.match(body.error, message);
+    unchanged,
+    async refused(send: () => Promise<Response>, status: number, message?: RegExp) {
+      const body = await unchanged(async () => {
+        const r = await send();
+        const json = await r.json();
+        assert.equal(r.status, status, JSON.stringify(json));
+        return json as { error?: unknown };
+      });
+      assert.equal(typeof body.error, 'string', `an error message: ${JSON.stringify(body)}`);
+      const error = body.error as string;
+      if (error === TYPE_ERROR_MESSAGE && message !== TYPE_ERROR)
+        assert.fail(
+          `${status} «${error}» is the API's answer to a TypeError in the service (a programming error, logged ` +
+            'by api/rpc.ts as «rpc Service.method: …»), not the rejection this test expects.',
+        );
+      if (status === 400) assert.ok(message, 'a 400 must say which rejection it expects (message)');
+      if (message) assert.match(error, message);
     },
     async count(sql, params = []) {
       return Number((await db.query(sql, params))[0].n);
