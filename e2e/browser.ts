@@ -21,6 +21,8 @@ export interface Page {
   errors(): string[];
   /** How to answer the next confirm() dialogs (accept or dismiss); returns the messages seen so far. */
   dialogs(accept: boolean): string[];
+  /** Opt-in: the headless page behaves as focused (document.hasFocus(), :focus-visible). Off by default. */
+  focusEmulation(enabled?: boolean): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -170,6 +172,9 @@ export async function openBrowser(): Promise<Page> {
     dialogs(accept) {
       acceptDialogs = accept;
       return dialogMessages.splice(0);
+    },
+    async focusEmulation(enabled = true) {
+      await send('Emulation.setFocusEmulationEnabled', { enabled });
     },
     async close() {
       ws.close();
