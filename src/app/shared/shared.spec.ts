@@ -9,6 +9,7 @@ import {
   today,
   weekday,
 } from './dates';
+import { focusFirstInvalid } from './focus';
 import { parseMoney, sumCents, toDecimal } from './money';
 import { matches, paginate } from './page';
 import { centsFromInput } from './ui';
@@ -112,5 +113,51 @@ describe('search, pagination and validation helpers', () => {
     expect(flag(false, 'x')).toBe(false);
     for (const bad of ['false', 'true', '', 0, 1, null, undefined, [], {}])
       expect(() => flag(bad, 'Valor inválido.')).toThrow('Valor inválido.');
+  });
+});
+
+describe('focusFirstInvalid (after a rejected submit)', () => {
+  let form: HTMLFormElement;
+  const field = (name: string) => form.querySelector<HTMLElement>(`[name=${name}]`)!;
+  function render(html: string): void {
+    form = document.createElement('form');
+    form.innerHTML = html;
+    document.body.append(form);
+  }
+  afterEach(() => form.remove());
+
+  it('focuses the first invalid field in document order and returns it', () => {
+    render(`<input name="ok" class="ng-valid" />
+      <select name="a" class="ng-invalid"></select>
+      <input name="b" class="ng-invalid" />`);
+    expect(focusFirstInvalid(form)).toBe(field('a'));
+    expect(document.activeElement).toBe(field('a'));
+  });
+
+  it('a valid form leaves the focus where it is', () => {
+    render(`<input name="a" class="ng-valid" />`);
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    outside.focus();
+    expect(focusFirstInvalid(form)).toBeNull();
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+
+  it('skips disabled, hidden, undisplayed and inert fields', () => {
+    render(`<input name="disabled" class="ng-invalid" disabled />
+      <fieldset disabled><input name="inDisabledSet" class="ng-invalid" /></fieldset>
+      <input name="typeHidden" type="hidden" class="ng-invalid" />
+      <div hidden><input name="inHidden" class="ng-invalid" /></div>
+      <div style="display: none"><input name="undisplayed" class="ng-invalid" /></div>
+      <input name="invisible" style="visibility: hidden" class="ng-invalid" />
+      <div inert><input name="inert" class="ng-invalid" /></div>
+      <textarea name="target" class="ng-invalid"></textarea>`);
+    expect(focusFirstInvalid(form)).toBe(field('target'));
+  });
+
+  it('nothing focusable: returns null', () => {
+    render(`<div hidden><input name="a" class="ng-invalid" /></div>`);
+    expect(focusFirstInvalid(form)).toBeNull();
   });
 });

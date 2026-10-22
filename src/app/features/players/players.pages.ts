@@ -1,5 +1,6 @@
 import {
   Component,
+  ElementRef,
   computed,
   effect,
   inject,
@@ -7,6 +8,7 @@ import {
   numberAttribute,
   resource,
   signal,
+  viewChild,
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import {
@@ -28,12 +30,23 @@ import {
 } from '../../core/services/player.service';
 import { ageOn, today } from '../../shared/dates';
 import { FieldError } from '../../shared/field-error';
+import { focusFirstInvalid } from '../../shared/focus';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
 import { Submission } from '../../shared/submission';
+import {
+  CHARGE_TONE,
+  ENROLLMENT_TONE,
+  ORDER_TONE,
+  PAYMENT_TONE,
+  PLAYER_TONE,
+  toneOf,
+} from '../../shared/status-tone';
 import { Paginator, SubmissionAlert, idOrNull } from '../../shared/ui';
 import { PHONE_PATTERN } from '../../shared/validate';
 import { CHARGE_STATUS_LABELS } from '../billing/billing.service';
+import { ENROLLMENT_LABELS } from '../enrollments/enrollment.service';
+import { ORDER_STATUS_LABELS } from '../uniforms/uniform.service';
 import { PlayerCategoryService } from '../enrollments/player-category.service';
 
 const STATUSES = Object.entries(STATUS_LABELS) as [PlayerStatus, string][];
@@ -78,8 +91,12 @@ const STATUSES = Object.entries(STATUS_LABELS) as [PlayerStatus, string][];
     </div>
     <app-load-state [res]="result" emptyText="Sin resultados."
       ><ng-template>
+        <p class="muted">Resultados: {{ result.value()?.total }}</p>
         <div class="table-wrap">
           <table>
+            <caption class="sr-only">
+              Jugadores encontrados: identificador, nombre, edad, categoría y estatus
+            </caption>
             <thead>
               <tr>
                 <th>Identificador</th>
@@ -99,7 +116,7 @@ const STATUSES = Object.entries(STATUS_LABELS) as [PlayerStatus, string][];
                   <td class="num">{{ r.age }}</td>
                   <td>{{ r.categoryName ?? '—' }}</td>
                   <td>
-                    <span class="tag" [class.off]="r.player.status !== 'ACTIVO'">{{
+                    <span class="tag {{ playerTone[r.player.status] }}">{{
                       labels[r.player.status]
                     }}</span>
                   </td>
@@ -118,6 +135,7 @@ export class PlayersPage {
   private categoryService = inject(CategoryService);
   protected idOrNull = idOrNull;
   protected labels = STATUS_LABELS;
+  protected playerTone = PLAYER_TONE;
   protected statuses = STATUSES;
   protected categories = resource({ loader: () => this.categoryService.list() });
   protected query = signal('');
@@ -142,42 +160,48 @@ export class PlayersPage {
   template: `
     <a [routerLink]="id() ? ['/admin/players', id()] : '/admin/players'">← Volver</a>
     <h1>{{ id() ? 'Editar jugador' : 'Registrar jugador' }}</h1>
-    <form [formGroup]="form" (ngSubmit)="submit()" novalidate class="grid-form">
-      <label>Nombre(s) <input formControlName="firstName" autocomplete="off" /></label>
-      <app-field-error [control]="form.controls.firstName" />
-      <div class="two-col">
-        <label>Apellido paterno <input formControlName="lastName1" autocomplete="off" /></label>
-        <label>Apellido materno <input formControlName="lastName2" autocomplete="off" /></label>
-      </div>
-      <app-field-error [control]="form.controls.lastName1" />
-      <div class="two-col">
-        <label
-          >Fecha de nacimiento <input type="date" formControlName="birthDate" [max]="maxDate"
-        /></label>
-        <label
-          >Sexo (opcional)
-          <select formControlName="sex">
-            @for (s of sexes; track s[0]) {
-              <option [value]="s[0]">{{ s[1] }}</option>
-            }
-          </select>
-        </label>
-      </div>
-      <app-field-error [control]="form.controls.birthDate" />
-      @if (age() !== null) {
-        <p class="muted">Edad: {{ age() }} años</p>
-      }
-      <div class="two-col">
-        <label
-          >Teléfono del jugador <input type="tel" formControlName="phone" autocomplete="off"
-        /></label>
-        <label
-          >Correo del jugador <input type="email" formControlName="email" autocomplete="off"
-        /></label>
-      </div>
-      <app-field-error [control]="form.controls.phone" />
-      <app-field-error [control]="form.controls.email" />
-      <label>Dirección <input formControlName="address" autocomplete="off" /></label>
+    <form #formEl [formGroup]="form" (ngSubmit)="submit()" novalidate class="grid-form">
+      <fieldset class="stack">
+        <legend>Datos personales</legend>
+        <label>Nombre(s) <input formControlName="firstName" autocomplete="off" /></label>
+        <app-field-error [control]="form.controls.firstName" />
+        <div class="two-col">
+          <label>Apellido paterno <input formControlName="lastName1" autocomplete="off" /></label>
+          <label>Apellido materno <input formControlName="lastName2" autocomplete="off" /></label>
+        </div>
+        <app-field-error [control]="form.controls.lastName1" />
+        <div class="two-col">
+          <label
+            >Fecha de nacimiento <input type="date" formControlName="birthDate" [max]="maxDate"
+          /></label>
+          <label
+            >Sexo (opcional)
+            <select formControlName="sex">
+              @for (s of sexes; track s[0]) {
+                <option [value]="s[0]">{{ s[1] }}</option>
+              }
+            </select>
+          </label>
+        </div>
+        <app-field-error [control]="form.controls.birthDate" />
+        @if (age() !== null) {
+          <p class="muted">Edad: {{ age() }} años</p>
+        }
+      </fieldset>
+      <fieldset class="stack">
+        <legend>Contacto del jugador</legend>
+        <div class="two-col">
+          <label
+            >Teléfono del jugador <input type="tel" formControlName="phone" autocomplete="off"
+          /></label>
+          <label
+            >Correo del jugador <input type="email" formControlName="email" autocomplete="off"
+          /></label>
+        </div>
+        <app-field-error [control]="form.controls.phone" />
+        <app-field-error [control]="form.controls.email" />
+        <label>Dirección <input formControlName="address" autocomplete="off" /></label>
+      </fieldset>
       @if (!id()) {
         <label
           >Estatus inicial
@@ -197,6 +221,7 @@ export class PlayersPage {
   `,
 })
 export class PlayerFormPage {
+  private formEl = viewChild.required<ElementRef<HTMLFormElement>>('formEl');
   readonly id = input<Id | undefined, unknown>(undefined, {
     transform: (v) => (v == null ? undefined : numberAttribute(v)),
   });
@@ -244,7 +269,11 @@ export class PlayerFormPage {
   }
 
   async submit(): Promise<void> {
-    if (this.form.invalid) return this.form.markAllAsTouched();
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      focusFirstInvalid(this.formEl().nativeElement);
+      return;
+    }
     const draft: PlayerDraft = { ...this.form.getRawValue() };
     const status = this.initialStatus.value;
     const id = this.id();
@@ -284,7 +313,7 @@ type Tab = 'datos' | 'tutores' | 'categorias' | 'pagos' | 'uniformes' | 'compete
         @if (record.value(); as r) {
           <div class="page-head">
             <h1>
-              {{ r.name }} <span class="muted">{{ r.player.identifier }}</span>
+              {{ r.name }} <span class="muted nowrap">{{ r.player.identifier }}</span>
             </h1>
             @if (auth.can('jugadores.editar')) {
               <a class="button secondary" [routerLink]="['/admin/players', r.player.id, 'edit']"
@@ -292,28 +321,48 @@ type Tab = 'datos' | 'tutores' | 'categorias' | 'pagos' | 'uniformes' | 'compete
               >
             }
           </div>
-          <p>
-            <span class="tag" [class.off]="r.player.status !== 'ACTIVO'">{{
-              statusLabels[r.player.status]
-            }}</span>
-            · {{ r.age }} años · Categoría:
-            <strong>{{
-              r.categories[0] && !r.categories[0].endDate
-                ? r.categories[0].categoryName
-                : 'sin categoría'
-            }}</strong>
-            · Saldo: <strong>{{ r.balanceCents | money }}</strong>
-            @if (r.overdueCents) {
-              <span class="tag off">Vencido {{ r.overdueCents | money }}</span>
-            }
-          </p>
+          <dl class="summary">
+            <div>
+              <dt>Estatus</dt>
+              <dd>
+                <span class="tag {{ playerTone[r.player.status] }}">{{
+                  statusLabels[r.player.status]
+                }}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Edad</dt>
+              <dd>{{ r.age }} años</dd>
+            </div>
+            <div>
+              <dt>Categoría</dt>
+              <dd>
+                {{
+                  r.categories[0] && !r.categories[0].endDate
+                    ? r.categories[0].categoryName
+                    : 'Sin categoría'
+                }}
+              </dd>
+            </div>
+            <div>
+              <dt>Saldo</dt>
+              <dd>
+                {{ r.balanceCents | money }}
+                @if (r.overdueCents) {
+                  <span class="tag danger">Vencido {{ r.overdueCents | money }}</span>
+                }
+              </dd>
+            </div>
+          </dl>
           <app-submission-alert [submission]="submission" />
 
-          <div class="tabs" role="tablist">
+          <div class="tabs" role="tablist" aria-label="Secciones del expediente">
             @for (t of tabs; track t[0]) {
               <button
                 type="button"
                 role="tab"
+                [id]="'tab-' + t[0]"
+                aria-controls="record-panel"
                 [attr.aria-selected]="tab() === t[0]"
                 [class.active]="tab() === t[0]"
                 (click)="tab.set(t[0])"
@@ -323,276 +372,286 @@ type Tab = 'datos' | 'tutores' | 'categorias' | 'pagos' | 'uniformes' | 'compete
             }
           </div>
 
-          @switch (tab()) {
-            @case ('datos') {
-              <dl class="facts">
-                <dt>Fecha de nacimiento</dt>
-                <dd>{{ r.player.birthDate }}</dd>
-                <dt>Sexo</dt>
-                <dd>{{ sexLabels[r.player.sex] }}</dd>
-                <dt>Teléfono</dt>
-                <dd>{{ r.player.phone ?? '—' }}</dd>
-                <dt>Correo</dt>
-                <dd>{{ r.player.email ?? '—' }}</dd>
-                <dt>Dirección</dt>
-                <dd>{{ r.player.address ?? '—' }}</dd>
-                <dt>Alta</dt>
-                <dd>{{ r.player.createdAt | date: 'd MMM y' }}</dd>
-                <dt>Última modificación</dt>
-                <dd>{{ r.player.updatedAt | date: 'd MMM y, HH:mm' }}</dd>
-                <dt>Asistencia</dt>
-                <dd>
-                  {{ r.attendance.present }} presentes · {{ r.attendance.absent }} ausencias ·
-                  {{ r.attendance.justified }} justificadas
-                </dd>
-              </dl>
-              <h2>Inscripción administrativa</h2>
-              <ul>
-                @for (e of r.enrollments; track e.id) {
-                  <li>
-                    {{ e.seasonName }} — {{ e.status }} desde {{ e.enrolledOn }} ({{
-                      e.amountCents | money
-                    }})
-                  </li>
-                } @empty {
-                  <li class="muted">Sin inscripciones.</li>
-                }
-              </ul>
-            }
-            @case ('tutores') {
-              <ul class="list">
-                @for (t of r.tutors; track t.tutorId) {
-                  <li>
-                    <strong>{{ t.name }}</strong> ({{ t.relationship }})
-                    @if (t.isPrimary) {
-                      <span class="tag">Contacto principal</span>
-                    }
-                    <br /><span class="muted">{{ t.phone ?? '' }} {{ t.email ?? '' }}</span>
-                  </li>
-                } @empty {
-                  <li class="muted">Sin tutores. Regístralos en Tutores.</li>
-                }
-              </ul>
-            }
-            @case ('categorias') {
-              @if (auth.can('inscripciones.crear') && r.player.status === 'ACTIVO') {
-                <form
-                  class="grid-form"
-                  (ngSubmit)="saveCategory(r.categories[0] && !r.categories[0].endDate)"
-                  novalidate
-                >
-                  <h2>
-                    {{
-                      r.categories[0] && !r.categories[0].endDate
-                        ? 'Cambiar de categoría'
-                        : 'Inscribir a categoría'
-                    }}
-                  </h2>
-                  <label
-                    >Categoría
-                    <select
-                      name="cat"
-                      [ngModel]="catId()"
-                      (ngModelChange)="catId.set(idOrNull($event))"
-                    >
-                      <option [ngValue]="null">Selecciona…</option>
-                      @for (c of categories.value() ?? []; track c.id) {
-                        <option [ngValue]="c.id">
-                          {{ c.name }} ({{ c.minAge }}–{{ c.maxAge }} años) · {{ c.occupancy }}/{{
-                            c.maxCapacity ?? '∞'
-                          }}
-                        </option>
-                      }
-                    </select>
-                  </label>
-                  <label
-                    >Fecha de inicio
-                    <input
-                      type="date"
-                      name="date"
-                      [ngModel]="catDate()"
-                      (ngModelChange)="catDate.set($event)"
-                  /></label>
-                  @if (eligibility.value(); as e) {
-                    @if (!e.ageOk) {
-                      <p class="alert error">
-                        Edad {{ e.age }}: fuera del rango de la categoría. Requiere excepción
-                        autorizada.
-                      </p>
-                    }
-                    @if (e.full) {
-                      <p class="alert error">
-                        Cupo lleno ({{ e.occupancy }}/{{ e.capacity }}). Requiere excepción
-                        autorizada.
-                      </p>
-                    } @else if (e.capacity !== null && e.occupancy + 1 >= e.capacity) {
-                      <p class="alert info">
-                        Con este jugador la categoría llega a su cupo ({{ e.occupancy + 1 }}/{{
-                          e.capacity
-                        }}).
-                      </p>
-                    }
+          <div id="record-panel" role="tabpanel" [attr.aria-labelledby]="'tab-' + tab()">
+            @switch (tab()) {
+              @case ('datos') {
+                <dl class="facts">
+                  <dt>Fecha de nacimiento</dt>
+                  <dd>{{ r.player.birthDate }}</dd>
+                  <dt>Sexo</dt>
+                  <dd>{{ sexLabels[r.player.sex] }}</dd>
+                  <dt>Teléfono</dt>
+                  <dd>{{ r.player.phone ?? '—' }}</dd>
+                  <dt>Correo</dt>
+                  <dd>{{ r.player.email ?? '—' }}</dd>
+                  <dt>Dirección</dt>
+                  <dd>{{ r.player.address ?? '—' }}</dd>
+                  <dt>Alta</dt>
+                  <dd>{{ r.player.createdAt | date: 'd MMM y' }}</dd>
+                  <dt>Última modificación</dt>
+                  <dd>{{ r.player.updatedAt | date: 'd MMM y, HH:mm' }}</dd>
+                  <dt>Asistencia</dt>
+                  <dd>
+                    {{ r.attendance.present }} presentes · {{ r.attendance.absent }} ausencias ·
+                    {{ r.attendance.justified }} justificadas
+                  </dd>
+                </dl>
+                <h2>Inscripción administrativa</h2>
+                <ul>
+                  @for (e of r.enrollments; track e.id) {
+                    <li>
+                      {{ e.seasonName }} ·
+                      <span class="tag {{ toneOf(enrollmentTone, e.status) }}">{{
+                        $any(enrollmentLabels)[e.status] ?? e.status
+                      }}</span>
+                      desde {{ e.enrolledOn }} ({{ e.amountCents | money }})
+                    </li>
+                  } @empty {
+                    <li class="muted">Sin inscripciones.</li>
                   }
-                  @if (r.categories[0] && !r.categories[0].endDate) {
-                    <label>Motivo del cambio <input name="reason" [(ngModel)]="catReason" /></label>
-                  }
-                  <label
-                    >Motivo de excepción (sólo si aplica)
-                    <input name="exception" [(ngModel)]="catException"
-                  /></label>
-                  <button type="submit" [disabled]="submission.busy() || !catId()">Guardar</button>
-                </form>
+                </ul>
               }
-              <h2>Historial de categorías</h2>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Categoría</th>
-                      <th>Temporada</th>
-                      <th>Desde</th>
-                      <th>Hasta</th>
-                      <th>Excepción</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (c of r.categories; track c.id) {
-                      <tr>
-                        <td>{{ c.categoryName }}</td>
-                        <td>{{ c.seasonName ?? '—' }}</td>
-                        <td>{{ c.startDate }}</td>
-                        <td>{{ c.endDate ?? 'vigente' }}</td>
-                        <td>{{ c.exceptionReason ?? (c.isAgeException ? 'Edad' : '—') }}</td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-              <ul class="muted">
-                @for (h of r.categoryChanges; track $index) {
-                  <li>
-                    {{ h.changedAt | date: 'd MMM y' }}: {{ h.from ?? '—' }} → {{ h.to }} ({{
-                      h.reason ?? 'sin motivo'
-                    }})
-                  </li>
-                }
-              </ul>
-            }
-            @case ('pagos') {
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Cargo</th>
-                      <th>Vence</th>
-                      <th class="num">Importe</th>
-                      <th class="num">Pagado</th>
-                      <th class="num">Saldo</th>
-                      <th>Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (c of r.charges; track c.id) {
-                      <tr>
-                        <td>{{ c.label }}</td>
-                        <td>{{ c.dueDate ?? '—' }}</td>
-                        <td class="num">{{ c.netCents | money }}</td>
-                        <td class="num">{{ c.paidCents | money }}</td>
-                        <td class="num">{{ c.balanceCents | money }}</td>
-                        <td>
-                          <span class="tag" [class.off]="c.status === 'VENCIDO'">{{
-                            chargeLabels[c.status]
-                          }}</span>
-                        </td>
-                      </tr>
-                    } @empty {
-                      <tr>
-                        <td colspan="6" class="muted">Sin cargos.</td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-              <h2>Pagos</h2>
-              <ul>
-                @for (p of r.payments; track p.id) {
-                  <li>
-                    <a [routerLink]="['/admin/billing/receipts', p.id]">{{ p.folio }}</a> ·
-                    {{ p.paidAt | date: 'd MMM y' }} ·
-                    {{ p.amountCents | money }}
-                    @if (p.status === 'CANCELADO') {
-                      <span class="tag off">Cancelado</span>
-                    }
-                  </li>
-                } @empty {
-                  <li class="muted">Sin pagos.</li>
-                }
-              </ul>
-            }
-            @case ('uniformes') {
-              <ul>
-                @for (u of r.uniforms; track u.id) {
-                  <li>
-                    {{ u.requestedOn }} · {{ u.items.join(', ') }} · {{ u.totalCents | money }} ·
-                    {{ u.status }}
-                  </li>
-                } @empty {
-                  <li class="muted">Sin pedidos.</li>
-                }
-              </ul>
-            }
-            @case ('competencias') {
-              <ul>
-                @for (c of r.competitions; track $index) {
-                  <li>
-                    {{ c.competitionName }} ({{ c.type }}) · {{ c.categoryName }} · desde
-                    {{ c.joinedOn }}
-                    @if (!c.active) {
-                      <span class="tag off">Baja {{ c.leftOn }}</span>
-                    }
-                  </li>
-                } @empty {
-                  <li class="muted">No participa en competencias.</li>
-                }
-              </ul>
-            }
-            @case ('estatus') {
-              @if (auth.can('jugadores.editar')) {
-                <form
-                  class="grid-form"
-                  (ngSubmit)="changeStatus(r.name, r.player.status)"
-                  novalidate
-                >
-                  <h2>Cambiar estatus</h2>
-                  <label
-                    >Nuevo estatus
-                    <select name="status" [(ngModel)]="newStatus">
-                      @for (s of statuses; track s[0]) {
-                        <option [value]="s[0]" [disabled]="s[0] === r.player.status">
-                          {{ s[1] }}
-                        </option>
+              @case ('tutores') {
+                <ul class="list">
+                  @for (t of r.tutors; track t.tutorId) {
+                    <li>
+                      <strong>{{ t.name }}</strong> ({{ t.relationship }})
+                      @if (t.isPrimary) {
+                        <span class="tag">Contacto principal</span>
                       }
-                    </select>
-                  </label>
-                  <label>Motivo <input name="statusReason" [(ngModel)]="statusReason" /></label>
-                  <p class="muted">
-                    La baja no borra historial: pagos, partidos y categorías se conservan.
-                  </p>
-                  <button type="submit" [disabled]="submission.busy()">Cambiar estatus</button>
-                </form>
+                      <br /><span class="muted">{{ t.phone ?? '' }} {{ t.email ?? '' }}</span>
+                    </li>
+                  } @empty {
+                    <li class="muted">Sin tutores. Regístralos en Tutores.</li>
+                  }
+                </ul>
               }
-              <ul>
-                @for (h of r.statusHistory; track h.id) {
-                  <li>
-                    {{ h.changedAt | date: 'd MMM y, HH:mm' }}:
-                    {{ h.previousStatus ? statusLabels[h.previousStatus] : '—' }} →
-                    {{ statusLabels[h.newStatus] }} · {{ h.reason ?? '' }}
-                    <span class="muted">{{ h.changedByEmail ?? '' }}</span>
-                  </li>
+              @case ('categorias') {
+                @if (auth.can('inscripciones.crear') && r.player.status === 'ACTIVO') {
+                  <form
+                    class="grid-form"
+                    (ngSubmit)="saveCategory(r.categories[0] && !r.categories[0].endDate)"
+                    novalidate
+                  >
+                    <h2>
+                      {{
+                        r.categories[0] && !r.categories[0].endDate
+                          ? 'Cambiar de categoría'
+                          : 'Inscribir a categoría'
+                      }}
+                    </h2>
+                    <label
+                      >Categoría
+                      <select
+                        name="cat"
+                        [ngModel]="catId()"
+                        (ngModelChange)="catId.set(idOrNull($event))"
+                      >
+                        <option [ngValue]="null">Selecciona…</option>
+                        @for (c of categories.value() ?? []; track c.id) {
+                          <option [ngValue]="c.id">
+                            {{ c.name }} ({{ c.minAge }}–{{ c.maxAge }} años) · {{ c.occupancy }}/{{
+                              c.maxCapacity ?? '∞'
+                            }}
+                          </option>
+                        }
+                      </select>
+                    </label>
+                    <label
+                      >Fecha de inicio
+                      <input
+                        type="date"
+                        name="date"
+                        [ngModel]="catDate()"
+                        (ngModelChange)="catDate.set($event)"
+                    /></label>
+                    @if (eligibility.value(); as e) {
+                      @if (!e.ageOk) {
+                        <p class="alert error">
+                          Edad {{ e.age }}: fuera del rango de la categoría. Requiere excepción
+                          autorizada.
+                        </p>
+                      }
+                      @if (e.full) {
+                        <p class="alert error">
+                          Cupo lleno ({{ e.occupancy }}/{{ e.capacity }}). Requiere excepción
+                          autorizada.
+                        </p>
+                      } @else if (e.capacity !== null && e.occupancy + 1 >= e.capacity) {
+                        <p class="alert info">
+                          Con este jugador la categoría llega a su cupo ({{ e.occupancy + 1 }}/{{
+                            e.capacity
+                          }}).
+                        </p>
+                      }
+                    }
+                    @if (r.categories[0] && !r.categories[0].endDate) {
+                      <label
+                        >Motivo del cambio <input name="reason" [(ngModel)]="catReason"
+                      /></label>
+                    }
+                    <label
+                      >Motivo de excepción (sólo si aplica)
+                      <input name="exception" [(ngModel)]="catException"
+                    /></label>
+                    <button type="submit" [disabled]="submission.busy() || !catId()">
+                      Guardar
+                    </button>
+                  </form>
                 }
-              </ul>
+                <h2>Historial de categorías</h2>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Categoría</th>
+                        <th>Temporada</th>
+                        <th>Desde</th>
+                        <th>Hasta</th>
+                        <th>Excepción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (c of r.categories; track c.id) {
+                        <tr>
+                          <td>{{ c.categoryName }}</td>
+                          <td>{{ c.seasonName ?? '—' }}</td>
+                          <td>{{ c.startDate }}</td>
+                          <td>{{ c.endDate ?? 'vigente' }}</td>
+                          <td>{{ c.exceptionReason ?? (c.isAgeException ? 'Edad' : '—') }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+                <ul class="muted">
+                  @for (h of r.categoryChanges; track $index) {
+                    <li>
+                      {{ h.changedAt | date: 'd MMM y' }}: {{ h.from ?? '—' }} → {{ h.to }} ({{
+                        h.reason ?? 'sin motivo'
+                      }})
+                    </li>
+                  }
+                </ul>
+              }
+              @case ('pagos') {
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Cargo</th>
+                        <th>Vence</th>
+                        <th class="num">Importe</th>
+                        <th class="num">Pagado</th>
+                        <th class="num">Saldo</th>
+                        <th>Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (c of r.charges; track c.id) {
+                        <tr>
+                          <td>{{ c.label }}</td>
+                          <td>{{ c.dueDate ?? '—' }}</td>
+                          <td class="num">{{ c.netCents | money }}</td>
+                          <td class="num">{{ c.paidCents | money }}</td>
+                          <td class="num">{{ c.balanceCents | money }}</td>
+                          <td>
+                            <span class="tag {{ chargeTone[c.status] }}">{{
+                              chargeLabels[c.status]
+                            }}</span>
+                          </td>
+                        </tr>
+                      } @empty {
+                        <tr>
+                          <td colspan="6" class="muted">Sin cargos.</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+                <h2>Pagos</h2>
+                <ul>
+                  @for (p of r.payments; track p.id) {
+                    <li>
+                      <a [routerLink]="['/admin/billing/receipts', p.id]">{{ p.folio }}</a> ·
+                      {{ p.paidAt | date: 'd MMM y' }} ·
+                      {{ p.amountCents | money }}
+                      @if (p.status === 'CANCELADO') {
+                        <span class="tag {{ toneOf(paymentTone, p.status) }}">Cancelado</span>
+                      }
+                    </li>
+                  } @empty {
+                    <li class="muted">Sin pagos.</li>
+                  }
+                </ul>
+              }
+              @case ('uniformes') {
+                <ul>
+                  @for (u of r.uniforms; track u.id) {
+                    <li>
+                      {{ u.requestedOn }} · {{ u.items.join(', ') }} · {{ u.totalCents | money }} ·
+                      <span class="tag {{ toneOf(orderTone, u.status) }}">{{
+                        $any(orderLabels)[u.status] ?? u.status
+                      }}</span>
+                    </li>
+                  } @empty {
+                    <li class="muted">Sin pedidos.</li>
+                  }
+                </ul>
+              }
+              @case ('competencias') {
+                <ul>
+                  @for (c of r.competitions; track $index) {
+                    <li>
+                      {{ c.competitionName }} ({{ c.type }}) · {{ c.categoryName }} · desde
+                      {{ c.joinedOn }}
+                      @if (!c.active) {
+                        <span class="tag neutral">Baja {{ c.leftOn }}</span>
+                      }
+                    </li>
+                  } @empty {
+                    <li class="muted">No participa en competencias.</li>
+                  }
+                </ul>
+              }
+              @case ('estatus') {
+                @if (auth.can('jugadores.editar')) {
+                  <form
+                    class="grid-form"
+                    (ngSubmit)="changeStatus(r.name, r.player.status)"
+                    novalidate
+                  >
+                    <h2>Cambiar estatus</h2>
+                    <label
+                      >Nuevo estatus
+                      <select name="status" [(ngModel)]="newStatus">
+                        @for (s of statuses; track s[0]) {
+                          <option [value]="s[0]" [disabled]="s[0] === r.player.status">
+                            {{ s[1] }}
+                          </option>
+                        }
+                      </select>
+                    </label>
+                    <label>Motivo <input name="statusReason" [(ngModel)]="statusReason" /></label>
+                    <p class="muted">
+                      La baja no borra historial: pagos, partidos y categorías se conservan.
+                    </p>
+                    <button type="submit" [disabled]="submission.busy()">Cambiar estatus</button>
+                  </form>
+                }
+                <ul>
+                  @for (h of r.statusHistory; track h.id) {
+                    <li>
+                      {{ h.changedAt | date: 'd MMM y, HH:mm' }}:
+                      {{ h.previousStatus ? statusLabels[h.previousStatus] : '—' }} →
+                      {{ statusLabels[h.newStatus] }} · {{ h.reason ?? '' }}
+                      <span class="muted">{{ h.changedByEmail ?? '' }}</span>
+                    </li>
+                  }
+                </ul>
+              }
             }
-          }
+          </div>
         }
       </ng-template></app-load-state
     >
@@ -608,6 +667,14 @@ export class PlayerRecordPage {
   protected statusLabels = STATUS_LABELS;
   protected sexLabels = SEX_LABELS;
   protected chargeLabels = CHARGE_STATUS_LABELS;
+  protected enrollmentLabels = ENROLLMENT_LABELS;
+  protected orderLabels = ORDER_STATUS_LABELS;
+  protected playerTone = PLAYER_TONE;
+  protected chargeTone = CHARGE_TONE;
+  protected paymentTone = PAYMENT_TONE;
+  protected orderTone = ORDER_TONE;
+  protected enrollmentTone = ENROLLMENT_TONE;
+  protected toneOf = toneOf;
   protected statuses = STATUSES;
   protected tabs: [Tab, string][] = [
     ['datos', 'Datos'],
