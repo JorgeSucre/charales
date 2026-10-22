@@ -26,6 +26,7 @@ const TYPES: Record<string, string> = {
   '.css': 'text/css',
   '.ico': 'image/x-icon',
   '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
 };
 
 let t: TestDb;
@@ -118,12 +119,14 @@ async function check(path: string, width: number, who: string, home: string): Pr
     toggle: boolean;
     clipped: number;
     english: string | null;
+    crest: boolean;
   }>(`({
     path: location.pathname,
     overflow: document.documentElement.scrollWidth - window.innerWidth,
     alerts: [...document.querySelectorAll('.alert.error')].map((e) => e.textContent.trim()),
     toggle: !!document.querySelector('.menu-toggle')?.offsetParent,
     clipped: [...document.querySelectorAll('.kpi, .card')].filter((e) => e.scrollWidth > e.clientWidth + 1).length,
+    crest: [...document.querySelectorAll('img[src$="CHCH23logo.webp"]')].some((i) => i.complete && i.naturalWidth > 0),
     english: (document.querySelector('main').innerText.match(/\\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Apr|May|Aug|Dec)\\b/) ?? [])[0] ?? null,
   })`);
   // «Inicio» (/) takes coaches and tutors to their own panel (AuthService.homeUrl).
@@ -133,6 +136,7 @@ async function check(path: string, width: number, who: string, home: string): Pr
   if (state.alerts.length) problems.push(`error: ${state.alerts.join(' | ')}`);
   if (state.clipped) problems.push(`${state.clipped} tarjeta(s) con texto desbordado`);
   if (state.english) problems.push(`texto en inglés: «${state.english}»`);
+  if (!state.crest) problems.push('el escudo no se cargó');
   if (width === 375 && !state.toggle) problems.push('el menú no se colapsa');
   if (width === 1280 && state.toggle) problems.push('botón de menú visible en escritorio');
   const errors = page.errors();
@@ -193,6 +197,17 @@ test('HU-004.3 / HU-002.4: an account deactivated on the server is sent to the l
   await page.goto(`${app}/coach`);
   await page.until(`location.pathname === '/login' && location.search.includes('expired=1')`);
   await t.ok(t.call(admin, 'UserService', 'setActive', 6, true));
+  page.errors();
+});
+
+test('skip link: away from Inicio it focuses <main> on the same page (with <base href="/">, #main meant /#main)', async () => {
+  await login('admin@example.com');
+  await page.goto(`${app}/account/password`);
+  await page.until(settled);
+  await page.eval(`document.querySelector('.skip-link').click()`);
+  await new Promise((resolve) => setTimeout(resolve, 500)); // a navigation to /#main would have happened by now
+  assert.equal(await page.eval<string>('location.pathname + location.hash'), '/account/password');
+  assert.equal(await page.eval<string>('document.activeElement?.id'), 'main');
   page.errors();
 });
 
@@ -355,5 +370,206 @@ test('persistence: a player created and edited in the UI survives a page reload 
     restarted.close();
     await pool.end();
   }
+  assert.deepEqual(page.errors(), []);
+});
+
+test('user menu: its button opens it, Escape closes it back on its button, an outside click closes it', async () => {
+  await login('admin@example.com');
+  const open = () => page.eval<boolean>(`document.querySelector('.user-menu').open`);
+  // Escape as a DOM keydown event: this harness (e2e/browser.ts) has no real key presses.
+  const escape = `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`;
+  for (const width of [1280, 375]) {
+    await page.size(width, 900);
+    await page.goto(`${app}/`);
+    await page.until(settled);
+    await page.eval(`document.querySelector('.user-menu summary').click()`);
+    await page.until(`document.querySelector('.user-menu').open`);
+    assert.deepEqual(
+      await page.eval<string[]>(
+        `[...document.querySelectorAll('.user-menu .menu a, .user-menu .menu button')].filter((e) => e.offsetParent).map((e) => e.textContent.trim())`,
+      ),
+      ['Cambiar contraseña', 'Salir'],
+    );
+    if (SHOTS) writeFileSync(join(SHOTS, `user_menu_${width}.png`), await page.screenshot());
+    await page.eval(`document.querySelector('.user-menu .menu a').focus()`);
+    await page.eval(escape);
+    assert.equal(await open(), false, `@${width}: Escape closes it`);
+    assert.equal(
+      await page.eval<boolean>(
+        `document.activeElement === document.querySelector('.user-menu summary')`,
+      ),
+      true,
+      'focus back on the button',
+    );
+    await page.eval(`document.querySelector('.user-menu summary').click()`);
+    await page.until(`document.querySelector('.user-menu').open`);
+    await page.eval(`document.querySelector('main h1').click()`);
+    assert.equal(await open(), false, `@${width}: an outside click closes it`);
+  }
+  assert.deepEqual(page.errors(), []);
+});
+
+test('Inicio: six indicators in full rows (3 × 2 desktop, 2 × 3 tablet/phone), a large amount fits, phone menu closes on Escape', async () => {
+  await login('admin@example.com');
+  for (const [width, perRow] of [
+    [1280, 3],
+    [768, 2],
+    [375, 2],
+  ] as const) {
+    await page.size(width, 2600); // tall: the screenshot shows the whole page down to «Otros módulos»
+    await page.goto(`${app}/`);
+    await page.until(`document.querySelectorAll('.kpis.six .kpi').length === 6`);
+    if (SHOTS) writeFileSync(join(SHOTS, `inicio_full_${width}.png`), await page.screenshot());
+    const rows = await page.eval<number[]>(
+      `Object.values([...document.querySelectorAll('.kpis.six .kpi')].reduce((r, k) => ((r[k.offsetTop] = (r[k.offsetTop] ?? 0) + 1), r), {}))`,
+    );
+    assert.deepEqual(rows, Array(6 / perRow).fill(perRow), `@${width}: rows of ${perRow}`);
+    const quickRows = await page.eval<number[]>(
+      `Object.values([...document.querySelectorAll('.cards.quick .card')].reduce((r, k) => ((r[k.offsetTop] = (r[k.offsetTop] ?? 0) + 1), r), {}))`,
+    );
+    const quickPerRow = width === 1280 ? 3 : 1;
+    // «Otros módulos»: area name beside its links on desktop, above them below 1000 px.
+    const stacked = await page.eval<boolean>(`(() => {
+      const row = document.querySelector('.module-row');
+      return row.querySelector('ul').offsetTop > row.querySelector('h3').offsetTop + 4;
+    })()`);
+    assert.equal(stacked, width !== 1280, `@${width}: module rows stacked below 1000 px`);
+    assert.deepEqual(
+      quickRows,
+      Array(9 / quickPerRow).fill(quickPerRow),
+      `@${width}: quick access rows`,
+    );
+    assert.match(
+      await page.eval<string>(`document.querySelector('.kpis.six').innerText`),
+      /Ingresos del \d+ (de \w+ )?al \d+ de \w+ de \d{4}/,
+    );
+    // Display-only probe (no data changes): the widest amount the school could plausibly reach still fits.
+    const clipped = await page.eval<number>(`(() => {
+      const s = document.querySelector('.kpis.six .kpi strong');
+      s.textContent = '$9,999,999.99';
+      return s.scrollWidth - s.clientWidth;
+    })()`);
+    assert.ok(clipped <= 0, `@${width}: amount clipped by ${clipped}px`);
+  }
+  await page.size(375, 900);
+  // Phone: «Menú» opens the menu, Escape inside it closes it and focus returns to «Menú» (DOM event, as in the user
+  // menu test).
+  await page.goto(`${app}/`);
+  await page.until(settled);
+  await page.eval(`document.querySelector('.menu-toggle').click()`);
+  await page.until(`document.querySelector('#nav-links a')?.offsetParent`);
+  await page.eval(
+    `document.querySelector('#nav-links a').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`,
+  );
+  await page.until(`!document.querySelector('#nav-links a').offsetParent`);
+  assert.equal(
+    await page.eval<boolean>(`document.activeElement === document.querySelector('.menu-toggle')`),
+    true,
+  );
+  if (SHOTS) writeFileSync(join(SHOTS, 'inicio_menu_closed_375.png'), await page.screenshot());
+  assert.deepEqual(page.errors(), []);
+});
+
+test('side menu: compact mode on desktop (remembered) and tablet, tooltips, collapsible areas, accessible phone panel', async () => {
+  await login('admin@example.com');
+  const width = (sel: string) =>
+    page.eval<number>(`Math.round(document.querySelector('${sel}').getBoundingClientRect().width)`);
+  const visibleLinks = () =>
+    page.eval<number>(
+      `[...document.querySelectorAll('#nav-links a')].filter((a) => a.offsetParent).length`,
+    );
+
+  // Desktop: expanded by default; the header hamburger makes it compact and the choice survives a reload (D3).
+  await page.size(1280, 900);
+  await page.eval(`localStorage.removeItem('charales.nav.rail')`);
+  await page.goto(`${app}/sports/categories`);
+  await page.until(settled);
+  assert.equal(await width('.sidenav'), 240);
+  assert.equal(
+    await page.eval<string>(
+      `document.querySelector('.nav-group.current .nav-section').getAttribute('aria-expanded')`,
+    ),
+    'true',
+    'the active page’s area is open',
+  );
+  await page.eval(`document.querySelector('.rail-toggle').click()`);
+  await page.until(`document.querySelector('.layout.rail')`);
+  assert.equal(await width('.sidenav'), 72);
+  assert.equal(await visibleLinks(), 1, 'compact: only «Inicio» is a link, the areas are buttons');
+  // Tooltip on keyboard focus too, and every area button keeps its accessible name.
+  await page.focusEmulation();
+  await page.eval(`document.querySelector('.nav-group.current .nav-section').focus()`);
+  assert.match(
+    await page.eval<string>(
+      `getComputedStyle(document.querySelector('.nav-group.current .nav-section'), '::after').content`,
+    ),
+    /Gestión deportiva/,
+  );
+  await page.focusEmulation(false);
+  assert.deepEqual(
+    await page.eval<string[]>(
+      `[...document.querySelectorAll('.nav-section')].filter((b) => !b.innerText.trim() && !b.textContent.trim()).map((b) => b.outerHTML)`,
+    ),
+    [],
+  );
+  if (SHOTS) writeFileSync(join(SHOTS, 'nav_rail_1280.png'), await page.screenshot());
+  await page.goto(`${app}/sports/categories`);
+  await page.until(settled);
+  assert.equal(await width('.sidenav'), 72, 'desktop remembers the compact menu');
+  // An area button expands the menu, opens that area and focuses its first link (D2).
+  await page.eval(
+    `[...document.querySelectorAll('.nav-section')].find((b) => b.textContent.includes('Cobranza')).click()`,
+  );
+  await page.until(`!document.querySelector('.layout.rail')`);
+  assert.equal(
+    await page.eval<string>(`document.activeElement.getAttribute('href')`),
+    '/admin/billing/concepts',
+  );
+  await page.eval(`localStorage.removeItem('charales.nav.rail')`);
+
+  // Tablet: always starts compact.
+  await page.size(768, 900);
+  await page.goto(`${app}/`);
+  await page.until(settled);
+  assert.equal(await width('.sidenav'), 72);
+  if (SHOTS) writeFileSync(join(SHOTS, 'nav_rail_768.png'), await page.screenshot());
+
+  // Phone: hamburger → panel with focus on «Cerrar menú» and the page inert; backdrop, Escape and a link close it.
+  await page.size(375, 900);
+  await page.goto(`${app}/`);
+  await page.until(settled);
+  const isOpen = () =>
+    page.eval<boolean>(`document.querySelector('.sidenav').classList.contains('open')`);
+  const openPanel = async () => {
+    await page.eval(`document.querySelector('.menu-toggle').click()`);
+    await page.until(`document.activeElement === document.querySelector('.drawer-close')`);
+  };
+  await openPanel();
+  assert.equal(await page.eval<boolean>(`document.querySelector('main').inert`), true);
+  assert.equal(await page.eval<boolean>(`document.querySelector('.topbar').inert`), true);
+  if (SHOTS) {
+    await new Promise((resolve) => setTimeout(resolve, 300)); // after the 0.2 s slide-in
+    writeFileSync(join(SHOTS, 'nav_panel_375.png'), await page.screenshot());
+  }
+  await page.eval(`document.querySelector('.nav-backdrop').click()`);
+  assert.equal(await isOpen(), false, 'backdrop closes it');
+  assert.equal(
+    await page.eval<boolean>(`document.activeElement === document.querySelector('.menu-toggle')`),
+    true,
+  );
+  assert.equal(await page.eval<boolean>(`document.querySelector('main').inert`), false);
+  await openPanel();
+  await page.eval(
+    `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`,
+  );
+  assert.equal(await isOpen(), false, 'Escape closes it');
+  await openPanel();
+  await page.eval(
+    `[...document.querySelectorAll('.nav-section')].find((b) => b.textContent.includes('Personas')).click()`,
+  );
+  assert.equal(await isOpen(), true, 'an area button keeps it open');
+  await page.eval(`document.querySelector('#nav-links a[href="/admin/players"]').click()`);
+  await page.until(`location.pathname === '/admin/players'`);
+  assert.equal(await isOpen(), false, 'choosing a page closes it');
   assert.deepEqual(page.errors(), []);
 });
