@@ -39,15 +39,18 @@ Administrador.)
 
 Ninguna es un error crítico: son pendientes acordados para fases posteriores.
 
-| Prioridad      | Pendiente                                                                                                                                          |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Siguiente fase | Verificación de cada HU sobre MariaDB (fases 2–6 de [`TRACEABILITY.md`](TRACEABILITY.md))                                                          |
-| P2             | `categorias.temporada_id` NOT NULL (HU-015; hoy la unicidad sin temporada la aplica la app, D4/R12)                                                |
-| P2             | `autorizada_por` en la excepción de edad/cupo (HU-017; hoy queda en `historial_categoria.cambiado_por` y en `auditoria`)                           |
-| P2             | Relación N:M `sesion_entrenador` (principal y auxiliares; hoy `sesiones_entrenamiento.entrenador_id` único)                                        |
-| P2             | Proveedor de correo real (D4c): sin él, en producción la recuperación y las invitaciones responden 503                                             |
-| P3             | `asistencias.crear` existe en el catálogo de permisos, pero ningún servicio lo verifica (la captura usa `asistencias.editar`)                      |
-| Nota           | Una sesión abierta con una versión anterior a `18178ba` no tiene `officePermissions`: al recargar se descarta y el usuario vuelve a iniciar sesión |
+| Prioridad      | Pendiente                                                                                                                                                                                |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Siguiente fase | Verificación de cada HU sobre MariaDB (fases 2–6 de [`TRACEABILITY.md`](TRACEABILITY.md))                                                                                                |
+| P2             | `categorias.temporada_id` NOT NULL (HU-015; hoy la unicidad sin temporada la aplica la app, D4/R12)                                                                                      |
+| P2             | `autorizada_por` en la excepción de edad/cupo (HU-017; hoy queda en `historial_categoria.cambiado_por` y en `auditoria`)                                                                 |
+| P2             | Relación N:M `sesion_entrenador` (principal y auxiliares; hoy `sesiones_entrenamiento.entrenador_id` único)                                                                              |
+| P2             | Proveedor de correo real (D4c): sin él, en producción la recuperación y las invitaciones responden 503                                                                                   |
+| P3             | `asistencias.crear` existe en el catálogo de permisos, pero ningún servicio lo verifica (la captura usa `asistencias.editar`)                                                            |
+| Nota           | Una sesión abierta con una versión anterior a `18178ba` no tiene `officePermissions`: al recargar se descarta y el usuario vuelve a iniciar sesión                                       |
+| I2             | Revisión visual pendiente en navegador: pestañas del expediente del jugador y estados vacíos fuera de Jugadores                                                                          |
+| I3             | Validación y foco tras un envío rechazado (alta de jugador, importe de «Registrar pago») probados sólo en jsdom; falta probarlos en un navegador real                                    |
+| A11y           | Revisión manual de accesibilidad pendiente: anillo de foco, recorrido con Tab y foco al cambiar sólo la query (`?player=`); las pestañas del expediente no tienen navegación con flechas |
 
 ## Notas de historial Git
 

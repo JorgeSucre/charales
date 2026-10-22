@@ -9,6 +9,7 @@ import { addDays, today } from '../../shared/dates';
 import { FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
+import { CHARGE_TONE } from '../../shared/status-tone';
 import { Submission } from '../../shared/submission';
 import { Paginator, SubmissionAlert, centsFromInput, idOrNull } from '../../shared/ui';
 import { BillingService, CHARGE_STATUS_LABELS, ChargeView } from './billing.service';
@@ -157,42 +158,48 @@ export class ConceptsPage {
     </div>
     <app-submission-alert [submission]="submission" />
     @if (auth.can('cobranza.crear')) {
-      <form class="grid-form" (ngSubmit)="create()" novalidate>
-        <h2>Cargo manual</h2>
-        <div class="two-col">
-          <label
-            >Jugador
-            <select name="player" [(ngModel)]="draft.playerId">
-              <option [ngValue]="null">Selecciona…</option>
-              @for (p of players.value() ?? []; track p.id) {
-                <option [ngValue]="p.id">{{ p.name }}</option>
-              }
-            </select>
-          </label>
-          <label
-            >Concepto
-            <select
-              name="concept"
-              [ngModel]="draft.conceptId"
-              (ngModelChange)="pickConcept($event)"
-            >
-              <option [ngValue]="null">Selecciona…</option>
-              @for (c of activeConcepts(); track c.id) {
-                <option [ngValue]="c.id">{{ c.name }}</option>
-              }
-            </select>
-          </label>
-          <label
-            >Importe (MXN)
-            <input type="number" min="0.01" step="0.01" name="amount" [(ngModel)]="draft.amount"
-          /></label>
-          <label>Vence <input type="date" name="due" [(ngModel)]="draft.dueDate" /></label>
-        </div>
-        <label>Referencia (opcional) <input name="ref" [(ngModel)]="draft.reference" /></label>
-        <button type="submit" [disabled]="submission.busy() || !draft.playerId || !draft.conceptId">
-          Crear cargo
-        </button>
-      </form>
+      <!-- Folded by default; its result shows in the alert above, so it is never hidden in here. -->
+      <details class="grid-form disclosure">
+        <summary>Cargo manual</summary>
+        <form (ngSubmit)="create()" novalidate>
+          <div class="two-col">
+            <label
+              >Jugador
+              <select name="player" [(ngModel)]="draft.playerId">
+                <option [ngValue]="null">Selecciona…</option>
+                @for (p of players.value() ?? []; track p.id) {
+                  <option [ngValue]="p.id">{{ p.name }}</option>
+                }
+              </select>
+            </label>
+            <label
+              >Concepto
+              <select
+                name="concept"
+                [ngModel]="draft.conceptId"
+                (ngModelChange)="pickConcept($event)"
+              >
+                <option [ngValue]="null">Selecciona…</option>
+                @for (c of activeConcepts(); track c.id) {
+                  <option [ngValue]="c.id">{{ c.name }}</option>
+                }
+              </select>
+            </label>
+            <label
+              >Importe (MXN)
+              <input type="number" min="0.01" step="0.01" name="amount" [(ngModel)]="draft.amount"
+            /></label>
+            <label>Vence <input type="date" name="due" [(ngModel)]="draft.dueDate" /></label>
+          </div>
+          <label>Referencia (opcional) <input name="ref" [(ngModel)]="draft.reference" /></label>
+          <button
+            type="submit"
+            [disabled]="submission.busy() || !draft.playerId || !draft.conceptId"
+          >
+            Crear cargo
+          </button>
+        </form>
+      </details>
     }
     <div class="filters">
       <label
@@ -229,6 +236,9 @@ export class ConceptsPage {
       ><ng-template>
         <div class="table-wrap">
           <table>
+            <caption class="sr-only">
+              Cargos: jugador, cargo, vencimiento, importes, saldo y estado
+            </caption>
             <thead>
               <tr>
                 <th>Jugador</th>
@@ -255,11 +265,7 @@ export class ConceptsPage {
                   <td class="num">{{ c.paidCents | money }}</td>
                   <td class="num">{{ c.balanceCents | money }}</td>
                   <td>
-                    <span
-                      class="tag"
-                      [class.off]="c.status === 'VENCIDO' || c.status === 'CANCELADO'"
-                      >{{ labels[c.status] }}</span
-                    >
+                    <span class="tag {{ chargeTone[c.status] }}">{{ labels[c.status] }}</span>
                   </td>
                   <td>
                     @if (
@@ -285,6 +291,7 @@ export class ChargesPage {
   protected auth = inject(AuthService);
   protected idOrNull = idOrNull;
   protected labels = CHARGE_STATUS_LABELS;
+  protected chargeTone = CHARGE_TONE;
   protected statuses = STATUSES;
   protected players = resource({ loader: () => this.playerService.options() });
   protected concepts = resource({ loader: () => this.service.concepts() });
