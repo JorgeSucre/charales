@@ -573,3 +573,78 @@ test('side menu: compact mode on desktop (remembered) and tablet, tooltips, coll
   assert.equal(await isOpen(), false, 'choosing a page closes it');
   assert.deepEqual(page.errors(), []);
 });
+
+test('HU-045 through the UI: a partial payment of $100 to an overdue charge is stored, applied and gets its receipt', async () => {
+  // Its own Chrome, like HU-010: confirm() in a long-lived headless tab may be dismissed before it is answered.
+  const shared = page;
+  page = await openBrowser();
+  try {
+    await partialPaymentFlow();
+  } finally {
+    await page.close();
+    page = shared;
+  }
+});
+
+async function partialPaymentFlow(): Promise<void> {
+  await login('secretaria@example.com');
+  await page.goto(`${app}/admin/billing/payments/new`);
+  await page.until(`document.querySelector('select[name=player] option:nth-child(2)')`);
+  // By the option's text, not a fixed id: Lucía's «Mensualidad» of 2026-09 is overdue (due 2026-09-10).
+  await page.eval(`(() => {
+    const s = document.querySelector('select[name=player]');
+    s.selectedIndex = [...s.options].findIndex((o) => o.text.includes('Lucía Hernández'));
+    s.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  const overdue = `[...document.querySelectorAll('label.check')].find((l) => l.textContent.includes('Mensualidad') && l.textContent.includes('Vencido'))`;
+  await page.until(overdue);
+  const before = await t.count('SELECT COUNT(*) AS n FROM pagos WHERE jugador_id = 2');
+  page.dialogs(true);
+  await page.eval(`(() => {
+    ${overdue}.querySelector('input').click();
+    const a = document.querySelector('input[name=amount]'); a.value = '100'; a.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await page.until(`document.querySelector('dl.summary')?.textContent.includes('$100.00')`);
+  await page.eval(`document.querySelector('form button[type=submit]').click()`);
+  await page.until(`document.querySelector('.alert.ok')?.textContent.includes('folio')`, 8000);
+  assert.match(page.dialogs(true).join(), /¿Registrar el pago por \$100\?/);
+
+  const folio = (await page.eval<string>(`document.querySelector('.alert.ok').textContent`)).match(
+    /folio (\S+)\./,
+  )![1]!;
+  const [paid] = await t.db.query(
+    'SELECT id, importe, estado FROM pagos WHERE jugador_id = 2 AND folio = ?',
+    [folio],
+  );
+  assert.equal(await t.count('SELECT COUNT(*) AS n FROM pagos WHERE jugador_id = 2'), before + 1);
+  assert.equal(Number(paid.importe), 100);
+  assert.equal(paid.estado, 'APLICADO');
+  assert.deepEqual(
+    (
+      await t.db.query('SELECT cargo_id, importe_aplicado FROM pago_aplicacion WHERE pago_id = ?', [
+        paid.id,
+      ])
+    ).map((r: { cargo_id: unknown; importe_aplicado: string }) => [
+      Number(r.cargo_id),
+      Number(r.importe_aplicado),
+    ]),
+    [[2, 100]],
+  );
+  assert.equal(
+    await page.eval<string>(
+      `[...document.querySelectorAll('main a')].find((a) => a.textContent.includes('imprimir recibo')).getAttribute('href')`,
+    ),
+    `/admin/billing/receipts/${paid.id}`,
+  );
+
+  await page.goto(`${app}/admin/billing/receipts`);
+  await page.until(`document.querySelector('tbody tr')`);
+  assert.equal(
+    await page.eval<boolean>(
+      `[...document.querySelectorAll('tbody tr')].some((r) => r.textContent.includes(${JSON.stringify(folio)}) && r.textContent.includes('$100.00'))`,
+    ),
+    true,
+    'the payment is listed in «Pagos y recibos»',
+  );
+  assert.deepEqual(page.errors(), []);
+}

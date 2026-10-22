@@ -590,6 +590,15 @@ form {
 .grid-form h2 {
   margin-top: 0;
 }
+/* A form folded in a native <details> (Cargos «Cargo manual»): the summary opens it by click, Enter or Space. */
+.disclosure > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--primary);
+}
+.disclosure[open] > summary {
+  margin-bottom: 1rem;
+}
 .narrow {
   max-width: 420px;
 }
