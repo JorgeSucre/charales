@@ -211,6 +211,10 @@ export const DEV_SEED = 'db/mariadb/020_dev_seed.sql';
 export const NOT_EMPTY =
   'La base ya tiene usuarios o jugadores: la semilla de desarrollo sólo se carga en una base sin datos. No se modificó nada.';
 
+/** `--demo` refused on a database with users or players, before db:setup writes anything there. */
+export const DEMO_NOT_EMPTY =
+  'La base ya tiene datos: la demostración sólo se carga en una base sin usuarios ni jugadores. No se modificó nada.';
+
 /**
  * Users + players already in `name` (0 if it or its tables don't exist yet). No writes: `api/setup.ts --dev-seed`
  * calls it BEFORE setupDatabase, so a refused seed doesn't even touch the catalog or version_datos.
@@ -288,6 +292,46 @@ export async function dropTestDatabase(
 ): Promise<void> {
   if (!/^ef_[A-Za-z0-9_]+$/.test(name))
     throw new SetupError(`Sólo se borran bases de prueba ef_*, no «${name}».`);
+  const conn = await mariadb.createConnection(serverOptions(env));
+  try {
+    await conn.query(`DROP DATABASE IF EXISTS \`${name}\``);
+  } finally {
+    await conn.end();
+  }
+}
+
+/** Canonical name of the demo database (docs/SETUP.md). Any demo database must end in `_demo` (DEMO_DATABASE). */
+export const DEMO_DATABASE_NAME = 'escuela_futbol_demo';
+/** Name of a database meant only for the extended demo (`--ampliada`) and its reset: the mandatory `_demo` suffix. */
+export const DEMO_DATABASE = /^[A-Za-z0-9_]+_demo$/;
+
+/**
+ * Refuses demo data where it must never go: any demo load with NODE_ENV=production, and the extended demo (or its
+ * reset) on a database not named `*_demo`. Checked before any connection, so a refusal writes nothing.
+ */
+export function assertDemoAllowed(
+  env: Record<string, string | undefined>,
+  options: { demoDatabase: boolean },
+): void {
+  if (env['NODE_ENV'] === 'production')
+    throw new SetupError('Los datos de demostración nunca se cargan con NODE_ENV=production.');
+  const name = databaseName(env);
+  if (options.demoDatabase && !DEMO_DATABASE.test(name))
+    throw new SetupError(
+      `La demostración ampliada sólo va en una base *_demo (${DEMO_DATABASE_NAME}), no en «${name}».`,
+    );
+}
+
+/**
+ * Drops the demo database of `env` so `--demo --ampliada --reset` can rebuild it. Same guards as assertDemoAllowed:
+ * a name not ending in `_demo` is refused, so a mistake can never drop escuela_futbol or another real database.
+ */
+export async function dropDemoDatabase(env: Record<string, string | undefined>): Promise<void> {
+  assertDemoAllowed(env, { demoDatabase: true });
+  const name = databaseName(env);
+  // Checked again right before the only destructive statement, on the exact name it drops.
+  if (!DEMO_DATABASE.test(name) || env['NODE_ENV'] === 'production')
+    throw new SetupError(`Sólo se borra una base de demostración *_demo, no «${name}».`);
   const conn = await mariadb.createConnection(serverOptions(env));
   try {
     await conn.query(`DROP DATABASE IF EXISTS \`${name}\``);

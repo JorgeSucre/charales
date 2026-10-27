@@ -9,15 +9,17 @@ import {
   signal,
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { FormsModule } from '@angular/forms';
+import { FormsModule, NgForm } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { Id, PaymentMethod } from '../../core/models';
 import { CategoryService } from '../../core/services/category.service';
 import { PlayerService } from '../../core/services/player.service';
 import { nowDateTime } from '../../shared/dates';
+import { focusFirstInvalid } from '../../shared/focus';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
+import { CHARGE_TONE, PAYMENT_TONE, toneOf } from '../../shared/status-tone';
 import { Submission } from '../../shared/submission';
 import { Paginator, SubmissionAlert, centsFromInput, idOrNull } from '../../shared/ui';
 import { BillingService, CHARGE_STATUS_LABELS, METHOD_LABELS } from './billing.service';
@@ -28,7 +30,7 @@ import { BillingService, CHARGE_STATUS_LABELS, METHOD_LABELS } from './billing.s
   imports: [FormsModule, RouterLink, LoadState, MoneyPipe, SubmissionAlert],
   template: `
     <h1>Registrar pago</h1>
-    <form class="grid-form" (ngSubmit)="submit()" novalidate>
+    <form #payEl #payForm="ngForm" class="grid-form" (ngSubmit)="submit(payForm, payEl)" novalidate>
       <label
         >Jugador
         <select name="player" [ngModel]="playerId()" (ngModelChange)="selectPlayer($event)">
@@ -56,9 +58,7 @@ import { BillingService, CHARGE_STATUS_LABELS, METHOD_LABELS } from './billing.s
                 <label class="check">
                   <input type="checkbox" [checked]="selected().has(c.id)" (change)="toggle(c.id)" />
                   {{ c.label }} · vence {{ c.dueDate ?? '—' }} · saldo {{ c.balanceCents | money }}
-                  <span class="tag" [class.off]="c.status === 'VENCIDO'">{{
-                    chargeLabels[c.status]
-                  }}</span>
+                  <span class="tag {{ chargeTone[c.status] }}">{{ chargeLabels[c.status] }}</span>
                 </label>
               }
               <p>
@@ -73,10 +73,13 @@ import { BillingService, CHARGE_STATUS_LABELS, METHOD_LABELS } from './billing.s
             <input
               type="number"
               min="0.01"
+              [max]="due() / 100"
               step="0.01"
               inputmode="decimal"
               name="amount"
+              required
               [(ngModel)]="amount"
+              #amountCtl="ngModel"
           /></label>
           <label
             >Fecha y hora del pago
@@ -91,14 +94,50 @@ import { BillingService, CHARGE_STATUS_LABELS, METHOD_LABELS } from './billing.s
             </select>
           </label>
         </div>
+        <!-- Same rules as the service (amount > 0, not over the selected balance), shown before confirm(). -->
+        @if (amountCtl.touched && amountCtl.errors; as e) {
+          <small class="field-error" role="alert">
+            @if (e['required']) {
+              Campo requerido.
+            } @else if (e['min']) {
+              Debe ser mayor que $0.00.
+            } @else if (e['max']) {
+              Excede el saldo seleccionado ({{ due() | money }}).
+            }
+          </small>
+        }
         <button type="button" class="link" (click)="amount = due() / 100">
           Pagar el total seleccionado
         </button>
+        @if (selected().size) {
+          <section class="panel" aria-label="Resumen del pago">
+            <h2>Resumen</h2>
+            <dl class="facts">
+              <dt>Cargos marcados</dt>
+              <dd>{{ selected().size }} · saldo {{ due() | money }}</dd>
+              <dt>Importe</dt>
+              <dd>{{ amountCents() | money }}</dd>
+              <dt>Forma de pago</dt>
+              <dd>{{ methodLabels[method] }}</dd>
+              <dt>Quién paga</dt>
+              <dd>{{ payerName() }}</dd>
+            </dl>
+          </section>
+        }
+      } @else {
+        <p class="hint">Elige un jugador para ver sus cargos pendientes.</p>
       }
       <app-submission-alert [submission]="submission" />
-      <button type="submit" [disabled]="submission.busy() || !playerId() || !selected().size">
+      <button
+        type="submit"
+        [disabled]="submission.busy() || !playerId() || !selected().size"
+        [attr.aria-describedby]="playerId() && !selected().size ? 'pay-hint' : null"
+      >
         Registrar pago
       </button>
+      @if (playerId() && !selected().size) {
+        <p id="pay-hint" class="hint">Marca al menos un cargo para registrar el pago.</p>
+      }
     </form>
     @if (lastId(); as id) {
       <p><a [routerLink]="['/admin/billing/receipts', id]">Ver / imprimir recibo</a></p>
@@ -109,6 +148,8 @@ export class PaymentPage {
   private service = inject(BillingService);
   private playerService = inject(PlayerService);
   protected chargeLabels = CHARGE_STATUS_LABELS;
+  protected chargeTone = CHARGE_TONE;
+  protected methodLabels = METHOD_LABELS;
   protected methods = Object.entries(METHOD_LABELS) as [PaymentMethod, string][];
   protected players = resource({ loader: () => this.playerService.options() });
   protected playerId = signal<Id | null>(
@@ -149,7 +190,22 @@ export class PaymentPage {
     this.selected.set(next);
   }
 
-  async submit(): Promise<void> {
+  /** The typed amount in cents, for the summary (the same conversion the submit uses). */
+  protected amountCents(): number {
+    return centsFromInput(this.amount);
+  }
+
+  protected payerName(): string {
+    return (
+      (this.payers.value() ?? []).find((t) => t.id === this.tutorId)?.name ?? 'No especificado'
+    );
+  }
+
+  async submit(form: NgForm, formEl: HTMLElement): Promise<void> {
+    if (form.invalid) {
+      form.control.markAllAsTouched();
+      return focusFirstInvalid(formEl);
+    }
     if (!confirm(`¿Registrar el pago por $${this.amount}?`)) return;
     const draft = {
       playerId: this.playerId()!,
@@ -169,6 +225,7 @@ export class PaymentPage {
     if (ok) {
       this.selected.set(new Set());
       this.amount = 0;
+      form.controls['amount']?.markAsUntouched(); // empty again, but not an error
       this.open.reload();
     }
   }
@@ -204,6 +261,9 @@ export class PaymentPage {
       ><ng-template>
         <div class="table-wrap">
           <table>
+            <caption class="sr-only">
+              Pagos: folio, fecha, jugador, quién pagó, forma de pago e importe
+            </caption>
             <thead>
               <tr>
                 <th>Folio</th>
@@ -221,7 +281,7 @@ export class PaymentPage {
                   <td>
                     {{ r.payment.folio }}
                     @if (r.payment.status === 'CANCELADO') {
-                      <span class="tag off">Cancelado</span>
+                      <span class="tag {{ paymentTone[r.payment.status] }}">Cancelado</span>
                     }
                   </td>
                   <td>{{ r.payment.paidAt | date: 'd MMM y, HH:mm' }}</td>
@@ -254,6 +314,7 @@ export class ReceiptsPage {
   private service = inject(BillingService);
   protected auth = inject(AuthService);
   protected methods = METHOD_LABELS;
+  protected paymentTone = PAYMENT_TONE;
   protected query = signal('');
   protected status = signal<'' | 'APLICADO' | 'CANCELADO'>('');
   protected page = signal(1);
@@ -406,6 +467,9 @@ export class ReceiptPage {
             <h2>Cargos</h2>
             <div class="table-wrap">
               <table>
+                <caption class="sr-only">
+                  Cargos del estado de cuenta
+                </caption>
                 <thead>
                   <tr>
                     <th>Fecha</th>
@@ -429,11 +493,7 @@ export class ReceiptPage {
                       <td class="num">{{ c.paidCents | money }}</td>
                       <td class="num">{{ c.balanceCents | money }}</td>
                       <td>
-                        <span
-                          class="tag"
-                          [class.off]="c.status === 'VENCIDO' || c.status === 'CANCELADO'"
-                          >{{ labels[c.status] }}</span
-                        >
+                        <span class="tag {{ chargeTone[c.status] }}">{{ labels[c.status] }}</span>
                       </td>
                     </tr>
                   } @empty {
@@ -447,6 +507,9 @@ export class ReceiptPage {
             <h2>Pagos</h2>
             <div class="table-wrap">
               <table>
+                <caption class="sr-only">
+                  Pagos del estado de cuenta
+                </caption>
                 <thead>
                   <tr>
                     <th>Folio</th>
@@ -470,7 +533,7 @@ export class ReceiptPage {
                       </td>
                       <td class="num">{{ p.amountCents | money }}</td>
                       <td>
-                        <span class="tag" [class.off]="p.status === 'CANCELADO'">{{
+                        <span class="tag {{ toneOf(paymentTone, p.status) }}">{{
                           p.status === 'CANCELADO' ? 'Cancelado' : 'Aplicado'
                         }}</span>
                       </td>
@@ -486,6 +549,8 @@ export class ReceiptPage {
           }
         </ng-template></app-load-state
       >
+    } @else {
+      <p class="alert info">Elige un jugador para ver sus cargos, pagos y saldo.</p>
     }
   `,
 })
@@ -496,6 +561,9 @@ export class StatementPage {
   protected auth = inject(AuthService);
   protected idOrNull = idOrNull;
   protected labels = CHARGE_STATUS_LABELS;
+  protected chargeTone = CHARGE_TONE;
+  protected paymentTone = PAYMENT_TONE;
+  protected toneOf = toneOf;
   protected players = resource({ loader: () => this.playerService.options() });
   protected concepts = resource({ loader: () => this.service.concepts() });
   protected playerId = signal<Id | null>(
@@ -549,11 +617,19 @@ export class StatementPage {
     </div>
     <app-load-state [res]="debts" emptyText="No hay adeudos con esos filtros."
       ><ng-template>
-        <p>
-          <strong>Vencido: {{ overdue() | money }}</strong> · Saldo total: {{ total() | money }}
-        </p>
+        <div class="kpis">
+          <div class="kpi" [class.danger]="overdue()">
+            <span>Vencido</span><strong>{{ overdue() | money }}</strong>
+          </div>
+          <div class="kpi">
+            <span>Saldo total</span><strong>{{ total() | money }}</strong>
+          </div>
+        </div>
         <div class="table-wrap">
           <table>
+            <caption class="sr-only">
+              Adeudos por jugador: categoría, tutor, contacto, cargos, vencido y saldo
+            </caption>
             <thead>
               <tr>
                 <th>Jugador</th>

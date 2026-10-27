@@ -112,3 +112,38 @@ export function addMonths(month: string, n: number): string {
   const [y, m] = month.split('-').map(Number);
   return today(new Date(y, m - 1 + n, 1)).slice(0, 7);
 }
+
+const MONTHS = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+];
+
+/**
+ * An inclusive DATE range in natural Spanish: «del 1 al 21 de octubre de 2026», «del 15 de septiembre al 21 de
+ * octubre de 2026», «del 15 de diciembre de 2025 al 21 de enero de 2026», «el 21 de octubre de 2026» (one day).
+ * Reads the 'YYYY-MM-DD' parts directly (no Date parsing, so no UTC shift). Null when a bound is missing or invalid,
+ * or the range is reversed: the caller shows a neutral text instead of inventing dates.
+ */
+export function dateRangeLabel(
+  from: string | null | undefined,
+  to: string | null | undefined,
+): string | null {
+  if (!from || !to || !isISODate(from) || !isISODate(to) || from > to) return null;
+  const [fy, fm, fd] = from.split('-').map(Number);
+  const [ty, tm, td] = to.split('-').map(Number);
+  const day = (d: number, m: number) => `${d} de ${MONTHS[m - 1]}`;
+  if (from === to) return `el ${day(td, tm)} de ${ty}`;
+  if (fy !== ty) return `del ${day(fd, fm)} de ${fy} al ${day(td, tm)} de ${ty}`;
+  if (fm !== tm) return `del ${day(fd, fm)} al ${day(td, tm)} de ${ty}`;
+  return `del ${fd} al ${day(td, tm)} de ${ty}`;
+}

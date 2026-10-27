@@ -105,6 +105,48 @@ Opcional, para tener datos de ejemplo (familias, cobros, partidos ficticios) **e
 npm run db:setup -- --demo   # en lugar de db:admin; cuentas @example.com con la contraseña pública demo1234
 ```
 
+**Demostración ampliada** (unos 50 jugadores en seis categorías, familias, cuatro semanas de entrenamientos con
+asistencia, una liga y una copa con resultados, mensualidades pagadas, parciales y vencidas, uniformes y avisos), sólo
+en una **base dedicada cuyo nombre termine en `_demo`** (nombre canónico: `escuela_futbol_demo`), nunca en la de
+trabajo:
+
+```bash
+DB_NAME=escuela_futbol_demo npm run db:setup -- --demo --ampliada   # crea y llena la base de demostración
+DB_NAME=escuela_futbol_demo npm run db:demo:reset                   # la borra y la vuelve a crear desde cero
+```
+
+- Se carga con los servicios reales de la app (mismas reglas, cargos y bitácora), como `admin@example.com`, con fechas
+  relativas a hoy: hoy debe caer dentro de la temporada de la demostración (2026-2027).
+- Se carga una sola vez por base; para rehacerla, `db:demo:reset`. Los datos de demostración no llevan marca: la única
+  forma de quitarlos es borrar **esa base completa**, y `db:demo:reset` se niega a borrar una base que no termine en
+  `_demo`. Tu cuenta de MariaDB necesita permiso para crear y borrar esa base.
+- Ningún dato de demostración (`--demo`, `--ampliada`, `--dev-seed`, `db:mariadb:demo`) se carga con
+  `NODE_ENV=production`.
+
+### Qué protege cada comando de datos
+
+| Comando                                                             | Dónde puede escribir                                                     | Se niega (y no toca nada) si…                                                                                                      | ¿Puede borrar?                                      |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `npm run db:setup`                                                  | `DB_NAME`: esquema sólo si está vacía, migraciones, catálogo de permisos | la base tiene tablas ajenas al esquema                                                                                             | No: nunca borra, vacía ni cambia contraseñas        |
+| `npm run db:setup -- --demo`                                        | `DB_NAME`, sólo si no tiene usuarios ni jugadores                        | `NODE_ENV=production`; la base tiene usuarios o jugadores (comprobado **antes** de `db:setup` y otra vez dentro de la transacción) | No                                                  |
+| `npm run db:setup -- --dev-seed` (obsoleto)                         | Igual que `--demo`, con la semilla 020                                   | Igual que `--demo`; además no se combina con `--demo`                                                                              | No                                                  |
+| `npm run db:mariadb:demo`                                           | `DB_NAME`, sólo si no tiene usuarios ni jugadores                        | `NODE_ENV=production`; la base tiene usuarios o jugadores                                                                          | No                                                  |
+| `DB_NAME=escuela_futbol_demo npm run db:setup -- --demo --ampliada` | Sólo una base `*_demo` vacía                                             | `NODE_ENV=production` o un nombre que no termina en `_demo` (comprobado **antes de conectar**); una base con datos                 | No                                                  |
+| `DB_NAME=escuela_futbol_demo npm run db:demo:reset`                 | Sólo la base `*_demo` indicada                                           | Lo mismo, validado otra vez justo antes del `DROP DATABASE` sobre el nombre exacto que borra                                       | **Sí, la base `*_demo` completa** (es su propósito) |
+
+- **Qué base usan:** `DB_NAME` de la línea de comandos manda sobre el de `.env` (comportamiento de Node con
+  `--env-file`); sin él se usa el de `.env`, y si es la base de trabajo (`escuela_futbol`), `--ampliada` y
+  `db:demo:reset` se niegan antes de conectar.
+- **Alcance de la transacción del reset:** `db:demo:reset` no es atómico de punta a punta. Borra la base (irreversible),
+  crea el esquema (DDL, sin transacción), carga la demostración base en una transacción y la ampliada en **otra sola
+  transacción** (si una regla falla, nada de la ampliada queda escrito); el inicio y cierre de sesión del administrador
+  se registran aparte, como en la app. Si algo falla a medias, la base `*_demo` queda incompleta y basta repetir
+  `db:demo:reset`; ninguna otra base se ve afectada.
+- **Otros comandos:** `restore.sh` se niega a restaurar sobre una base que ya existe; las pruebas
+  (`npm run api:test`, `npm run e2e`, `npm run db:mariadb:test-backup`) sólo crean y borran bases `ef_*` temporales.
+  `npm run db:reset` y `npm run db:test` son del esquema **PostgreSQL histórico** y sí borran `charales_dev` y
+  `charales_test` en PostgreSQL: no tienen relación con MariaDB.
+
 `db:setup` es seguro de repetir: **nunca borra ni vacía nada** y no cambia contraseñas. Aplica el esquema sólo a una
 base sin tablas, conserva la matriz de permisos que el administrador haya editado y se niega a tocar una base con
 tablas ajenas. Ejecútalo después de cada `git pull` que traiga migraciones (`db/mariadb/migrations`).
@@ -186,13 +228,15 @@ valores por omisión `CURRENT_TIMESTAMP` y para el trabajo diario de VENCIDO (`C
 
 ## 11. Problemas comunes
 
-| Mensaje                                                   | Causa y solución                                                                               |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `No se pudo conectar a MariaDB (... ECONNREFUSED ...)`    | MariaDB no está iniciado, o `DB_HOST`/`DB_PORT` no coinciden                                   |
-| `No se pudo conectar a MariaDB (... Access denied ...)`   | `DB_USER`/`DB_PASSWORD` incorrectos, o falta la cuenta de la sección 3                         |
-| `No se pudo crear la base «…»`                            | Tu cuenta no puede crear bases: créala como administrador (sección 3) y repite `db:setup`      |
-| `La base «…» ya tiene … tabla(s) que no son del esquema…` | `DB_NAME` apunta a otra base: usa otro nombre                                                  |
-| `La base ya tiene datos: la demostración sólo se carga…`  | `--demo` sólo en una base sin usuarios ni jugadores                                            |
-| El login dice «No se pudo conectar con la API»            | La API no está corriendo (`npm run api:start`) o no está en el puerto 3000                     |
-| Crear personal o vincular un tutor responde 503           | Falta `MAIL_CONSOLE=true` en `.env` (no hay proveedor de correo; ver «Producción» en `API.md`) |
-| `npm warn EBADENGINE`                                     | Tu Node no cumple `^24.15.0 \|\| >=26`: actualízalo                                            |
+| Mensaje                                                   | Causa y solución                                                                                 |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `No se pudo conectar a MariaDB (... ECONNREFUSED ...)`    | MariaDB no está iniciado, o `DB_HOST`/`DB_PORT` no coinciden                                     |
+| `No se pudo conectar a MariaDB (... Access denied ...)`   | `DB_USER`/`DB_PASSWORD` incorrectos, o falta la cuenta de la sección 3                           |
+| `No se pudo crear la base «…»`                            | Tu cuenta no puede crear bases: créala como administrador (sección 3) y repite `db:setup`        |
+| `La base «…» ya tiene … tabla(s) que no son del esquema…` | `DB_NAME` apunta a otra base: usa otro nombre                                                    |
+| `La base ya tiene datos: la demostración sólo se carga…`  | `--demo` sólo en una base sin usuarios ni jugadores                                              |
+| `La demostración ampliada sólo va en una base *_demo…`    | Define `DB_NAME=…_demo` en el comando (no en `.env`): la ampliada nunca va en la base de trabajo |
+| `La demostración ampliada ya está cargada…`               | Ya se cargó en esa base: `DB_NAME=…_demo npm run db:demo:reset` para rehacerla                   |
+| El login dice «No se pudo conectar con la API»            | La API no está corriendo (`npm run api:start`) o no está en el puerto 3000                       |
+| Crear personal o vincular un tutor responde 503           | Falta `MAIL_CONSOLE=true` en `.env` (no hay proveedor de correo; ver «Producción» en `API.md`)   |
+| `npm warn EBADENGINE`                                     | Tu Node no cumple `^24.15.0 \|\| >=26`: actualízalo                                              |

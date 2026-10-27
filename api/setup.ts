@@ -5,21 +5,57 @@
  *
  *   npm run db:setup              # schema + migrations + permissions
  *   npm run db:setup -- --demo    # …and the fictitious demo data (only on a database without users or players)
+ *   DB_NAME=escuela_futbol_demo npm run db:setup -- --demo --ampliada
+ *                                 # …plus the extended demo (api/demo-extended.ts), only in a *_demo database
+ *   DB_NAME=escuela_futbol_demo npm run db:demo:reset   # = --demo --ampliada --reset: drops that *_demo database
+ *                                 # and builds it again (the only way to remove demo rows)
+ * No demo data is ever loaded with NODE_ENV=production.
  *   npm run db:mariadb:dev-seed   # (obsolete, use --demo) = db:setup -- --dev-seed: …and the small 020 seed,
  *                                 # also only on a database without users or players (checked before any write)
  *
  * Then create the first administrator with `npm run db:admin`. Guide: docs/SETUP.md.
  */
 import { loadDemo } from './demo.ts';
-import { NOT_EMPTY, SetupError, existingRows, loadDevSeed, setupDatabase } from './schema.ts';
+import { loadExtendedDemo } from './demo-extended.ts';
+import {
+  DEMO_NOT_EMPTY,
+  NOT_EMPTY,
+  SetupError,
+  databaseName,
+  assertDemoAllowed,
+  dropDemoDatabase,
+  existingRows,
+  loadDevSeed,
+  setupDatabase,
+} from './schema.ts';
 import { createPool } from './server.ts';
 
 if (import.meta.main) {
   try {
     const devSeed = process.argv.includes('--dev-seed');
-    // Refused before setupDatabase: a database with users or players is left exactly as it was (loadDevSeed checks
-    // again, under lock, inside its own transaction).
-    if (devSeed && (await existingRows(process.env)) > 0) throw new SetupError(NOT_EMPTY);
+    const demo = process.argv.includes('--demo');
+    const extended = process.argv.includes('--ampliada');
+    const reset = process.argv.includes('--reset');
+    if ((extended || reset) && !demo)
+      throw new SetupError(
+        '--ampliada y --reset van junto con --demo (npm run db:setup -- --demo --ampliada).',
+      );
+    if (devSeed && demo)
+      throw new SetupError('--dev-seed (obsoleto) y --demo no se combinan: usa sólo --demo.');
+    if (reset && !extended)
+      throw new SetupError(
+        '--reset sólo rehace la demostración ampliada: --demo --ampliada --reset.',
+      );
+    // Before any connection: NODE_ENV=production and, for the extended demo, a database not named *_demo.
+    if (demo || devSeed) assertDemoAllowed(process.env, { demoDatabase: extended });
+    if (reset) {
+      await dropDemoDatabase(process.env);
+      console.log(`· base de demostración «${databaseName(process.env)}» borrada para rehacerla`);
+    }
+    // Refused before setupDatabase: a database with users or players is left exactly as it was, not even migrated
+    // (loadDevSeed and loadDemo check again, under lock, inside their own transaction).
+    if ((devSeed || demo) && (await existingRows(process.env)) > 0)
+      throw new SetupError(devSeed ? NOT_EMPTY : DEMO_NOT_EMPTY);
     const r = await setupDatabase(process.env);
     console.log(`MariaDB ${r.version} · base «${r.database}»${r.created ? ' (creada)' : ''}`);
     console.log(
@@ -37,11 +73,23 @@ if (import.meta.main) {
         '· semilla 020 cargada (obsoleta: usa npm run db:setup -- --demo). Cuentas @example.com: nunca en producción.',
       );
     }
-    if (process.argv.includes('--demo')) {
+    if (demo) {
       const db = createPool({ ...process.env, DB_NAME: r.database });
       try {
         await loadDemo(db);
         console.log('· datos de demostración cargados (cuentas @example.com, contraseña demo1234)');
+        if (extended) {
+          const s = await loadExtendedDemo(db).catch((e) => {
+            throw new SetupError(
+              `La demostración ampliada no se cargó (${e instanceof Error ? e.message : e}); la base quedó con la ` +
+                'demostración básica. Rehazla con npm run db:demo:reset.',
+            );
+          });
+          console.log(
+            `· demostración ampliada: ${s.players} jugadores, ${s.tutors} familias, ${s.sessions} sesiones pasadas ` +
+              `(${s.attendance} asistencias), ${s.matches} partidos, ${s.payments} pagos`,
+          );
+        }
       } finally {
         await db.end();
       }

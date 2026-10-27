@@ -22,7 +22,7 @@ import { NgTemplateOutlet } from '@angular/common';
     } @else if (!res().hasValue()) {
       <p class="muted" role="status">Cargando…</p>
     } @else if (isEmpty()) {
-      <p class="muted">{{ emptyText() }}</p>
+      <p class="muted empty">{{ emptyText() }}</p>
     } @else {
       <ng-container [ngTemplateOutlet]="content()" />
     }

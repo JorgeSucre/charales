@@ -39,15 +39,18 @@ Administrador.)
 
 Ninguna es un error crítico: son pendientes acordados para fases posteriores.
 
-| Prioridad      | Pendiente                                                                                                                                          |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Siguiente fase | Verificación de cada HU sobre MariaDB (fases 2–6 de [`TRACEABILITY.md`](TRACEABILITY.md))                                                          |
-| P2             | `categorias.temporada_id` NOT NULL (HU-015; hoy la unicidad sin temporada la aplica la app, D4/R12)                                                |
-| P2             | `autorizada_por` en la excepción de edad/cupo (HU-017; hoy queda en `historial_categoria.cambiado_por` y en `auditoria`)                           |
-| P2             | Relación N:M `sesion_entrenador` (principal y auxiliares; hoy `sesiones_entrenamiento.entrenador_id` único)                                        |
-| P2             | Proveedor de correo real (D4c): sin él, en producción la recuperación y las invitaciones responden 503                                             |
-| P3             | `asistencias.crear` existe en el catálogo de permisos, pero ningún servicio lo verifica (la captura usa `asistencias.editar`)                      |
-| Nota           | Una sesión abierta con una versión anterior a `18178ba` no tiene `officePermissions`: al recargar se descarta y el usuario vuelve a iniciar sesión |
+| Prioridad      | Pendiente                                                                                                                                                                                                                                                  |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Siguiente fase | Verificación de cada HU sobre MariaDB (fases 2–6 de [`TRACEABILITY.md`](TRACEABILITY.md))                                                                                                                                                                  |
+| P2             | `categorias.temporada_id` NOT NULL (HU-015; hoy la unicidad sin temporada la aplica la app, D4/R12)                                                                                                                                                        |
+| P2             | `autorizada_por` en la excepción de edad/cupo (HU-017; hoy queda en `historial_categoria.cambiado_por` y en `auditoria`)                                                                                                                                   |
+| P2             | Relación N:M `sesion_entrenador` (principal y auxiliares; hoy `sesiones_entrenamiento.entrenador_id` único)                                                                                                                                                |
+| P2             | Proveedor de correo real (D4c): sin él, en producción la recuperación y las invitaciones responden 503                                                                                                                                                     |
+| P3             | `asistencias.crear` existe en el catálogo de permisos, pero ningún servicio lo verifica (la captura usa `asistencias.editar`)                                                                                                                              |
+| Nota           | Una sesión abierta con una versión anterior a `18178ba` no tiene `officePermissions`: al recargar se descarta y el usuario vuelve a iniciar sesión                                                                                                         |
+| P2             | F3.1 (I2): sin revisión visual de las pestañas «Pagos y adeudos», «Uniformes» y «Estatus» del expediente del jugador, ni del estado vacío (`.empty`) fuera de Jugadores (p. ej. Registrar pago sin adeudos, Mensualidades sin elegibles)                   |
+| P2             | F3.1 (I3): la validación y el foco tras un envío inválido sólo se probaron en jsdom; falta navegador real (alta vacía, teléfono inválido, estatus sin motivo). Un motivo con sólo espacios pasa `required` y lo rechaza el servidor después de `confirm()` |
+| P2             | Accesibilidad sin comprobación manual: anillo de foco visible y recorrido con Tab (shell, menú, Jugadores), y foco al cambiar sólo la query (Estado de cuenta). Las pestañas del expediente no se mueven con flechas (patrón WAI-ARIA)                     |
 
 ## Notas de historial Git
 

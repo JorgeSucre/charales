@@ -1,4 +1,14 @@
-import { addDays, ageOn, dateTimeIn, isISODate, isTime, overlaps, today, weekday } from './dates';
+import {
+  addDays,
+  ageOn,
+  dateRangeLabel,
+  dateTimeIn,
+  isISODate,
+  isTime,
+  overlaps,
+  today,
+  weekday,
+} from './dates';
 import { parseMoney, sumCents, toDecimal } from './money';
 import { matches, paginate } from './page';
 import { centsFromInput } from './ui';
@@ -43,6 +53,31 @@ describe('dates (DATE / TIME / DATETIME as strings)', () => {
     expect(overlaps({ start: '17:00', end: '18:00' }, { start: '18:00', end: '19:00' })).toBe(
       false,
     );
+  });
+});
+
+describe('dateRangeLabel (inclusive DATE range in Spanish)', () => {
+  it('same month, different months, different years and a single day', () => {
+    expect(dateRangeLabel('2026-10-01', '2026-10-21')).toBe('del 1 al 21 de octubre de 2026');
+    expect(dateRangeLabel('2026-09-15', '2026-10-21')).toBe(
+      'del 15 de septiembre al 21 de octubre de 2026',
+    );
+    expect(dateRangeLabel('2025-12-15', '2026-01-21')).toBe(
+      'del 15 de diciembre de 2025 al 21 de enero de 2026',
+    );
+    expect(dateRangeLabel('2026-10-21', '2026-10-21')).toBe('el 21 de octubre de 2026');
+  });
+
+  it('first of the month stays the first: no UTC shift whatever the time zone', () => {
+    expect(dateRangeLabel('2026-01-01', '2026-01-31')).toBe('del 1 al 31 de enero de 2026');
+  });
+
+  it('missing, malformed, impossible or reversed ranges give null', () => {
+    expect(dateRangeLabel('', '2026-10-21')).toBeNull();
+    expect(dateRangeLabel('2026-10-01', undefined)).toBeNull();
+    expect(dateRangeLabel('2026-10-01', '21/10/2026')).toBeNull();
+    expect(dateRangeLabel('2026-02-30', '2026-03-01')).toBeNull();
+    expect(dateRangeLabel('2026-10-21', '2026-10-01')).toBeNull();
   });
 });
 

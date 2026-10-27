@@ -26,6 +26,7 @@ const TYPES: Record<string, string> = {
   '.css': 'text/css',
   '.ico': 'image/x-icon',
   '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
 };
 
 let t: TestDb;
@@ -118,12 +119,14 @@ async function check(path: string, width: number, who: string, home: string): Pr
     toggle: boolean;
     clipped: number;
     english: string | null;
+    crest: boolean;
   }>(`({
     path: location.pathname,
     overflow: document.documentElement.scrollWidth - window.innerWidth,
     alerts: [...document.querySelectorAll('.alert.error')].map((e) => e.textContent.trim()),
     toggle: !!document.querySelector('.menu-toggle')?.offsetParent,
     clipped: [...document.querySelectorAll('.kpi, .card')].filter((e) => e.scrollWidth > e.clientWidth + 1).length,
+    crest: [...document.querySelectorAll('img[src$="CHCH23logo.webp"]')].some((i) => i.complete && i.naturalWidth > 0),
     english: (document.querySelector('main').innerText.match(/\\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Apr|May|Aug|Dec)\\b/) ?? [])[0] ?? null,
   })`);
   // «Inicio» (/) takes coaches and tutors to their own panel (AuthService.homeUrl).
@@ -133,6 +136,7 @@ async function check(path: string, width: number, who: string, home: string): Pr
   if (state.alerts.length) problems.push(`error: ${state.alerts.join(' | ')}`);
   if (state.clipped) problems.push(`${state.clipped} tarjeta(s) con texto desbordado`);
   if (state.english) problems.push(`texto en inglés: «${state.english}»`);
+  if (!state.crest) problems.push('el escudo no se cargó');
   if (width === 375 && !state.toggle) problems.push('el menú no se colapsa');
   if (width === 1280 && state.toggle) problems.push('botón de menú visible en escritorio');
   const errors = page.errors();
@@ -193,6 +197,17 @@ test('HU-004.3 / HU-002.4: an account deactivated on the server is sent to the l
   await page.goto(`${app}/coach`);
   await page.until(`location.pathname === '/login' && location.search.includes('expired=1')`);
   await t.ok(t.call(admin, 'UserService', 'setActive', 6, true));
+  page.errors();
+});
+
+test('skip link: away from Inicio it focuses <main> on the same page (with <base href="/">, #main meant /#main)', async () => {
+  await login('admin@example.com');
+  await page.goto(`${app}/account/password`);
+  await page.until(settled);
+  await page.eval(`document.querySelector('.skip-link').click()`);
+  await new Promise((resolve) => setTimeout(resolve, 500)); // a navigation to /#main would have happened by now
+  assert.equal(await page.eval<string>('location.pathname + location.hash'), '/account/password');
+  assert.equal(await page.eval<string>('document.activeElement?.id'), 'main');
   page.errors();
 });
 
@@ -355,5 +370,406 @@ test('persistence: a player created and edited in the UI survives a page reload 
     restarted.close();
     await pool.end();
   }
+  assert.deepEqual(page.errors(), []);
+});
+
+test('HU-045 through the UI: a partial payment of an overdue charge is stored with its folio and receipt', async () => {
+  // Its own Chrome, like HU-010: confirm() must be answered by this test. Writes only to the temporary database.
+  const shared = page;
+  page = await openBrowser();
+  try {
+    await paymentFlow();
+  } finally {
+    await page.close();
+    page = shared;
+  }
+});
+
+async function paymentFlow(): Promise<void> {
+  await login('secretaria@example.com');
+  const [overdue] = await t.db.query(
+    `SELECT c.id FROM cargos c JOIN jugadores j ON j.id = c.jugador_id
+     WHERE j.nombre = 'Lucía' AND j.apellido_paterno = 'Hernández' AND c.estado = 'VENCIDO' LIMIT 1`,
+  );
+  assert.ok(overdue, 'the demo data has an overdue charge for Lucía');
+  const before = await t.count('SELECT COUNT(*) AS n FROM pagos');
+
+  page.dialogs(true);
+  await page.goto(`${app}/admin/billing/payments/new`);
+  await page.until(`document.querySelector('select[name=player]')?.options.length > 1`);
+  await page.eval(`(() => {
+    const s = document.querySelector('select[name=player]');
+    s.selectedIndex = [...s.options].findIndex((o) => o.textContent.trim() === 'Lucía Hernández López');
+    s.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await page.until(
+    `[...document.querySelectorAll('fieldset label.check')].some((l) => l.querySelector('.tag')?.textContent.trim() === 'Vencido')`,
+  );
+  await page.eval(`(() => {
+    [...document.querySelectorAll('fieldset label.check')]
+      .find((l) => l.querySelector('.tag')?.textContent.trim() === 'Vencido').querySelector('input').click();
+    const a = document.querySelector('input[name=amount]');
+    a.value = '100'; a.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await page.until(`!document.querySelector('form button[type=submit]').disabled`);
+  await page.eval(`document.querySelector('form button[type=submit]').click()`);
+  await page.until(
+    `/Pago registrado con folio/.test(document.querySelector('main').innerText)`,
+    8000,
+  );
+  assert.match(
+    page.dialogs(true).join(),
+    /¿Registrar el pago por \$100\?/,
+    '1) asks for confirmation',
+  );
+
+  assert.equal(
+    await t.count('SELECT COUNT(*) AS n FROM pagos'),
+    before + 1,
+    '2) one payment stored',
+  );
+  const [paid] = await t.db.query('SELECT id, folio, importe FROM pagos ORDER BY id DESC LIMIT 1');
+  assert.equal(Number(paid.importe), 100);
+  const [applied] = await t.db.query(
+    'SELECT cargo_id, importe_aplicado FROM pago_aplicacion WHERE pago_id = ?',
+    [paid.id],
+  );
+  assert.equal(Number(applied.cargo_id), Number(overdue.id), '3) applied to the overdue charge');
+  assert.equal(Number(applied.importe_aplicado), 100, '3) partially');
+
+  const shown = await page.eval<{ text: string; receipt: string | null }>(`({
+    text: document.querySelector('main').innerText,
+    receipt: [...document.querySelectorAll('a')].find((a) => a.textContent.includes('Ver / imprimir recibo'))?.getAttribute('href') ?? null,
+  })`);
+  assert.match(
+    shown.text,
+    new RegExp(`Pago registrado con folio ${paid.folio}\\b`),
+    '4) the folio shown is the stored one',
+  );
+  assert.equal(shown.receipt, `/admin/billing/receipts/${paid.id}`, '5) link to its receipt');
+  assert.deepEqual(page.errors(), []);
+}
+
+test('A0 harness: real key presses, opt-in focus emulation and print media (read-only)', async () => {
+  // Default unchanged: the shared Chrome of the other tests is not focus-emulated.
+  assert.equal(await page.eval<boolean>('document.hasFocus()'), false, 'shared page: default');
+  const shared = page;
+  page = await openBrowser();
+  try {
+    await harnessFlow();
+  } finally {
+    await page.close();
+    page = shared;
+  }
+  assert.equal(
+    await page.eval<boolean>('document.hasFocus()'),
+    false,
+    'shared page: still default',
+  );
+});
+
+async function harnessFlow(): Promise<void> {
+  const focused = `({ id: document.activeElement?.getAttribute('formcontrolname') ?? document.activeElement?.tagName,
+    visible: document.activeElement?.matches(':focus-visible') ?? false,
+    outline: getComputedStyle(document.activeElement).outlineStyle })`;
+  type Focused = { id: string; visible: boolean; outline: string };
+
+  // 1) A fresh browser is not focused either; emulation is opt-in and reversible (checked before any key press:
+  //    a real key press focuses the page by itself, so after one, hasFocus() stays true without emulation).
+  await page.goto(`${app}/login`);
+  await page.until(`document.querySelector('input[type=email]')`);
+  assert.equal(await page.eval<boolean>('document.hasFocus()'), false, 'new browser: default');
+  await page.focusEmulation();
+  assert.equal(await page.eval<boolean>('document.hasFocus()'), true, 'emulation on');
+  await page.focusEmulation(false);
+  assert.equal(
+    await page.eval<boolean>('document.hasFocus()'),
+    false,
+    'emulation off: default again',
+  );
+
+  // 2) Tab / Shift+Tab through CDP move the focus the way a keyboard does, with a visible ring — with no
+  //    emulation at all: the key press itself gives the page focus.
+  await page.press('Tab');
+  assert.equal(
+    await page.eval<boolean>('document.hasFocus()'),
+    true,
+    'a real key press focuses the page',
+  );
+  const first = await page.eval<Focused>(focused);
+  assert.deepEqual([first.id, first.visible], ['email', true], 'Tab → e-mail, :focus-visible');
+  assert.notEqual(first.outline, 'none', 'focus ring drawn');
+  await page.press('Tab');
+  assert.equal((await page.eval<Focused>(focused)).id, 'password', 'Tab → password');
+  await page.press('Tab', { shift: true });
+  assert.equal((await page.eval<Focused>(focused)).id, 'email', 'Shift+Tab → back to e-mail');
+
+  // 3) Other keys reach the page as real keydown events.
+  await page.eval(
+    `(() => { window.__keys = []; addEventListener('keydown', (e) => __keys.push(e.key)); })()`,
+  );
+  await page.press('Escape');
+  await page.press('ArrowRight');
+  assert.deepEqual(await page.eval<string[]>('window.__keys'), ['Escape', 'ArrowRight']);
+
+  // 4) Print media on a receipt that exists in the database: the app shell is hidden, the receipt is not.
+  const [stored] = await t.db.query('SELECT folio, estado FROM pagos WHERE id = 1');
+  assert.ok(stored, 'payment 1 exists in the temporary database');
+  await login('admin@example.com');
+  await page.goto(`${app}/admin/billing/receipts/1`);
+  await page.until(settled);
+  assert.match(
+    await page.eval<string>(`document.querySelector('main').innerText`),
+    new RegExp(`Recibo ${stored.folio}\\b`),
+    'the receipt page shows that payment',
+  );
+  const display = (selector: string) =>
+    page.eval<string>(`getComputedStyle(document.querySelector('${selector}')).display`);
+  assert.notEqual(await display('.topbar'), 'none', 'screen: top bar shown');
+  await page.media('print');
+  assert.equal(await display('.topbar'), 'none', 'print: top bar hidden');
+  assert.equal(await display('.sidenav'), 'none', 'print: side menu hidden');
+  assert.notEqual(await display('.receipt'), 'none', 'print: receipt shown');
+  if (SHOTS) writeFileSync(join(SHOTS, 'a0_receipt_print_1280.png'), await page.screenshot());
+  await page.media('');
+  assert.notEqual(await display('.topbar'), 'none', 'screen media restored');
+  assert.deepEqual(page.errors(), []);
+}
+
+test('user menu: its button opens it, Escape closes it back on its button, an outside click closes it', async () => {
+  await login('admin@example.com');
+  const open = () => page.eval<boolean>(`document.querySelector('.user-menu').open`);
+  // DOM events, not page.press(): after the rest of this file, real key presses stop reaching the page (no keydown at
+  // all, also with focus emulation). Real Space/Escape on this menu pass when this test runs alone.
+  const escape = `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`;
+  for (const width of [1280, 375]) {
+    await page.size(width, 900);
+    await page.goto(`${app}/`);
+    await page.until(settled);
+    await page.eval(`document.querySelector('.user-menu summary').click()`);
+    await page.until(`document.querySelector('.user-menu').open`);
+    assert.deepEqual(
+      await page.eval<string[]>(
+        `[...document.querySelectorAll('.user-menu .menu a, .user-menu .menu button')].filter((e) => e.offsetParent).map((e) => e.textContent.trim())`,
+      ),
+      ['Cambiar contraseña', 'Salir'],
+    );
+    if (SHOTS) writeFileSync(join(SHOTS, `user_menu_${width}.png`), await page.screenshot());
+    await page.eval(`document.querySelector('.user-menu .menu a').focus()`);
+    await page.eval(escape);
+    assert.equal(await open(), false, `@${width}: Escape closes it`);
+    assert.equal(
+      await page.eval<boolean>(
+        `document.activeElement === document.querySelector('.user-menu summary')`,
+      ),
+      true,
+      'focus back on the button',
+    );
+    await page.eval(`document.querySelector('.user-menu summary').click()`);
+    await page.until(`document.querySelector('.user-menu').open`);
+    await page.eval(`document.querySelector('main h1').click()`);
+    assert.equal(await open(), false, `@${width}: an outside click closes it`);
+  }
+  assert.deepEqual(page.errors(), []);
+});
+
+test('Inicio: six indicators in full rows (3 × 2 desktop, 2 × 3 tablet/phone), a large amount fits, phone menu closes on Escape', async () => {
+  await login('admin@example.com');
+  for (const [width, perRow] of [
+    [1280, 3],
+    [768, 2],
+    [375, 2],
+  ] as const) {
+    await page.size(width, 2600); // tall: the screenshot shows the whole page down to «Otros módulos»
+    await page.goto(`${app}/`);
+    await page.until(`document.querySelectorAll('.kpis.six .kpi').length === 6`);
+    if (SHOTS) writeFileSync(join(SHOTS, `inicio_full_${width}.png`), await page.screenshot());
+    const rows = await page.eval<number[]>(
+      `Object.values([...document.querySelectorAll('.kpis.six .kpi')].reduce((r, k) => ((r[k.offsetTop] = (r[k.offsetTop] ?? 0) + 1), r), {}))`,
+    );
+    assert.deepEqual(rows, Array(6 / perRow).fill(perRow), `@${width}: rows of ${perRow}`);
+    const quickRows = await page.eval<number[]>(
+      `Object.values([...document.querySelectorAll('.cards.quick .card')].reduce((r, k) => ((r[k.offsetTop] = (r[k.offsetTop] ?? 0) + 1), r), {}))`,
+    );
+    const quickPerRow = width === 1280 ? 3 : 1;
+    // «Otros módulos»: area name beside its links on desktop, above them below 1000 px.
+    const stacked = await page.eval<boolean>(`(() => {
+      const row = document.querySelector('.module-row');
+      return row.querySelector('ul').offsetTop > row.querySelector('h3').offsetTop + 4;
+    })()`);
+    assert.equal(stacked, width !== 1280, `@${width}: module rows stacked below 1000 px`);
+    assert.deepEqual(
+      quickRows,
+      Array(9 / quickPerRow).fill(quickPerRow),
+      `@${width}: quick access rows`,
+    );
+    assert.match(
+      await page.eval<string>(`document.querySelector('.kpis.six').innerText`),
+      /Ingresos del \d+ (de \w+ )?al \d+ de \w+ de \d{4}/,
+    );
+    // Display-only probe (no data changes): the widest amount the school could plausibly reach still fits.
+    const clipped = await page.eval<number>(`(() => {
+      const s = document.querySelector('.kpis.six .kpi strong');
+      s.textContent = '$9,999,999.99';
+      return s.scrollWidth - s.clientWidth;
+    })()`);
+    assert.ok(clipped <= 0, `@${width}: amount clipped by ${clipped}px`);
+  }
+  await page.size(375, 900);
+  // Phone: «Menú» opens the menu, Escape inside it closes it and focus returns to «Menú» (DOM event: see the user
+  // menu test about page.press()).
+  await page.goto(`${app}/`);
+  await page.until(settled);
+  await page.eval(`document.querySelector('.menu-toggle').click()`);
+  await page.until(`document.querySelector('#nav-links a')?.offsetParent`);
+  await page.eval(
+    `document.querySelector('#nav-links a').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`,
+  );
+  await page.until(`!document.querySelector('#nav-links a').offsetParent`);
+  assert.equal(
+    await page.eval<boolean>(`document.activeElement === document.querySelector('.menu-toggle')`),
+    true,
+  );
+  if (SHOTS) writeFileSync(join(SHOTS, 'inicio_menu_closed_375.png'), await page.screenshot());
+  assert.deepEqual(page.errors(), []);
+});
+
+test('Tablero: six indicators in full rows (3 × 2 desktop, 2 × 3 tablet/phone), income period in Spanish, a large amount fits', async () => {
+  await login('admin@example.com');
+  for (const [width, perRow] of [
+    [1280, 3],
+    [768, 2],
+    [375, 2],
+  ] as const) {
+    await page.size(width, 900);
+    await page.goto(`${app}/admin/dashboard`);
+    await page.until(`document.querySelectorAll('.kpis.six .kpi').length === 6`);
+    const rows = await page.eval<number[]>(
+      `Object.values([...document.querySelectorAll('.kpis.six .kpi')].reduce((r, k) => ((r[k.offsetTop] = (r[k.offsetTop] ?? 0) + 1), r), {}))`,
+    );
+    assert.deepEqual(rows, Array(6 / perRow).fill(perRow), `@${width}: rows of ${perRow}`);
+    if (width === 1280) {
+      // One-line labels on desktop: every figure of a row at the same height.
+      const figures = await page.eval<number[]>(
+        `[...document.querySelectorAll('.kpis.six .kpi')].map((k) => k.querySelector('strong').getBoundingClientRect().top - k.getBoundingClientRect().top)`,
+      );
+      assert.equal(new Set(figures.map(Math.round)).size, 1, `figures aligned: ${figures}`);
+    }
+    const text = await page.eval<string>(`document.querySelector('.kpis.six').innerText`);
+    assert.match(text, /Ingresos del \d+ (de \w+ )?al \d+ de \w+ de \d{4}/);
+    assert.doesNotMatch(text, /\d{4}-\d{2}-\d{2}/);
+    if (SHOTS) writeFileSync(join(SHOTS, `tablero_${width}.png`), await page.screenshot());
+    // Display-only probe (no data changes), as on Inicio.
+    const clipped = await page.eval<number>(`(() => {
+      const s = document.querySelector('.kpis.six .kpi strong');
+      s.textContent = '$9,999,999.99';
+      return s.scrollWidth - s.clientWidth;
+    })()`);
+    assert.ok(clipped <= 0, `@${width}: amount clipped by ${clipped}px`);
+  }
+  assert.deepEqual(page.errors(), []);
+});
+
+test('side menu: compact mode on desktop (remembered) and tablet, tooltips, collapsible areas, accessible phone panel', async () => {
+  await login('admin@example.com');
+  const width = (sel: string) =>
+    page.eval<number>(`Math.round(document.querySelector('${sel}').getBoundingClientRect().width)`);
+  const visibleLinks = () =>
+    page.eval<number>(
+      `[...document.querySelectorAll('#nav-links a')].filter((a) => a.offsetParent).length`,
+    );
+
+  // Desktop: expanded by default; the header hamburger makes it compact and the choice survives a reload (D3).
+  await page.size(1280, 900);
+  await page.eval(`localStorage.removeItem('charales.nav.rail')`);
+  await page.goto(`${app}/sports/categories`);
+  await page.until(settled);
+  assert.equal(await width('.sidenav'), 240);
+  assert.equal(
+    await page.eval<string>(
+      `document.querySelector('.nav-group.current .nav-section').getAttribute('aria-expanded')`,
+    ),
+    'true',
+    'the active page’s area is open',
+  );
+  await page.eval(`document.querySelector('.rail-toggle').click()`);
+  await page.until(`document.querySelector('.layout.rail')`);
+  assert.equal(await width('.sidenav'), 72);
+  assert.equal(await visibleLinks(), 1, 'compact: only «Inicio» is a link, the areas are buttons');
+  // Tooltip on keyboard focus too, and every area button keeps its accessible name.
+  await page.focusEmulation();
+  await page.eval(`document.querySelector('.nav-group.current .nav-section').focus()`);
+  assert.match(
+    await page.eval<string>(
+      `getComputedStyle(document.querySelector('.nav-group.current .nav-section'), '::after').content`,
+    ),
+    /Gestión deportiva/,
+  );
+  await page.focusEmulation(false);
+  assert.deepEqual(
+    await page.eval<string[]>(
+      `[...document.querySelectorAll('.nav-section')].filter((b) => !b.innerText.trim() && !b.textContent.trim()).map((b) => b.outerHTML)`,
+    ),
+    [],
+  );
+  if (SHOTS) writeFileSync(join(SHOTS, 'nav_rail_1280.png'), await page.screenshot());
+  await page.goto(`${app}/sports/categories`);
+  await page.until(settled);
+  assert.equal(await width('.sidenav'), 72, 'desktop remembers the compact menu');
+  // An area button expands the menu, opens that area and focuses its first link (D2).
+  await page.eval(
+    `[...document.querySelectorAll('.nav-section')].find((b) => b.textContent.includes('Cobranza')).click()`,
+  );
+  await page.until(`!document.querySelector('.layout.rail')`);
+  assert.equal(
+    await page.eval<string>(`document.activeElement.getAttribute('href')`),
+    '/admin/billing/concepts',
+  );
+  await page.eval(`localStorage.removeItem('charales.nav.rail')`);
+
+  // Tablet: always starts compact.
+  await page.size(768, 900);
+  await page.goto(`${app}/`);
+  await page.until(settled);
+  assert.equal(await width('.sidenav'), 72);
+  if (SHOTS) writeFileSync(join(SHOTS, 'nav_rail_768.png'), await page.screenshot());
+
+  // Phone: hamburger → panel with focus on «Cerrar menú» and the page inert; backdrop, Escape and a link close it.
+  await page.size(375, 900);
+  await page.goto(`${app}/`);
+  await page.until(settled);
+  const isOpen = () =>
+    page.eval<boolean>(`document.querySelector('.sidenav').classList.contains('open')`);
+  const openPanel = async () => {
+    await page.eval(`document.querySelector('.menu-toggle').click()`);
+    await page.until(`document.activeElement === document.querySelector('.drawer-close')`);
+  };
+  await openPanel();
+  assert.equal(await page.eval<boolean>(`document.querySelector('main').inert`), true);
+  assert.equal(await page.eval<boolean>(`document.querySelector('.topbar').inert`), true);
+  if (SHOTS) {
+    await new Promise((resolve) => setTimeout(resolve, 300)); // after the 0.2 s slide-in
+    writeFileSync(join(SHOTS, 'nav_panel_375.png'), await page.screenshot());
+  }
+  await page.eval(`document.querySelector('.nav-backdrop').click()`);
+  assert.equal(await isOpen(), false, 'backdrop closes it');
+  assert.equal(
+    await page.eval<boolean>(`document.activeElement === document.querySelector('.menu-toggle')`),
+    true,
+  );
+  assert.equal(await page.eval<boolean>(`document.querySelector('main').inert`), false);
+  await openPanel();
+  await page.eval(
+    `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`,
+  );
+  assert.equal(await isOpen(), false, 'Escape closes it');
+  await openPanel();
+  await page.eval(
+    `[...document.querySelectorAll('.nav-section')].find((b) => b.textContent.includes('Personas')).click()`,
+  );
+  assert.equal(await isOpen(), true, 'an area button keeps it open');
+  await page.eval(`document.querySelector('#nav-links a[href="/admin/players"]').click()`);
+  await page.until(`location.pathname === '/admin/players'`);
+  assert.equal(await isOpen(), false, 'choosing a page closes it');
   assert.deepEqual(page.errors(), []);
 });

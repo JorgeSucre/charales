@@ -21,8 +21,27 @@ export interface Page {
   errors(): string[];
   /** How to answer the next confirm() dialogs (accept or dismiss); returns the messages seen so far. */
   dialogs(accept: boolean): string[];
+  /** A real key press (keyDown + keyUp through the browser, not a synthetic DOM event): Tab moves focus. */
+  press(key: Key, options?: { shift?: boolean }): Promise<void>;
+  /** Opt-in: the headless page behaves as focused (document.hasFocus(), :focus-visible). Off by default. */
+  focusEmulation(enabled?: boolean): Promise<void>;
+  /** Emulated CSS media type: 'print' applies @media print; '' restores the default. */
+  media(type: 'print' | ''): Promise<void>;
   close(): Promise<void>;
 }
+
+/** Keys press() knows: DOM `key`, `code` and Windows virtual key code, as Chrome expects them. */
+const KEYS = {
+  Tab: ['Tab', 9],
+  Escape: ['Escape', 27],
+  Enter: ['Enter', 13],
+  ' ': ['Space', 32],
+  ArrowLeft: ['ArrowLeft', 37],
+  ArrowRight: ['ArrowRight', 39],
+  Home: ['Home', 36],
+  End: ['End', 35],
+} as const;
+export type Key = keyof typeof KEYS;
 
 export const chromeAvailable = () => existsSync(CHROME);
 
@@ -170,6 +189,24 @@ export async function openBrowser(): Promise<Page> {
     dialogs(accept) {
       acceptDialogs = accept;
       return dialogMessages.splice(0);
+    },
+    async press(key, { shift = false } = {}) {
+      const [code, windowsVirtualKeyCode] = KEYS[key];
+      const base = { key, code, windowsVirtualKeyCode, modifiers: shift ? 8 : 0 };
+      // Like Puppeteer: a key that types text is a keyDown with `text`; the others are rawKeyDown.
+      const text = key === ' ' ? { text: ' ' } : {};
+      await send('Input.dispatchKeyEvent', {
+        ...base,
+        ...text,
+        type: key === ' ' ? 'keyDown' : 'rawKeyDown',
+      });
+      await send('Input.dispatchKeyEvent', { ...base, type: 'keyUp' });
+    },
+    async focusEmulation(enabled = true) {
+      await send('Emulation.setFocusEmulationEnabled', { enabled });
+    },
+    async media(type) {
+      await send('Emulation.setEmulatedMedia', { media: type });
     },
     async close() {
       ws.close();
