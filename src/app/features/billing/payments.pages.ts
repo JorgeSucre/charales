@@ -227,12 +227,17 @@ export class PaymentPage {
       focusFirstInvalid(this.formEl().nativeElement);
       return;
     }
+    if ((this.method === 'TRANSFERENCIA' || this.method === 'TARJETA') && !this.reference.trim()) {
+    alert('Por favor ingresa el número de referencia o comprobante.');
+    return;
+    }
     if (!confirm(`¿Registrar el pago por $${this.amount}?`)) return;
     const draft = {
       playerId: this.playerId()!,
       tutorId: this.tutorId,
       amountCents: centsFromInput(this.amount),
       method: this.method,
+      reference: this.reference.trim(),
       chargeIds: [...this.selected()],
       paidAt: this.paidAt,
     };
@@ -246,7 +251,8 @@ export class PaymentPage {
     if (ok) {
       this.selected.set(new Set());
       this.amount = 0;
-      field?.markAsUntouched();
+     this.reference = ''; 
+     field?.markAsUntouched();
       this.open.reload();
     }
   }
@@ -709,3 +715,5 @@ export class DebtsPage {
   );
   protected total = computed(() => sumCents((this.debts.value() ?? []).map((d) => d.balanceCents)));
 }
+
+
