@@ -158,6 +158,7 @@ export class PaymentPage {
   protected chargeTone = CHARGE_TONE;
   protected methodLabels = METHOD_LABELS;
   protected methods = Object.entries(METHOD_LABELS) as [PaymentMethod, string][];
+  protected reference: string = '';
   private formEl = viewChild.required<ElementRef<HTMLFormElement>>('formEl');
   private amountModel = viewChild<NgModel>('amountModel');
   private money = new MoneyPipe();
@@ -715,5 +716,4 @@ export class DebtsPage {
   );
   protected total = computed(() => sumCents((this.debts.value() ?? []).map((d) => d.balanceCents)));
 }
-
 
