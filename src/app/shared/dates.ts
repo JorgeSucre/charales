@@ -85,7 +85,7 @@ export function isCurrentAssignment(
 /** 'YYYY-MM-DDTHH:MM[:SS]' (e.g. from <input type="datetime-local">) → DATETIME 'YYYY-MM-DDTHH:MM:SS'. Throws if invalid. */
 export function normalizeDateTime(value: string): DateTime {
   const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(:\d{2})?$/.exec(value.trim());
-  if (!m || !isISODate(m[1]) || !isTime(m[2])) throw new Error('Fecha y hora inválidas.');
+  if (!m || !isISODate(m[1]) || !isTime(m[2])) throw new Error('Ingresa una fecha y hora válidas.');
   return `${m[1]}T${m[2]}${m[3] ?? ':00'}`;
 }
 

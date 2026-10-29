@@ -214,7 +214,7 @@ test('HU-046/047: statement — charges and payments, balance, overdue, filters;
         method: 'EFECTIVO',
       }),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
 });
 
@@ -241,12 +241,12 @@ test('HU-049: cancel a payment — admin only, reason, reverts balance, kept as 
   await t.refused(
     () => t.call(secretaria, 'BillingService', 'cancelPayment', 2, 'x'),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
   await t.refused(
     () => t.call(admin, 'BillingService', 'cancelPayment', 2, ''),
     400,
-    /^El motivo de cancelación es obligatorio\.$/,
+    /^Falta el motivo de cancelación\. Es un dato obligatorio\.$/,
   );
   await t.ok(t.call(admin, 'BillingService', 'cancelPayment', 2, 'Cheque devuelto'));
   const [p] = await t.db.query('SELECT estado, motivo_cancelacion FROM pagos WHERE id = 2');
@@ -324,7 +324,7 @@ test('HU-051: discounts — type and reason, original and final kept, authorized
         adjustmentCents: 100,
       }),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
   await t.ok(
     t.call(admin, 'BillingService', 'addDiscount', {
@@ -458,7 +458,7 @@ test('HU-053/054/055: orders — price snapshot, charge = total, paid from the b
   await t.refused(
     () => t.call(secretaria, 'UniformService', 'deliver', 9999, 'x'),
     400,
-    /^Pedido no encontrado\.$/,
+    /^Pedido inexistente: actualiza la página e inténtalo de nuevo\.$/,
   );
   await t.ok(
     t.call(secretaria, 'BillingService', 'registerPayment', {
@@ -513,12 +513,12 @@ test('HU-056: family uniforms — own children only, product/size/quantity, stat
   await t.refused(
     () => t.call(tutor, 'UniformService', 'orders', {}),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
   await t.refused(
     () => t.call(tutor, 'UniformService', 'createOrder', 1, [{ variantId: 1, quantity: 1 }], 3),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
 });
 

@@ -49,8 +49,17 @@ const LOCK_SECONDS = 10;
 const RETRYABLE = new Set([1020, 1213, 1205]);
 /** Rules MariaDB enforces itself: duplicate key, FK, CHECK. */
 const INTEGRITY = new Set([1062, 1451, 1452, 4025, 3819]);
+/** A TypeError in a service: the browser sent a shape it can't use. Nothing written; logged in case it is a bug. */
+export const TYPE_ERROR_MESSAGE =
+  'No se pudieron procesar los datos enviados. Revisa el formulario e inténtalo de nuevo.';
 const INTEGRITY_MESSAGE =
   'La operación no respeta una regla de integridad de los datos. Revisa la información e intenta de nuevo.';
+/** The constraint MariaDB enforced, in the user's words (no table or column names). */
+const INTEGRITY_MESSAGES: Record<number, string> = {
+  1062: 'Ya existe un registro con esos datos.',
+  1451: 'No se puede quitar: hay otros registros que dependen de éste.',
+  1452: 'Hace referencia a un registro que no existe. Actualiza la página e inténtalo de nuevo.',
+};
 const JSON_COLUMNS = new Set(['auditoria.datos_anteriores', 'auditoria.datos_nuevos']);
 const SECRET_FIELDS = new Set(['passwordHash', 'tokenHash']);
 
@@ -61,10 +70,13 @@ export async function rpc(ctx: Ctx, db: Pool): Promise<Reply> {
     args?: unknown;
   };
   if (typeof service !== 'string' || typeof method !== 'string' || !Array.isArray(args))
-    return { status: 400, body: { error: 'Solicitud inválida.' } };
+    return {
+      status: 400,
+      body: { error: 'No se pudo procesar la solicitud. Recarga la página e inténtalo de nuevo.' },
+    };
   const d = await domain;
   if (!d.isRpcMethod(service, method))
-    return { status: 404, body: { error: 'Operación no disponible.' } };
+    return { status: 404, body: { error: 'Esa operación no está disponible.' } };
   const user = await sessionUser(ctx, db);
   if (!user) return { status: 401, body: { error: NO_SESSION } };
 
@@ -90,13 +102,13 @@ export async function rpc(ctx: Ctx, db: Pool): Promise<Reply> {
       if (d.isForbidden(e)) return { status: 403, body: { error: (e as Error).message } };
       if (code && INTEGRITY.has(code)) {
         console.error(`rpc ${service}.${method}: integridad (errno ${code})`);
-        return { status: 409, body: { error: INTEGRITY_MESSAGE } };
+        return { status: 409, body: { error: INTEGRITY_MESSAGES[code] ?? INTEGRITY_MESSAGE } };
       }
       // Arguments come from the browser (a trust boundary): a TypeError means the service got a shape it can't use.
       // Nothing was written (ROLLBACK); it answers 400 and is logged, in case it is a bug and not bad input.
       if (e instanceof TypeError) {
         console.error(`rpc ${service}.${method}: ${e.message}`);
-        return { status: 400, body: { error: 'Datos de la solicitud inválidos.' } };
+        return { status: 400, body: { error: TYPE_ERROR_MESSAGE } };
       }
       // Only plain Errors are business rules; anything else stays a logged 500.
       if (code || !(e instanceof Error) || e.constructor !== Error) throw e;

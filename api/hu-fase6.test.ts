@@ -21,14 +21,14 @@ before(async () => {
 });
 after(() => t?.close());
 
-type Kpi = { label: string; value: number; source: string; link: string };
+type Kpi = { label: string; value: number; hint: string; link: string };
 
 test('HU-065: dashboard — KPIs with source and link, straight from the database, period filter', async () => {
   const d1 = await t.ok<{ kpis: Kpi[]; upcoming: unknown[]; categories: unknown[] }>(
     t.call(secretaria, 'ReportService', 'dashboard', '2026-10-01', '2026-10-31'),
   );
   assert.ok(
-    d1.kpis.length >= 4 && d1.kpis.every((k) => k.source && k.link),
+    d1.kpis.length >= 4 && d1.kpis.every((k) => k.hint && k.link),
     '1/4) KPIs with source and link',
   );
   const active = (d: { kpis: Kpi[] }) => d.kpis.find((k) => /activos/i.test(k.label))!.value;
@@ -50,7 +50,7 @@ test('HU-065: dashboard — KPIs with source and link, straight from the databas
   await t.refused(
     () => t.call(tutorCookie, 'ReportService', 'dashboard'),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
 });
 
@@ -206,7 +206,7 @@ test('HU-074: the critical flows on MariaDB — login, registration + enrollment
   await t.refused(
     () => t.call(tutor, 'PlayerService', 'search', {}),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
 });
 

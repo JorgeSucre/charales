@@ -171,7 +171,7 @@ const CATALOG: Case[] = [
   {
     op: 'PlayerService.create',
     args: (v) => [newPlayer('A'), v],
-    message: /^Estatus inválido\.$/,
+    message: /^Selecciona un estatus válido\.$/,
     valid: 'ACTIVO',
   },
   {
@@ -187,37 +187,37 @@ const CATALOG: Case[] = [
         dueDate: null,
       },
     ],
-    message: /^Estatus inválido\.$/,
+    message: /^Selecciona un estatus válido\.$/,
     valid: 'ACTIVA',
   },
   {
     op: 'EnrollmentService.setStatus',
     args: (v) => [ids['enrollment'], v, 'Motivo'],
-    message: /^Estatus inválido\.$/,
+    message: /^Selecciona un estatus válido\.$/,
     valid: 'FINALIZADA',
   },
   {
     op: 'TrainingService.setStatus',
     args: (v) => [ids['session'], v, 'Motivo'],
-    message: /^Estado inválido\.$/,
+    message: /^Selecciona un estado válido\.$/,
     valid: 'CANCELADO',
   },
   {
     op: 'AttendanceService.record',
     args: (v) => [ids['pastSession'], [{ playerId: ids['member'], status: v, notes: null }]],
-    message: /^Estado de asistencia inválido\.$/,
+    message: /^Selecciona un estado de asistencia válido\.$/,
     valid: 'PRESENTE',
   },
   {
     op: 'CompetitionService.save',
     args: (v) => [competition('PLANIFICADA', v)],
-    message: /^Tipo inválido\.$/,
+    message: /^Selecciona un tipo de competencia válido\.$/,
     valid: 'LIGA',
   },
   {
     op: 'CompetitionService.save',
     args: (v) => [competition(v)],
-    message: /^Estatus inválido\.$/,
+    message: /^Selecciona un estatus válido\.$/,
     valid: 'ACTIVA',
   },
   {
@@ -231,13 +231,13 @@ const CATALOG: Case[] = [
         status: v,
       },
     ],
-    message: /^Estatus inválido\.$/,
+    message: /^Selecciona un estatus válido\.$/,
     valid: 'INSCRITA',
   },
   {
     op: 'CompetitionService.setParticipationStatus',
     args: (v) => [ids['participation'], v],
-    message: /^Estatus inválido\.$/,
+    message: /^Selecciona un estatus válido\.$/,
     valid: 'BAJA',
   },
   {
@@ -251,13 +251,13 @@ const CATALOG: Case[] = [
         chargeIds: [ids['charge']],
       },
     ],
-    message: /^Forma de pago inválida\.$/,
+    message: /^Selecciona una forma de pago válida\.$/,
     valid: 'EFECTIVO',
   },
   {
     op: 'BillingService.addDiscount',
     args: (v) => [{ chargeId: ids['charge'], type: v, reason: 'Motivo', adjustmentCents: 100 }],
-    message: /^Tipo de ajuste inválido\.$/,
+    message: /^Selecciona un tipo de ajuste válido: descuento o beca\.$/,
     valid: 'DESCUENTO',
   },
 ];
@@ -340,7 +340,7 @@ for (const [kind, cases, bad] of [
 const CHANGE_STATUS: Case = {
   op: 'PlayerService.changeStatus',
   args: (v) => [ids['player'], v, 'Motivo'],
-  message: /^Estatus inválido\.$/,
+  message: /^Selecciona un estatus válido\.$/,
 };
 
 test('T2: the permission is checked before the value — all 25 operations answer 403 to an invalid value, nothing written', async () => {
@@ -440,7 +440,7 @@ test('T2 catalog values: the valid ones keep working and are stored as sent', as
         dueDate: null,
       }),
     400,
-    /^Estatus inválido\.$/,
+    /^Selecciona un estatus válido\.$/,
   );
 
   await t.ok(t.call(admin, 'TrainingService', 'setStatus', ids['session'], 'CANCELADO', 'Lluvia'));
@@ -625,7 +625,7 @@ test('HU-035.4: register — status optional (omitted → INSCRITA, also re-regi
     await t.refused(
       () => t.call(admin, 'CompetitionService', 'register', draft({ status: bad })),
       400,
-      /^Estatus inválido\.$/,
+      /^Selecciona un estatus válido\.$/,
     );
 
   const created = await t.ok<{ id: number; status: string }>(

@@ -79,7 +79,7 @@ export class AttendanceService {
     for (const e of entries) {
       if (!group.has(e.playerId))
         throw new Error('Hay jugadores que no pertenecen al grupo de la sesión.');
-      oneOf(e.status, ATTENDANCE_LABELS, 'Estado de asistencia inválido.');
+      oneOf(e.status, ATTENDANCE_LABELS, 'Selecciona un estado de asistencia válido.');
     }
     const now = nowDateTime();
     const userId = this.audit.currentUserId();

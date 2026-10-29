@@ -4,7 +4,7 @@ import { MockDb } from '../../core/data/mock-db';
 import { Id, TrainingSchedule } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
 import { isTime, nowDateTime } from '../../shared/dates';
-import { flag } from '../../shared/validate';
+import { TIMES_MESSAGE, flag } from '../../shared/validate';
 
 export type ScheduleDraft = Pick<
   TrainingSchedule,
@@ -50,8 +50,8 @@ export class ScheduleService {
     const venue = this.db.get(this.db.venues, draft.venueId, 'Sede');
     if (!venue.active) throw new Error('La sede está inactiva.');
     if (!Number.isInteger(draft.weekday) || draft.weekday < 1 || draft.weekday > 7)
-      throw new Error('Día inválido.');
-    if (!isTime(draft.startTime) || !isTime(draft.endTime)) throw new Error('Horas inválidas.');
+      throw new Error('Selecciona un día de la semana válido.');
+    if (!isTime(draft.startTime) || !isTime(draft.endTime)) throw new Error(TIMES_MESSAGE);
     if (draft.endTime <= draft.startTime)
       throw new Error('La hora de fin debe ser posterior a la de inicio.');
     // Only the draft's fields (no `active`, `createdAt`… from the client: setActive is the audited way).

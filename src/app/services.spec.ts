@@ -259,13 +259,13 @@ describe('service rules', () => {
       ).rejects.toThrow('ya existe');
       await uniforms.setVariantActive(3, false);
       await expect(uniforms.createOrder(1, [{ variantId: 3, quantity: 1 }], 3)).rejects.toThrow(
-        'inactivo',
+        'artículo disponible',
       );
       await expect(uniforms.createOrder(4, [{ variantId: 1, quantity: 1 }], 3)).rejects.toThrow(
         'activos',
       );
       await expect(uniforms.createOrder(1, [{ variantId: 1, quantity: 1.5 }], 3)).rejects.toThrow(
-        'Cantidad',
+        'cantidad válida',
       );
     });
   });

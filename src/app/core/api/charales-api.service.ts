@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { Observable, firstValueFrom } from 'rxjs';
 import { AuthUser, SessionStore } from '../auth/session.store';
 import { Category, Player } from '../models';
+import { UNEXPECTED_MESSAGE } from '../../shared/validate';
 
 /**
  * HTTP layer to the Charales REST API (docs/API.md). Same-origin through the dev-server proxy (proxy.conf.json), so
@@ -104,10 +105,10 @@ export class ApiError extends Error {
     const body = response.error as { error?: unknown } | null;
     super(
       UNREACHABLE.includes(response.status)
-        ? 'No se pudo conectar con la API. Verifica que esté corriendo (npm run api:start).'
+        ? 'No se pudo conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.'
         : typeof body?.error === 'string'
           ? body.error
-          : `La API respondió con el estado ${response.status}.`,
+          : UNEXPECTED_MESSAGE,
     );
     this.status = response.status;
   }

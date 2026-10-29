@@ -11,4 +11,4 @@ response:
   body:
     type: json
     content: |-
-      { "error": "No tienes permiso para esta operación." }
+      { "error": "No tienes permiso para realizar esta acción." }

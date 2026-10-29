@@ -16,7 +16,7 @@ import {
 import { AuditService } from './audit.service';
 import { isISODate, nowDateTime, today } from '../../shared/dates';
 import { assertCents } from '../../shared/money';
-import { oneOf, optional, required } from '../../shared/validate';
+import { catalogName, oneOf, optional } from '../../shared/validate';
 
 export type CompetitionDraft = Pick<
   Competition,
@@ -108,7 +108,7 @@ export class CompetitionService {
     this.authz.require(draft.id ? 'competencias.editar' : 'competencias.crear');
     const data: CompetitionDraft = {
       seasonId: draft.seasonId,
-      name: required(draft.name, 'El nombre', 150),
+      name: catalogName(draft.name, 'El nombre', 150),
       type: draft.type,
       organizer: optional(draft.organizer, 'El organizador', 150),
       contact: optional(draft.contact, 'El contacto', 150),
@@ -117,13 +117,13 @@ export class CompetitionService {
       status: draft.status,
       notes: optional(draft.notes, 'Las observaciones', 2000),
     };
-    oneOf(data.type, TYPE_LABELS, 'Tipo inválido.');
-    oneOf(data.status, COMPETITION_STATUS_LABELS, 'Estatus inválido.');
+    oneOf(data.type, TYPE_LABELS, 'Selecciona un tipo de competencia válido.');
+    oneOf(data.status, COMPETITION_STATUS_LABELS, 'Selecciona un estatus válido.');
     if (
       (data.startDate && !isISODate(data.startDate)) ||
       (data.endDate && !isISODate(data.endDate))
     )
-      throw new Error('Fechas inválidas.');
+      throw new Error('Ingresa fechas de inicio y fin válidas.');
     if (data.startDate && data.endDate && data.endDate < data.startDate)
       throw new Error('La fecha de fin no puede ser anterior al inicio.');
     if (data.seasonId !== null) this.db.get(this.db.seasons, data.seasonId, 'Temporada');
@@ -216,7 +216,7 @@ export class CompetitionService {
     const status =
       draft.status === undefined
         ? 'INSCRITA'
-        : oneOf(draft.status, PARTICIPATION_LABELS, 'Estatus inválido.');
+        : oneOf(draft.status, PARTICIPATION_LABELS, 'Selecciona un estatus válido.');
     const competition = this.db.get(this.db.competitions, draft.competitionId, 'Competencia');
     const category = this.db.get(this.db.categories, draft.categoryId, 'Categoría');
     if (competition.status === 'CANCELADA' || competition.status === 'FINALIZADA')
@@ -224,7 +224,7 @@ export class CompetitionService {
     if (!category.active) throw new Error('La categoría está inactiva.');
     if (competition.seasonId && category.seasonId && competition.seasonId !== category.seasonId)
       throw new Error('La categoría pertenece a otra temporada.');
-    if (!isISODate(draft.registeredOn)) throw new Error('Fecha de inscripción inválida.');
+    if (!isISODate(draft.registeredOn)) throw new Error('Ingresa una fecha de inscripción válida.');
     if (draft.costCents !== null) {
       assertCents(draft.costCents);
       if (draft.costCents < 0) throw new Error('El costo no puede ser negativo.');
@@ -261,7 +261,7 @@ export class CompetitionService {
 
   async setParticipationStatus(id: Id, status: ParticipationStatus): Promise<void> {
     this.authz.require('competencias.editar');
-    oneOf(status, PARTICIPATION_LABELS, 'Estatus inválido.');
+    oneOf(status, PARTICIPATION_LABELS, 'Selecciona un estatus válido.');
     const before = this.db.get(this.db.competitionCategories, id, 'Participación');
     this.db.update(this.db.competitionCategories, id, { status });
     this.audit.log(
@@ -341,7 +341,7 @@ export class CompetitionService {
       )
     )
       throw new Error(`${fullName(player)} no pertenece a la categoría de esta participación.`);
-    if (!isISODate(joinedOn)) throw new Error('Fecha de alta inválida.');
+    if (!isISODate(joinedOn)) throw new Error('Ingresa una fecha de alta válida.');
     const existing = this.db.rosters.find(
       (r) => r.playerId === playerId && r.competitionCategoryId === cc.id,
     );

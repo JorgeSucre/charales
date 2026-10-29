@@ -20,7 +20,7 @@ import { PlayerService } from '../../core/services/player.service';
 import { isISODate, normalizeDateTime, nowDateTime, today } from '../../shared/dates';
 import { MAX_CENTS, assertCents, sumCents } from '../../shared/money';
 import { Page, matches, paginate } from '../../shared/page';
-import { flag, oneOf, optional, required } from '../../shared/validate';
+import { catalogName, flag, oneOf, optional, required } from '../../shared/validate';
 import {
   ChargeDraft,
   PERIOD_PATTERN,
@@ -131,7 +131,7 @@ export class BillingService {
   ): Promise<ChargeConcept> {
     this.authz.require(draft.id ? 'cobranza.editar' : 'cobranza.crear');
     flag(draft.recurring, 'Valor de «recurrente» inválido.');
-    const name = required(draft.name, 'El nombre', 100);
+    const name = catalogName(draft.name, 'El nombre', 100);
     this.assertAmount(draft.suggestedAmountCents, true);
     if (
       this.db.concepts.some((c) => c.id !== draft.id && c.name.toLowerCase() === name.toLowerCase())
@@ -233,7 +233,7 @@ export class BillingService {
     if (!concept.active) throw new Error('El concepto está inactivo.');
     if (!PERIOD_PATTERN.test(draft.period))
       throw new Error('El periodo debe tener formato AAAA-MM.');
-    if (!isISODate(draft.dueDate)) throw new Error('Fecha de vencimiento inválida.');
+    if (!isISODate(draft.dueDate)) throw new Error('Ingresa una fecha de vencimiento válida.');
     if (concept.suggestedAmountCents <= 0)
       throw new Error('El concepto no tiene importe sugerido.');
     if (draft.excludedPlayerIds.length && !draft.exclusionReason?.trim())
@@ -406,7 +406,7 @@ export class BillingService {
   async registerPayment(draft: PaymentDraft): Promise<Payment> {
     this.authz.require('pagos.crear');
     const player = this.db.get(this.db.players, draft.playerId, 'Jugador');
-    oneOf(draft.method, METHOD_LABELS, 'Forma de pago inválida.');
+    oneOf(draft.method, METHOD_LABELS, 'Selecciona una forma de pago válida.');
     this.assertAmount(draft.amountCents, false);
     if (
       draft.tutorId !== null &&
@@ -649,7 +649,11 @@ export class BillingService {
     adjustmentCents: Cents;
   }): Promise<Discount> {
     this.authz.require('descuentos.crear');
-    oneOf(draft.type, ['DESCUENTO', 'BECA'], 'Tipo de ajuste inválido.');
+    oneOf(
+      draft.type,
+      ['DESCUENTO', 'BECA'],
+      'Selecciona un tipo de ajuste válido: descuento o beca.',
+    );
     const reason = required(draft.reason, 'El motivo');
     this.assertAmount(draft.adjustmentCents, false);
     const charge = this.db.get(this.db.charges, draft.chargeId, 'Cargo');

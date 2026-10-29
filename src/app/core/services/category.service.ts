@@ -5,7 +5,7 @@ import { Category, Id, ISODate, fullName } from '../models';
 import { AuditService } from './audit.service';
 import { ageOn, nowDateTime, today } from '../../shared/dates';
 import { matches } from '../../shared/page';
-import { flag, required } from '../../shared/validate';
+import { catalogName, flag } from '../../shared/validate';
 
 export type CategoryDraft = Pick<
   Category,
@@ -61,10 +61,10 @@ export class CategoryService {
   /** HU-015 + HU-021: unique name per season, valid non-inverted age range, optional capacity. */
   async save(draft: CategoryDraft & { id?: Id }): Promise<Category> {
     this.authz.require(draft.id ? 'categorias.editar' : 'categorias.crear');
-    const name = required(draft.name, 'El nombre', 100);
+    const name = catalogName(draft.name, 'El nombre', 100);
     const ages = [draft.minAge, draft.maxAge];
     if (ages.some((a) => !Number.isInteger(a) || a < 0 || a > 99))
-      throw new Error('Edades inválidas.');
+      throw new Error('Ingresa edades mínima y máxima válidas: números enteros de 0 a 99.');
     if (draft.maxAge < draft.minAge)
       throw new Error('La edad máxima no puede ser menor que la mínima.');
     if (

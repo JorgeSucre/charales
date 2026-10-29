@@ -9,6 +9,10 @@ import * as auth from './auth.ts';
 import * as password from './password.ts';
 import { rpc } from './rpc.ts';
 
+/** Any failure without a message meant for the user: never a stack trace, SQL or internal detail (logged instead). */
+export const UNEXPECTED_MESSAGE =
+  'Ocurrió un error inesperado. Inténtalo de nuevo; si continúa, avisa al administrador.';
+
 export interface Ctx {
   body: unknown;
   /** Value of the session cookie, if any. */
@@ -90,7 +94,7 @@ export function createApp(
       if (e instanceof BadRequest) reply = { status: e.status, body: { error: e.message } };
       else {
         console.error(e);
-        reply = { status: 500, body: { error: 'Error interno.' } };
+        reply = { status: 500, body: { error: UNEXPECTED_MESSAGE } };
       }
     }
     res.setHeader('Cache-Control', 'no-store');
@@ -123,7 +127,10 @@ async function readJson(req: IncomingMessage, limit: number): Promise<unknown> {
   try {
     return raw ? JSON.parse(raw) : undefined;
   } catch {
-    throw new BadRequest(400, 'JSON inválido.');
+    throw new BadRequest(
+      400,
+      'No se pudo procesar la solicitud. Recarga la página e inténtalo de nuevo.',
+    );
   }
 }
 

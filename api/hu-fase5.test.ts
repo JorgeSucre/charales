@@ -58,7 +58,7 @@ test('HU-057: publish — title, message, publication and validity; all or selec
   await t.refused(
     () => t.call(secretaria, 'NoticeService', 'save', notice('')),
     400,
-    /^El título es obligatorio\.$/,
+    /^Falta el título\. Es un dato obligatorio\.$/,
   );
   await t.refused(
     () =>
@@ -83,7 +83,7 @@ test('HU-057: publish — title, message, publication and validity; all or selec
   await t.refused(
     () => t.call(tutor, 'NoticeService', 'save', notice('X')),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
 });
 
@@ -148,7 +148,7 @@ test('HU-059: family notices — only current ones, general + their children cat
   await t.refused(
     () => t.call(tutor, 'NoticeService', 'setPublished', 1, false),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
 });
 
@@ -159,7 +159,7 @@ test('HU-060: coach notices — current, general + assigned categories, ordered,
   await t.refused(
     () => t.call(coach, 'NoticeService', 'list'),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
 });
 
@@ -231,7 +231,7 @@ test('HU-064: tutor profile — contact only, format validated, change recorded,
     () =>
       t.call(tutor, 'PortalService', 'updateProfile', { phone: null, email: 'mal', address: null }),
     400,
-    /^Correo inválido\.$/,
+    /^Ingresa un correo electrónico válido, por ejemplo nombre@dominio\.com\.$/,
   );
   assert.ok(
     (await t.count(
@@ -242,11 +242,11 @@ test('HU-064: tutor profile — contact only, format validated, change recorded,
   await t.refused(
     () => t.call(tutor, 'PlayerService', 'update', 1, {}),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
   await t.refused(
     () => t.call(tutor, 'TutorService', 'save', { id: 1 }),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
 });

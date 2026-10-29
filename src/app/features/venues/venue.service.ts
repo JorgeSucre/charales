@@ -4,7 +4,7 @@ import { MockDb } from '../../core/data/mock-db';
 import { Id, Venue } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
 import { nowDateTime } from '../../shared/dates';
-import { flag, optional, required } from '../../shared/validate';
+import { catalogName, flag, optional } from '../../shared/validate';
 
 export type VenueDraft = Pick<Venue, 'name' | 'location' | 'reference'>;
 
@@ -39,7 +39,7 @@ export class VenueService {
   async save(draft: VenueDraft & { id?: Id }): Promise<Venue> {
     this.authz.require(draft.id ? 'sedes.editar' : 'sedes.crear');
     const data = {
-      name: required(draft.name, 'El nombre', 100),
+      name: catalogName(draft.name, 'El nombre', 100),
       location: optional(draft.location, 'La ubicación'),
       reference: optional(draft.reference, 'La referencia'),
     };

@@ -10,6 +10,7 @@ import type { AddressInfo } from 'node:net';
 import type { Pool } from 'mariadb';
 import { loadDemo } from './demo.ts';
 import { dropTestDatabase, setupDatabase } from './schema.ts';
+import { TYPE_ERROR_MESSAGE } from './rpc.ts';
 import { createApp, createPool } from './server.ts';
 
 export interface TestDb {
@@ -57,9 +58,10 @@ export interface TestDb {
  */
 export const TEST_NOW = new Date('2026-10-13T18:00:00Z');
 /** What api/rpc.ts answers (400) when a service throws a TypeError on the arguments it got. */
-export const TYPE_ERROR_MESSAGE = 'Datos de la solicitud inválidos.';
+export { TYPE_ERROR_MESSAGE };
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** The only `message` that lets `refused` accept {@link TYPE_ERROR_MESSAGE}: a test that wants that answer says so. */
-export const TYPE_ERROR = /^Datos de la solicitud inválidos\.$/;
+export const TYPE_ERROR = new RegExp(`^${escape(TYPE_ERROR_MESSAGE)}$`);
 /** Written by every authenticated request (last use of the session), so never part of «nothing written». */
 const VOLATILE = ['sesiones'] as const;
 const wallClock = (d: Date) => d.toLocaleString('sv-SE', { timeZone: 'America/Mexico_City' });

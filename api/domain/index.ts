@@ -47,7 +47,8 @@ export async function runDomain(input: {
   method: string;
   args: unknown[];
 }): Promise<{ result: unknown; tables: Tables; outbox: OutboxMessage[] }> {
-  if (!isRpcMethod(input.service, input.method)) throw new Error('Operación no disponible.');
+  if (!isRpcMethod(input.service, input.method))
+    throw new Error('Esa operación no está disponible.');
   const outbox: OutboxMessage[] = [];
   const session = { user: () => input.user, token: () => null, set: () => undefined };
   const injector = Injector.create({
