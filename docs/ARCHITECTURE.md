@@ -1,6 +1,6 @@
 # Arquitectura
 
-Estado: rama `jorgesucre/api-express` (2026-10-13). Cómo trabajar en el proyecto: [`DEVELOPMENT.md`](DEVELOPMENT.md).
+Estado: `main` (verificado el 2026-10-29). Cómo trabajar en el proyecto: [`DEVELOPMENT.md`](DEVELOPMENT.md).
 
 ## Lo que existe hoy
 
@@ -35,7 +35,7 @@ MariaDB · docs/escuela_futbol_mariadb.sql + db/mariadb/migrations + 010_permiso
 | Capa                 | Dónde                                                           | Responsabilidad                                                                                                                                                                                           |
 | -------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Arranque y rutas     | `app.ts`, `app.config.ts`, `app.routes.ts`                      | Rutas lazy por área: `/admin` (oficina), `/sports` (deportivo de oficina), `/coach` (panel del entrenador), `/portal` (tutor). Cada hoja declara su permiso (`page()`)                                    |
-| Layout               | `layout/shell.ts`, `nav.ts`, `home.ts`                          | Marco, menú (`NAV_ITEMS`, cada entrada con su permiso) e inicio                                                                                                                                           |
+| Layout               | `layout/shell.ts`, `nav.ts`, `home.ts`                          | Marco, menú (`NAV_ITEMS`, cada entrada con su permiso), accesos rápidos del Tablero (`QUICK_TASKS`); `home.ts` sólo redirige `/` a la página principal de la sesión (DEVELOPMENT.md § 5.3)                |
 | Páginas              | `features/<dominio>/`                                           | Componentes standalone con template inline, formularios reactivos tipados (`FieldError`, `Submission`), `resource()`. Sólo llaman servicios                                                               |
 | Servicios            | `features/<dominio>/*.service.ts`                               | Una entidad = un servicio que la escribe ([`database/OWNERSHIP.md`](database/OWNERSHIP.md)). Devuelven `Promise`; los ejecuta la API (`/api/rpc`, D13)                                                    |
 | Lecturas compartidas | `core/services/`                                                | `PlayerService`, `CategoryService`, `CompetitionService`, `AuditService`, `MailerService` (correo simulado en `outbox`)                                                                                   |

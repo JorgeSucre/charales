@@ -36,15 +36,15 @@ Las historias de usuario se organizan por épicas (EP01–EP12) y cada una tiene
 | Frontend              | **COMPLETADO**  | Las 76 HU sobre la API real (D13), revisadas en navegador a 375/768/1280 px ([`TRACEABILITY.md`](docs/TRACEABILITY.md))                                                                           |
 | Base de datos         | **COMPLETADO**  | Modelo **MariaDB** ([`MARIADB.md`](docs/database/MARIADB.md)) + migraciones (`db/mariadb/migrations`); 42/42 checks; es la persistencia real de la app                                            |
 | Backend               | **COMPLETADO**  | `api/` (Node `node:http` + MariaDB): autenticación, contraseñas y los servicios de dominio en el servidor (D13), con caché por versión (HU-075)                                                   |
-| API                   | **EN PROGRESO** | `/health`, `/auth/*` (login, sesión, logout, contraseñas), `POST /api/rpc` (125 operaciones de 22 servicios), `GET /api/jugadores` y `/api/categorias` de la práctica ([`API.md`](docs/API.md))   |
+| API                   | **EN PROGRESO** | `/health`, `/auth/*` (login, sesión, logout, contraseñas), `POST /api/rpc` (126 operaciones de 22 servicios), `GET /api/jugadores` y `/api/categorias` de la práctica ([`API.md`](docs/API.md))   |
 | Autenticación         | **COMPLETADO**  | La app usa la API: argon2id, cookie HttpOnly, 8 h / 30 min, límite de intentos, auditoría, cambio y recuperación de contraseña, invitaciones de 24 h (sin proveedor de correo en producción: D4c) |
 | Autorización          | **COMPLETADO**  | Permiso + alcance en cada servicio, que ahora corre en la API con la sesión de la cookie; matriz D12 ([`AUTHORIZATION.md`](docs/AUTHORIZATION.md))                                                |
-| Cobranza              | **EN REVISIÓN** | Conceptos, cargos, mensualidades, pagos parciales, folios, cancelación, estado de cuenta, adeudos, descuentos/becas. Sin backend                                                                  |
-| Uniformes             | **EN REVISIÓN** | Catálogo, pedidos con precio histórico, cargo vinculado (`cargo_id`), pagado derivado, entrega, cancelación. Sin backend                                                                          |
+| Cobranza              | **EN REVISIÓN** | Conceptos, cargos, mensualidades, pagos parciales, folios, cancelación, estado de cuenta, adeudos, descuentos/becas, sobre la API                                                                 |
+| Uniformes             | **EN REVISIÓN** | Catálogo, pedidos con precio histórico, cargo vinculado (`cargo_id`), pagado derivado, entrega, cancelación, sobre la API                                                                         |
 | Portal del tutor      | **EN REVISIÓN** | Tarjetas por hijo, datos deportivos, partidos/resultados por plantel, estado de cuenta, asistencia, uniformes, avisos, perfil                                                                     |
 | Reportes              | **EN REVISIÓN** | Tablero con fuentes, jugadores por categoría, ingresos, agenda global                                                                                                                             |
 | Agenda                | **EN REVISIÓN** | Sesiones (también desde horarios), partidos con reprogramación y resultados                                                                                                                       |
-| Pruebas               | **COMPLETADO**  | 156 Angular + 125 de la API sobre MariaDB (criterios por HU) + 13 E2E en Chrome headless + Postman ([`TESTING.md`](docs/TESTING.md))                                                              |
+| Pruebas               | **COMPLETADO**  | 241 Angular + 192 de la API sobre MariaDB (criterios por HU) + 18 E2E en Chrome headless + Postman ([`TESTING.md`](docs/TESTING.md))                                                              |
 | Deployment            | **NO INICIADO** | —                                                                                                                                                                                                 |
 
 ### Terminado
@@ -54,14 +54,14 @@ Las historias de usuario se organizan por épicas (EP01–EP12) y cada una tiene
 - Modelo MariaDB (39 tablas, 42/42 checks), permisos de la app (106 filas de `rol_permiso`), respaldo y restauración
   probados.
 - Matriz de roles D12 y corrección de la escalada por perfiles vinculados (`18178ba`).
-- 156 pruebas Angular, 125 de la API y 13 E2E; documentación de handoff ([`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md),
+- 241 pruebas Angular, 192 de la API y 18 E2E (2026-10-29); documentación de handoff ([`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md),
   [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)).
 
 ### Pendiente
 
-- Revisión de cada HU por su responsable y PR de la rama `jorgesucre/api-express`.
+- B-2 (PR #17): un entrenador distingue una sesión inexistente de una ajena; en revisión en GitHub.
 - Proveedor de correo (D4c) y despliegue (fuera del alcance actual).
-- Revisión de cada HU por su responsable (la implementación base ya está en `main`).
+- Decisión de negocio: si un jugador en baja temporal conserva su cupo en la categoría (HU-021).
 - Limitaciones conocidas P2/P3 (E2E, validación visual, decisiones de modelo):
   [`ROADMAP.md` › Limitaciones conocidas](docs/ROADMAP.md#limitaciones-conocidas-y-siguiente-fase).
 
@@ -83,13 +83,10 @@ Correo real, pagos en línea, almacenamiento de archivos, Docker, CI/CD y deploy
 en 12 épicas (EP01–EP12), con responsable, módulo, dependencias, entidades sugeridas, release (MVP, Versión 1,
 Versión 2) y sprint.
 
-| Responsable                      | HU  | Estado                                                                                                                 |
-| -------------------------------- | --- | ---------------------------------------------------------------------------------------------------------------------- |
-| Borrayo                          | 22  | EN REVISIÓN: implementación base en `main`; cada responsable valida sus HU ([`TRACEABILITY.md`](docs/TRACEABILITY.md)) |
-| Joss                             | 19  | EN REVISIÓN: implementación base en `main`; cada responsable valida sus HU ([`TRACEABILITY.md`](docs/TRACEABILITY.md)) |
-| Armando                          | 19  | EN REVISIÓN: implementación base en `main`; cada responsable valida sus HU ([`TRACEABILITY.md`](docs/TRACEABILITY.md)) |
-| Dani (en HU-003 aparece «Dany»)  | 15  | EN REVISIÓN: implementación base en `main`; cada responsable valida sus HU ([`TRACEABILITY.md`](docs/TRACEABILITY.md)) |
-| Todos (HU-073, integridad de BD) | 1   | EN REVISIÓN: implementación base en `main`; cada responsable valida sus HU ([`TRACEABILITY.md`](docs/TRACEABILITY.md)) |
+| Responsable (matriz actualizada 2026-10-29)  | HU                                                             | Estado                                                                                                                                                            |
+| -------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Jorge Luis Borrayo De Anda (antes «Borrayo») | 49 (todas las de rol Administrador/Secretaría o Administrador) | **49 verificadas** criterio por criterio el 2026-10-29 ([`TRACEABILITY.md` › Cierre](docs/TRACEABILITY.md#cierre-2026-10-29-49-hu-de-jorge-luis-borrayo-de-anda)) |
+| Sin responsable en la matriz                 | 27 (Padre/Tutor, Entrenador, «Todos» y Equipo de desarrollo)   | Implementación base en `main` ([`TRACEABILITY.md`](docs/TRACEABILITY.md))                                                                                         |
 
 El estado técnico de cada HU (Completada / Parcial / Por verificar, por capa) está en
 [`TRACEABILITY.md`](docs/TRACEABILITY.md); todas corren sobre la API y MariaDB. Las decisiones posteriores a la tabla oficial (p. ej. D12 sobre HU-070) están en
@@ -97,7 +94,12 @@ El estado técnico de cada HU (Completada / Parcial / Por verificar, por capa) e
 
 ## Equipo y ownership
 
-Integrantes: **Borrayo, Joss, Armando y Dani**. Cada quien conserva las HU que la tabla oficial le asigna.
+Integrantes: **Borrayo (Jorge Luis Borrayo De Anda), Joss, Armando y Dani**.
+
+> **Asignación de HU vigente:** la matriz actualizada del 2026-10-29 asigna a Jorge Luis Borrayo De Anda las 49 HU de
+> Administrador/Secretaría (tabla de arriba). La tabla siguiente es el **reparto histórico de tablas y servicios** por
+> integrante (versión del 21-oct); se conserva como referencia de ownership de datos ([`OWNERSHIP.md`](docs/database/OWNERSHIP.md))
+> hasta que el equipo decida si cambia con la nueva asignación.
 
 | Integrante | Dominios (por sus HU)                                                                                                                                                                                                                                      | Tablas MariaDB que escribe (owner)                                                                                                                                                                                                                 | Servicios                                                                                                                                                                                                                        |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -136,11 +138,11 @@ MariaDB 10.6+            docs/escuela_futbol_mariadb.sql (39 tablas) + db/mariad
 | Modelos (contratos TS)   | `src/app/core/models/` (agrupados por dominio)                                                                                                                       |
 | Servicios de dominio     | `src/app/features/<dominio>/*.service.ts`; lecturas compartidas en `src/app/core/services/`                                                                          |
 | Reglas de negocio puras  | `src/app/features/billing/billing.rules.ts`                                                                                                                          |
-| Datos simulados          | `src/app/core/data/mock-db.ts` (único lugar; se elimina al conectar la API)                                                                                          |
-| Autenticación y permisos | `src/app/core/auth/`: `AuthService` **mock**, `permissions.ts` (catálogo y matriz D12), `grants()`, `AuthorizationService`, guards                                   |
+| Datos simulados          | `src/app/core/data/mock-db.ts`: en la app, la API lo llena desde MariaDB en cada operación (D13); en las pruebas de Angular, datos simulados                         |
+| Autenticación y permisos | `src/app/core/auth/`: `ApiAuthService` (sesión por cookie de la API), `permissions.ts` (catálogo y matriz D12), `grants()`, `AuthorizationService`, guards           |
 | Rutas                    | `src/app/app.routes.ts` (áreas `/admin`, `/sports`, `/coach`, `/portal`)                                                                                             |
 | Base de datos            | MariaDB: `docs/escuela_futbol_mariadb*.sql`, `db/mariadb/`. Histórico PostgreSQL: `db/migrations`, `db/seed`, `db/tests`…                                            |
-| Pruebas                  | Angular: `src/**/*.spec.ts` (Vitest, 156). API: `api/*.test.ts` (125). E2E: `e2e/` (13). MariaDB: `npm run db:mariadb:test-backup` ([`TESTING.md`](docs/TESTING.md)) |
+| Pruebas                  | Angular: `src/**/*.spec.ts` (Vitest, 241). API: `api/*.test.ts` (192). E2E: `e2e/` (18). MariaDB: `npm run db:mariadb:test-backup` ([`TESTING.md`](docs/TESTING.md)) |
 
 ## Stack
 

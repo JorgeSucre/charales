@@ -1,0 +1,276 @@
+Evidencia de pruebas — cierre de las 49 HU de Administrador/Secretaría (2026-10-29)
+Rama jorgesucre/cierre-borrayo sobre main 9107042 (sin commits; cambios en el árbol de trabajo).
+Node v26.12.1, mariadb from 13.0.2-MariaDB, client 15.2 for. Bases temporales ef_* (borradas al terminar).
+
+== npm run api:typecheck
+exit 0
+== npx tsc -p tsconfig.app.json --noEmit / tsconfig.spec.json
+exit 0 / exit 0
+== npm run build
+Application bundle generation complete. [2.511 seconds] - 2026-10-29T14:13:39.952Z
+Output location: dist/project
+== npx ng test --watch=false
+ Test Files  18 passed (18)
+      Tests  200 passed (200)
+== npm run api:test
+ℹ tests 190
+ℹ pass 190
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+== npm run e2e
+ℹ tests 18
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+== npm run db:mariadb:test-backup
+Checks del esquema: 42 casos, 42 OK, 0 fallas
+Tablas comparadas: 40
+RESULTADO: OK, el respaldo es idéntico
+== postman collection lint postman/ + run (API sobre ef_postman_f3, --dev-seed)
+Scanned: 37 | Errors: 0 | Warnings: 0
+|                requests |                  37 |                   0 |
+|              assertions |                  42 |                   0 |
+== npx prettier --check .
+All matched files use Prettier code style!
+
+== Pruebas de API (nombres)
+✔ GET /health reports the database
+✔ unknown route → 404
+✔ login without e-mail or password → 400
+✔ wrong password, unknown e-mail and disabled account → same 401, no cookie
+✔ valid login → AuthUser + HttpOnly cookie; only the token hash is stored
+✔ profile account: roles from tutores/entrenadores, no office permissions (D12)
+✔ GET /auth/session: 401 anonymous or bogus cookie, 200 with the login cookie
+✔ logout closes the session and clears the cookie; anonymous logout is a no-op 204
+✔ idle session (30 min) and deactivated account → 401 and the session is closed
+✔ 5 wrong passwords lock that e-mail for this client → 429, even with the right password
+✔ GET /api/jugadores: 401 anonymous, 403 profile-only account, 200 with jugadores.consultar (admin; secretaria is locked by the 429 test)
+✔ GET /api/categorias: 401 anonymous, 403 profile-only account, 200 with an office role
+✔ change password: 401 without session; wrong current → 400; policy and same password → 400
+✔ change password (D2): keeps the current session, closes the others, only the hash is stored
+✔ change password: 5 wrong current passwords → 429, even with the right one
+✔ reset request (D7): same 204 for existing, unknown and inactive accounts; only the existing one gets mail
+✔ reset (D3a/D3b/D8): a new request revokes the earlier token; single use; closes every session
+✔ D3e: a recovery request never revokes a pending invitation; the invitation is confirmed like a reset
+✔ reset: an expired token is rejected and the password does not change
+✔ reset: policy is checked; invalid tokens get the generic message
+✔ reset request: limited per e-mail and IP (429), whether the account exists or not
+✔ reset request without a mail transport (D4b): 503 before reading the account, no token created
+✔ the console mail transport exists only in development with MAIL_CONSOLE=true (D4a)
+✔ e-mail links are absolute: APP_URL + the path the service wrote
+✔ database errors do not echo query parameters into logs (logParam: false, D4d)
+✔ C1: ten simultaneous wrong current passwords never evaluate more than the limit
+✔ R1: two simultaneous changes from two sessions — exactly one wins, consistently
+✔ R1: a password change racing a reset never overwrites the reset
+✔ R2: two simultaneous recovery requests — both 204, at most one live token
+✔ two simultaneous confirmations of one token — exactly one succeeds
+✔ transaction(): a failing rollback never hides the original error; the connection is released
+✔ HU-021.3: a full category only takes a player with an authorized exception, recorded on the membership
+✔ HU-025: the coach weekly schedule shows category, venue and time, and marks overlaps
+✔ HU-027: the coach sees only the competitions he is assigned to, with category, dates and next matches
+✔ HU-038/041: the coach calendar is only his categories, filters by competition, and tells upcoming from past
+✔ HU-032: attendance percentages — present and present-or-justified, per player
+✔ HU-033: the family sees date and status of each session and the percentage of the period
+✔ HU-039/061/062/063: family views — date, time, venue and rival; cards; sporting data; competitions by roster
+✔ HU-007: the audit log filters by user, module and date, and the API offers no way to edit it
+✔ HU-041.4: results in chronological order, ascending or descending
+✔ HU-060.3: coach notices newest first
+✔ HU-004: staff accounts — minimal data, role stored and editable, deactivated cannot log in, never deleted
+✔ HU-006: permission matrix — actions per module, protected base permissions, audited, Secretaría refused
+✔ HU-007.1/4: payments, players, enrollments and users leave who, what, when and which entity; Secretaría cannot read it
+✔ HU-013: the record shows exactly what MariaDB holds — current and past categories, charges, uniforms and competitions
+✔ HU-018.1/4: the group lists only active players, and its total is the number listed
+✔ HU-015.2: ages outside 0–99 or not whole numbers are refused
+✔ HU-022.2 / HU-069.3-4: an inactive coach or venue is kept but cannot be used for new assignments or schedules
+✔ HU-026: Secretaría assigns a coach to a competition category (role A/S), and an ended assignment no longer counts
+✔ HU-028.4: a past session can be marked REALIZADO; HU-034.4: competitions have no delete operation
+✔ HU-037.4 / HU-040.1: a match needs its minimum data; a cancelled match takes no result
+✔ HU-048.1/3: the receipt carries folio, date, player, concepts, amount and method, and reading it changes nothing
+✔ HU-050.1/2: debts filter by period, and show the primary tutor with a contact (or nothing when there is none)
+✔ HU-053.4 / HU-054.3: an order stores its request date; a paid order cannot be cancelled until its payment is
+✔ HU-058.4: a category notice past its validity is no longer shown; an unknown category is refused
+✔ HU-065.3 / HU-067.2: the dashboard income follows the period, and the income report groups by concept as MariaDB does
+✔ HU-008: register a player — data, age, evident duplicates, internal identifier
+✔ HU-009: edit a player — authorized fields, same id, modification date, required fields
+✔ HU-010: status change — reason, history kept, inactive player cannot join categories
+✔ HU-010: status change — unknown status (400) or no permission (403) writes nothing; admin keeps history
+✔ HU-011: tutors — N:M, one primary contact per player, contact validation
+✔ HU-008/011/022: contact validation through the API — phone formats, optional e-mail, R11
+✔ HU-011: setPrimary replaces the primary contact in one operation — linked tutors only, audited, by role
+✔ HU-012: portal account for a tutor — only registered tutors, no duplicate, initial access, own children only
+✔ HU-013: player record — data, categories, payments and debts, uniforms and competitions
+✔ HU-014: search — partial name, combinable filters, pagination
+✔ HU-015: categories — unique per season, valid ranges, active flag
+✔ HU-016: training schedules — day, times and venue; end after start; several per category; deactivate
+✔ HU-017/021: category membership — active only, age rule with authorized exception, no duplicate, start date, capacity
+✔ HU-018: group list — active members with age and primary tutor, total
+✔ HU-019: category change — closes the previous one, opens a new one, keeps history with reason and date
+✔ HU-020: annual enrollment — season, date, amount, status, linked charge, one per season
+✔ HU-022/023: coaches — contact, status, account, duplicates; several per category, validity, no duplicate assignment
+✔ HU-024/025/027: coach views — own categories, players, weekly schedule, competitions; read-only
+✔ HU-026: coach ↔ competition/category — current assignment required, several coaches, no exact duplicate
+✔ HU-069: venues — create, edit, deactivate instead of delete, reused by schedules and matches
+✔ HU-070: seasons — name and dates, one current (must be active), history kept
+✔ HU-010.3: a player in BAJA does not join a tournament roster — not offered, 400, nothing written
+✔ HU-010.4: a BAJA keeps the payment, charge and match history exactly (no row deleted, changed or duplicated)
+✔ HU-028: program a session — category, date, time, venue, coach; from schedules; valid dates; statuses
+✔ HU-029: coach sessions — by date, only own, status, group players
+✔ HU-030/031: attendance and notes — assigned coach, one per player and session, audited corrections
+✔ HU-032: attendance report — filters, percentage, justified apart
+✔ HU-033: tutor attendance — own children only, date and status, period percentage, read-only
+✔ HU-034: competitions — name, type, season, organizer, status; valid dates; never deleted
+✔ HU-035/036: participations and rosters — unique, date, eligible players only, no duplicate, history
+✔ HU-037: matches — registered category, opponent/date/time/venue, statuses, reschedule with reason
+✔ HU-040: results — played matches only, both scores, no negatives, notes
+✔ HU-038/041: coach calendar and results — only assigned categories, filters, past and upcoming
+✔ HU-039/042: family matches and results — only through the child roster, read-only
+✔ HU-043: concepts — name, suggested amount, recurring, status; used ones not deleted; price change keeps history
+✔ HU-044: monthly fees — one per player/concept/period, amount and due date, authorized exclusions, statuses
+✔ HU-045: payment — payer, concept, date, amount, method; partial; balance recomputed; folio
+✔ HU-046/047: statement — charges and payments, balance, overdue, filters; the tutor sees only own children
+✔ HU-048: receipt — folio, date, player, concept, amount, method; by folio; read-only; cancelled flag
+✔ HU-049: cancel a payment — admin only, reason, reverts balance, kept as CANCELADO with audit
+✔ HU-050: debts — period/category filters, primary tutor and contact, overdue balance, cancelled excluded
+✔ HU-051: discounts — type and reason, original and final kept, authorized users only
+✔ HU-052: uniform catalog — product with sizes and price, status, used products kept
+✔ HU-053/054/055: orders — price snapshot, charge = total, paid from the balance, delivery, cancellation
+✔ HU-056: family uniforms — own children only, product/size/quantity, status, read-only
+✔ D5 / HU-044.3: the daily job marks unpaid charges past their due date VENCIDO (migration 002)
+✔ HU-046.1/4: statement date filter — inclusive from/to on the charge date and the local payment date
+✔ HU-057: publish — title, message, publication and validity; all or selected audiences; unpublish; ordered by date
+✔ HU-058: category notice — several categories; only related tutors and coaches see it; validity kept
+✔ HU-059: family notices — only current ones, general + their children categories, newest first, read-only
+✔ HU-060: coach notices — current, general + assigned categories, ordered, read-only
+✔ HU-061: family home — one card per child with category, next match, balance and recent notices
+✔ HU-062/063: child sporting data and competitions — category, schedule, venue, coaches; roster-based
+✔ HU-064: tutor profile — contact only, format validated, change recorded, player identity untouched
+✔ HU-065: dashboard — KPIs with source and link, straight from the database, period filter
+✔ HU-066: players by category — category/status filters, primary tutor and contact, totals
+✔ HU-067: income — date filter, grouped by concept, cancelled payments excluded, total
+✔ HU-068: global agenda — trainings and matches together, category/coach, venue and time
+✔ HU-074: the critical flows on MariaDB — login, registration + enrollment, payment and balance, match, tutor isolation
+✔ D13 cache: what the API keeps in memory always equals MariaDB, also across two API instances
+✔ HU-075: common queries answer in < 300 ms through the API with 5 000 players, 20 000 charges and 10 000 payments
+✔ T2 catalog value: PlayerService.create Selecciona un estatus válido. — 400 for each invalid value, nothing written
+✔ T2 catalog value: EnrollmentService.enroll Selecciona un estatus válido. — 400 for each invalid value, nothing written
+✔ T2 catalog value: EnrollmentService.setStatus Selecciona un estatus válido. — 400 for each invalid value, nothing written
+✔ T2 catalog value: TrainingService.setStatus Selecciona un estado válido. — 400 for each invalid value, nothing written
+✔ T2 catalog value: AttendanceService.record Selecciona un estado de asistencia válido. — 400 for each invalid value, nothing written
+✔ T2 catalog value: CompetitionService.save Selecciona un tipo de competencia válido. — 400 for each invalid value, nothing written
+✔ T2 catalog value: CompetitionService.save Selecciona un estatus válido. — 400 for each invalid value, nothing written
+✔ T2 catalog value: CompetitionService.register Selecciona un estatus válido. — 400 for each invalid value, nothing written
+✔ T2 catalog value: CompetitionService.setParticipationStatus Selecciona un estatus válido. — 400 for each invalid value, nothing written
+✔ T2 catalog value: BillingService.registerPayment Selecciona una forma de pago válida. — 400 for each invalid value, nothing written
+✔ T2 catalog value: BillingService.addDiscount Selecciona un tipo de ajuste válido: descuento o beca. — 400 for each invalid value, nothing written
+✔ T2 boolean: UserService.setActive Valor de «activo» inválido. — 400 for each invalid value, nothing written
+✔ T2 boolean: CategoryService.setActive Valor de «activo» inválido. — 400 for each invalid value, nothing written
+✔ T2 boolean: ScheduleService.setActive Valor de «activo» inválido. — 400 for each invalid value, nothing written
+✔ T2 boolean: CoachService.setActive Valor de «activo» inválido. — 400 for each invalid value, nothing written
+✔ T2 boolean: VenueService.setActive Valor de «activo» inválido. — 400 for each invalid value, nothing written
+✔ T2 boolean: BillingService.setConceptActive Valor de «activo» inválido. — 400 for each invalid value, nothing written
+✔ T2 boolean: UniformService.setProductActive Valor de «activo» inválido. — 400 for each invalid value, nothing written
+✔ T2 boolean: UniformService.setVariantActive Valor de «activo» inválido. — 400 for each invalid value, nothing written
+✔ T2 boolean: NoticeService.setPublished Valor de «publicado» inválido. — 400 for each invalid value, nothing written
+✔ T2 boolean: NoticeService.save Valor de «publicado» inválido. — 400 for each invalid value, nothing written
+✔ T2 boolean: RoleService.setPermission Valor de «otorgado» inválido. — 400 for each invalid value, nothing written
+✔ T2 boolean: SeasonService.save Valor de «activa» inválido. — 400 for each invalid value, nothing written
+✔ T2 boolean: SeasonService.save Valor de «actual» inválido. — 400 for each invalid value, nothing written
+✔ T2 boolean: BillingService.saveConcept Valor de «recurrente» inválido. — 400 for each invalid value, nothing written
+✔ T2 boolean: TutorService.save Valor de «contacto principal» inválido. — 400 for each invalid value, nothing written
+✔ T2: the permission is checked before the value — all 25 operations answer 403 to an invalid value, nothing written
+✔ T2 catalog values: enroll stores the status it was given (PENDIENTE and ACTIVA)
+✔ T2 catalog values: the valid ones keep working and are stored as sent
+✔ T2 booleans: a real false is stored as false (and true as true) — «"false"» no longer activates
+✔ HU-035.4: register — status optional (omitted → INSCRITA, also re-registering a BAJA); sent → must be valid
+✔ T1: every API connection runs in strict mode, on top of the caller’s initSql (the fixed clock)
+✔ the column map round-trips every table of the MockDb seed through MariaDB
+✔ rpc: 401 without session, 404 outside the allowlist, 400 malformed
+✔ T3 harness: refused() never takes a TypeError for a rejection, needs a message for a 400, and catches writes
+✔ HU-008: a player created through the API is stored in MariaDB with its audit row
+✔ a business-rule error answers 400 with the service message and writes nothing
+✔ authorization runs on the server: role, tutor isolation and coach scope
+✔ HU-045/049: payment, balance and cancellation persist; an over-payment rolls back entirely
+✔ HU-073: MariaDB rejects what the services let through, and the whole unit of work rolls back
+✔ responses never carry password or token hashes
+✔ HU-004: a new staff account gets a 24 h invitation (D3c/D3e), usable once through the API
+✔ HU-004: without a mail transport the account is not created (503, rolled back)
+✔ HU-004.3: deactivating an account through the API closes its open sessions
+✔ HU-006: a permission removed through the API applies to the next request of open sessions
+✔ concurrency: parallel writes and logins never collide (ids, audit rows)
+✔ applyChanges writes only what changed (an unchanged load is a no-op)
+✔ audit: names of Object.prototype are not operations (404, never a 500)
+✔ audit: a client cannot set fields outside the draft (mass assignment) when editing
+✔ audit: CSRF and CORS — a non-JSON body never runs an operation; no CORS headers are sent
+✔ audit: session cookie attributes — HttpOnly, SameSite=Strict, Path=/, 8 h; Secure when configured
+✔ audit: a payment cancelled twice is reverted only once
+✔ audit: two simultaneous payments for the whole balance — exactly one succeeds, no double charge
+✔ audit: after writes, the in-memory tables of the bridge equal what MariaDB stores
+✔ audit: the API tests run on a fixed clock — Node and MariaDB agree, whatever the real date
+✔ db:setup creates and prepares a new database; a second run changes nothing
+✔ db:setup on a database with data keeps every row and the administrator's permission matrix
+✔ db:mariadb:dev-seed is db:setup -- --dev-seed; these tests only use ef_* databases
+✔ dev-seed: a seed that cannot land whole is refused and leaves nothing behind
+✔ dev-seed loads 020 on a database without users or players and invalidates the API cache
+✔ dev-seed never restores admin changes: on a database with data it is refused before any write
+✔ dev-seed is refused on a database with players but no users
+✔ db:setup refuses a non-empty database that is not Charales, without touching it
+✔ db:setup fails clearly on a bad name or an unreachable server; the schema it applies has no DROP
+✔ test databases are the only ones the harness may drop
+✔ SQL files with DELIMITER blocks are split the way the server needs
+✔ db:admin creates the first administrator (argon2id) and never overwrites an existing account
+✔ school time zone with TZ=Pacific/Kiritimati via ./api/server.ts: invitations, charges and attendance use America/Mexico_City
+✔ school time zone with TZ=Pacific/Honolulu via ./api/server.ts: invitations, charges and attendance use America/Mexico_City
+✔ school time zone with TZ=UTC via ./api/server.ts: invitations, charges and attendance use America/Mexico_City
+✔ school time zone with TZ=Pacific/Kiritimati via ./api/setup.ts: invitations, charges and attendance use America/Mexico_City
+✔ school time zone with TZ=Pacific/Kiritimati via ./api/create-admin.ts: invitations, charges and attendance use America/Mexico_City
+✔ school time zone with TZ=Pacific/Kiritimati via ./api/demo.ts: invitations, charges and attendance use America/Mexico_City
+
+
+######## Segunda corrida (2026-10-29): pantallas CRUD con la lista primero + nombres (R21) ########
+== npm run api:typecheck; npx tsc -p tsconfig.app.json / tsconfig.spec.json --noEmit
+exit 0; exit 0; exit 0
+== npm run build
+exit 0
+== npx ng test --watch=false
+ Test Files  19 passed (19)
+      Tests  230 passed (230)
+== npm run api:test
+ℹ tests 191
+ℹ pass 191
+ℹ fail 0
+== npm run e2e
+ℹ tests 18
+ℹ pass 18
+ℹ fail 0
+== postman collection lint postman/ + run (API sobre ef_postman_g5, --dev-seed)
+Scanned: 37 | Errors: 0 | Warnings: 0
+|                requests |                  37 |                   0 |
+|              assertions |                  42 |                   0 |
+== npx prettier --check .
+All matched files use Prettier code style!
+
+
+######## Tercera corrida (2026-10-29): Tablero como página principal + gráficas ########
+== npm run api:typecheck; npx tsc -p tsconfig.app.json / tsconfig.spec.json --noEmit
+exit 0; exit 0; exit 0
+== npm run build
+exit 0 (sin avisos)
+== npx ng test --watch=false
+ Test Files  20 passed (20)
+      Tests  241 passed (241)
+== npm run api:test
+ℹ tests 192
+ℹ pass 192
+ℹ fail 0
+== npm run e2e
+ℹ tests 18
+ℹ pass 18
+ℹ fail 0
+== postman collection lint postman/ + run (API sobre ef_postman_g6, --dev-seed)
+Scanned: 37 | Errors: 0 | Warnings: 0
+|                requests |                  37 |                   0 |
+|              assertions |                  42 |                   0 |
+== npx prettier --check .
+All matched files use Prettier code style!

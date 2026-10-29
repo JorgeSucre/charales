@@ -1,9 +1,147 @@
 # Trazabilidad HU → código → pruebas
 
-Estado técnico al 2026-10-15 (auditoría integral), rama `jorgesucre/api-express` (base `e60c004`, sin commits
-nuevos). Fuente oficial de las 76 HU y sus
-criterios: [`requirements/USER_STORIES.md`](requirements/USER_STORIES.md) (la tabla oficial no se edita aquí).
-Modelo: [`database/MARIADB.md`](database/MARIADB.md).
+Estado verificado al **2026-10-29** sobre `main` (`9107042`) + los cambios de la rama `jorgesucre/cierre-borrayo`
+(sección «Cierre 2026-10-29»). La tabla por capas de abajo es la auditoría del 2026-10-15; donde difieren, manda la
+sección de cierre. Fuente oficial de las 76 HU, sus criterios y su responsable:
+[`requirements/USER_STORIES.md`](requirements/USER_STORIES.md) (matriz actualizada del 2026-10-29; la tabla oficial no
+se edita aquí). Modelo: [`database/MARIADB.md`](database/MARIADB.md).
+
+## Cierre 2026-10-29: 49 HU de Jorge Luis Borrayo De Anda
+
+La matriz actualizada asigna a **Jorge Luis Borrayo De Anda** (en documentos anteriores, «Borrayo») las 49 HU con rol
+Administrador/Secretaría o Administrador. Frente a la matriz anterior sólo cambió el responsable: ninguna HU es nueva y
+ningún criterio, prioridad o dependencia cambió. Cada criterio se comprobó contra una prueba automatizada que pasó el
+2026-10-29 (evidencia: [`database/evidence/tests-2026-10-29.txt`](database/evidence/tests-2026-10-29.txt)).
+
+**Leyenda.**
+
+- **Completa:** todos los criterios aplicables tienen una prueba que pasa sobre la API y MariaDB, o sobre la página si
+  el criterio es sólo de interfaz.
+- **(dev):** completa en desarrollo; en producción depende del proveedor de correo (D4c).
+- **Cond.:** criterio condicional («si se implementa») no implementado.
+
+**Pruebas:**
+
+- `HU2…HU6`: `api/hu-fase2…6.test.ts`.
+- `HUC`: `api/hu-criterios.test.ts`.
+- `IV`: `api/input-validation.test.ts`.
+- `RPC`: `api/rpc.test.ts`.
+- `API`: `api/api.test.ts`.
+- `DR`: `domain-rules.spec.ts`.
+- `SH`: `shared.spec.ts`.
+- `PG`: specs de página (`players.pages`, `tutors.page`, `billing.pages`, `reports.pages`).
+- `E2E`: `e2e/app.e2e.ts`.
+- Las marcadas **(nuevo)** se agregaron en este cierre.
+
+| HU     | Prio.  | Estado verificado  | Pruebas que lo demuestran                                                                                                                   | Defectos corregidos / pendiente                                                                                                                                               |
+| ------ | ------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HU-001 | Must   | Completa           | API (credenciales, mismo 401, LOGIN y `inicio_en`, rol), E2E login                                                                          | Mensajes de sesión (401) y permiso (403) con la convención nueva                                                                                                              |
+| HU-004 | Must   | Completa (dev)     | RPC HU-004 ×3; HUC «HU-004: staff accounts…» (nuevo: rol guardado y editable, login rechazado tras desactivar, sin borrado, Secretaría 403) | Discrepancia «Matriz Roles» (Secretaría: «CRUD usuarios; permisos según política») frente a D12, que se conserva: Secretaría no gestiona cuentas                              |
+| HU-006 | Should | Completa           | RPC HU-006; HUC «HU-006: permission matrix…» (nuevo: acciones, permisos protegidos, auditoría, Secretaría 403)                              | C2 se aplica en la siguiente solicitud (más estricto que «nuevas sesiones»). «cancelar» existe donde hay cancelación (usuarios, pagos, cargos); las demás bajas usan «editar» |
+| HU-007 | Should | Completa           | HUC HU-007 (filtros, sin edición); HUC «HU-007.1/4» (nuevo: pagos, jugadores, inscripciones y usuarios)                                     | —                                                                                                                                                                             |
+| HU-008 | Must   | Completa           | HU2 HU-008; HU2 «contact validation» (nuevo); IV; PG                                                                                        | **Corregido:** el formulario rechazaba teléfonos que la API acepta («33 1234 5678»); teléfono internacional (10–15 dígitos)                                                   |
+| HU-009 | Must   | Completa           | HU2 HU-009; DR                                                                                                                              | —                                                                                                                                                                             |
+| HU-010 | Must   | Completa           | HU2 HU-010 ×2, HU-010.3, HU-010.4; DR; E2E                                                                                                  | —                                                                                                                                                                             |
+| HU-011 | Must   | Completa           | HU2 HU-011, «contact validation», «setPrimary» (nuevo); DR «setPrimary» (nuevo); PG tutores y expediente (nuevo)                            | **Nuevo:** `TutorService.setPrimary` (cambio atómico y auditado) y aviso al dejar a un jugador sin principal (R20). El principal sigue siendo opcional                        |
+| HU-012 | Must   | Completa (dev)     | HU2 HU-012                                                                                                                                  | D4c                                                                                                                                                                           |
+| HU-013 | Should | Completa           | HU2 HU-013; HUC «HU-013: the record shows exactly…» (nuevo: categorías vigentes e históricas, uniformes y torneos contra MariaDB)           | La prueba anterior aceptaba listas vacías                                                                                                                                     |
+| HU-014 | Should | Completa           | HU2 HU-014; PG «HU-014.4» (nuevo: enlace al expediente)                                                                                     | —                                                                                                                                                                             |
+| HU-015 | Must   | Completa           | HU2 HU-015; HUC «HU-015.2» (nuevo)                                                                                                          | —                                                                                                                                                                             |
+| HU-016 | Must   | Completa           | HU2 HU-016; HUC «HU-022.2 / HU-069.3-4» (sede inactiva)                                                                                     | —                                                                                                                                                                             |
+| HU-017 | Must   | Completa           | HU2 HU-017/021, HU-010                                                                                                                      | Sin columna `autorizada_por` (P2 del ROADMAP; queda en historial y auditoría)                                                                                                 |
+| HU-018 | Must   | Completa           | HU2 HU-018; HUC «HU-018.1/4» (nuevo: baja excluida, total)                                                                                  | —                                                                                                                                                                             |
+| HU-019 | Should | Completa           | HU2 HU-019; HUC HU-013 (motivo y fecha del cambio)                                                                                          | —                                                                                                                                                                             |
+| HU-020 | Must   | Completa           | HU2 HU-020; IV                                                                                                                              | —                                                                                                                                                                             |
+| HU-021 | Could  | Completa           | HU2 HU-017/021; HUC HU-021.3                                                                                                                | **Decisión pendiente:** la ocupación cuenta a un jugador en baja temporal con su inscripción abierta (HUC «HU-018.1/4»)                                                       |
+| HU-022 | Must   | Completa (dev)     | HU2 HU-022/023, «contact validation»; HUC «HU-022.2» (nuevo: inactivo no se asigna, R11)                                                    | Mismo defecto de teléfono que HU-008 (corregido)                                                                                                                              |
+| HU-023 | Must   | Completa           | HU2 HU-022/023                                                                                                                              | —                                                                                                                                                                             |
+| HU-026 | Must   | Completa           | HU2 HU-026; HUC «HU-026: Secretaría…» (nuevo)                                                                                               | —                                                                                                                                                                             |
+| HU-028 | Must   | Completa           | HU3 HU-028; HUC «HU-028.4» (nuevo: REALIZADO)                                                                                               | **Seguridad pendiente B-2 (PR #17):** `TrainingService.get` y `AttendanceService.record` distinguen id inexistente (400) de ajeno (403) para un entrenador                    |
+| HU-032 | Should | Completa; C4 Cond. | HU3 HU-032; HUC HU-032                                                                                                                      | Exportación no implementada (criterio condicional). Comparte B-2 vía `AttendanceService.record`                                                                               |
+| HU-034 | Must   | Completa           | HU3 HU-034; HUC «HU-028.4; HU-034.4» (nuevo: sin borrado)                                                                                   | —                                                                                                                                                                             |
+| HU-035 | Must   | Completa           | HU3 HU-035/036; IV HU-035.4                                                                                                                 | —                                                                                                                                                                             |
+| HU-036 | Must   | Completa           | HU3 HU-035/036; HU2 HU-010.3                                                                                                                | —                                                                                                                                                                             |
+| HU-037 | Must   | Completa           | HU3 HU-037; HUC «HU-037.4» (nuevo: datos mínimos, rival inexistente)                                                                        | —                                                                                                                                                                             |
+| HU-040 | Should | Completa           | HU3 HU-040; HUC «HU-040.1» (nuevo: partido cancelado)                                                                                       | —                                                                                                                                                                             |
+| HU-043 | Must   | Completa           | HU4 HU-043; HUC (sin operación de borrado)                                                                                                  | —                                                                                                                                                                             |
+| HU-044 | Must   | Completa           | HU4 HU-044, D5                                                                                                                              | VENCIDO diario requiere `event_scheduler=ON`; la app lo recalcula en cada operación                                                                                           |
+| HU-045 | Must   | Completa           | HU4 HU-045; RPC HU-045/049, pagos simultáneos, sobrepago revertido                                                                          | —                                                                                                                                                                             |
+| HU-046 | Must   | Completa           | HU4 HU-046/047, HU-046.1/4                                                                                                                  | —                                                                                                                                                                             |
+| HU-048 | Should | Completa           | HU4 HU-048; HUC «HU-048.1/3» (nuevo: datos del recibo, lectura sin escrituras, por folio); revisión visual                                  | La búsqueda por folio usa `BillingService.receipts` (antes se citaba `receiptByFolio`, que no está expuesto)                                                                  |
+| HU-049 | Should | Completa           | HU4 HU-049; RPC (doble cancelación)                                                                                                         | —                                                                                                                                                                             |
+| HU-050 | Should | Completa           | HU4 HU-050; HUC «HU-050.1/2» (nuevo: periodo, tutor principal y contacto)                                                                   | Sin contacto principal no se inventa uno (celda vacía)                                                                                                                        |
+| HU-051 | Could  | Completa           | HU4 HU-051; IV                                                                                                                              | —                                                                                                                                                                             |
+| HU-052 | Must   | Completa           | HU4 HU-052, HU-053/054/055                                                                                                                  | —                                                                                                                                                                             |
+| HU-053 | Must   | Completa           | HU4 HU-053/054/055; HUC «HU-053.4» (nuevo: fecha de solicitud)                                                                              | —                                                                                                                                                                             |
+| HU-054 | Should | Completa           | HU4 HU-053/054/055; HUC «HU-054.3» (nuevo: pedido pagado no se cancela sin revertir el pago)                                                | —                                                                                                                                                                             |
+| HU-055 | Should | Completa           | HU4 HU-053/054/055                                                                                                                          | —                                                                                                                                                                             |
+| HU-057 | Must   | Completa           | HU5 HU-057                                                                                                                                  | —                                                                                                                                                                             |
+| HU-058 | Should | Completa           | HU5 HU-058; HUC «HU-058.4» (nuevo: vigencia, categoría inexistente)                                                                         | —                                                                                                                                                                             |
+| HU-065 | Should | Completa           | HU6 HU-065; HUC «HU-065.3» (nuevo: el ingreso sigue al periodo)                                                                             | La prueba anterior sólo comparaba cuántos indicadores había                                                                                                                   |
+| HU-066 | Should | Completa           | HU6 HU-066; revisión visual de la vista imprimible                                                                                          | —                                                                                                                                                                             |
+| HU-067 | Should | Completa           | HU6 HU-067; HUC «HU-067.2» (nuevo: por concepto, igual que MariaDB)                                                                         | Agrupa por mes y concepto                                                                                                                                                     |
+| HU-068 | Should | Completa           | HU6 HU-068; E2E; PG «agenda page (HU-068)» (nuevo: filtros)                                                                                 | —                                                                                                                                                                             |
+| HU-069 | Should | Completa           | HU2 HU-069; HUC «HU-022.2 / HU-069.3-4» (nuevo)                                                                                             | —                                                                                                                                                                             |
+| HU-070 | Could  | Completa           | HU2 HU-070                                                                                                                                  | D12: también Secretaría (decisión registrada)                                                                                                                                 |
+| HU-076 | Should | Completa           | `npm run db:mariadb:test-backup` (42/42 checks, respaldo idéntico de 40 tablas)                                                             | —                                                                                                                                                                             |
+
+**Totales:**
+
+- Completas: **49**. De ellas, 3 son completas sólo en desarrollo (HU-004, 012 y 022, por D4c) y HU-032 tiene su
+  criterio condicional sin implementar.
+- Bloqueadas o con criterios sin verificar: **0**.
+- Pendientes que no impiden su uso:
+  - B-2 (PR #17, en revisión en GitHub);
+  - la decisión de cupo de HU-021.
+
+**Mejora transversal de UX y validación (2026-10-29, posterior al cierre).** No cambia ningún criterio ni el estado
+de las 49 HU:
+
+- **Pantallas CRUD con la lista primero** ([`DEVELOPMENT.md` § 5.2](DEVELOPMENT.md)). Antes, 19 formularios de alta
+  (tutores, entrenadores, usuarios, temporadas, sedes, categorías y sus horarios, competencias y sus categorías,
+  conceptos, cargos, descuentos, inscripciones, avisos, productos y tallas, pedidos, sesiones, partidos y rivales, y las
+  dos asignaciones de entrenadores) ocupaban siempre la parte superior de la página. Ahora se abren desde la acción de
+  la cabecera y se cierran al guardar o cancelar.
+  - Pruebas: `crud-pages.spec.ts`, que cubre los 23 formularios: cerrado al cargar, `aria-expanded`, foco, cancelar
+    sin escribir y confirmación si hay cambios sin guardar. Incluye además flujos completos de Tutores y Sedes, editar
+    con otro formulario sin guardar y los permisos (Secretaría sin alta de descuentos).
+- **Nombres (R21, [`DOMAIN_RULES.md`](DOMAIN_RULES.md)).** Los nombres de personas ya no aceptan dígitos ni símbolos
+  (aceptan acentos, cualquier alfabeto, guiones, apóstrofos y puntos de abreviatura). Los catálogos conservan dígitos y
+  signos, pero exigen al menos una letra o un dígito. La regla es la misma en los formularios y en la API.
+  - **Corregido:** el apellido de una cuenta de personal no se validaba (ni formato ni longitud).
+  - Pruebas: `shared.spec` («person names», «catalog names»), `hu-criterios` «R21» y `crud-pages.spec` «R21» (mensaje
+    junto a su campo, con `aria-describedby`).
+
+**Tablero como página principal (2026-10-29, posterior al cierre).** Ver [`DEVELOPMENT.md` § 5.3](DEVELOPMENT.md).
+
+- **HU-065:** sigue completa, y ahora además tiene cuatro gráficas con datos reales.
+- **Inicio:** dejó de duplicar el menú. `/` redirige a la página principal de cada sesión.
+- **Corregido:** «Familias con adeudo vencido» contaba jugadores. Ahora se llama «Jugadores con adeudo vencido» y el
+  cálculo es el mismo.
+- **Corregido:** los indicadores mostraban nombres de tablas y estados internos. Ahora explican en palabras qué
+  cuentan.
+- **Pruebas:**
+  - `layout/home.spec.ts`: entrada, menú, accesos rápidos según permisos, `?nuevo=1` y rol sin Tablero.
+  - `features/reports/dashboard.spec.ts`: indicadores, estatus, cobranza, ocupación con cupo nulo o cero, el periodo
+    recarga sólo los ingresos, pagos cancelados, estados vacíos y error.
+  - `hu-criterios` «HU-065 · Tablero»: estatus y cobranza contra MariaDB.
+  - E2E «Tablero»: filas de indicadores, gráficas accesibles y sin desplazamiento horizontal a 375/768/1280 px.
+
+**Validación y mensajes:** convención única en [`DEVELOPMENT.md` § 5.1](DEVELOPMENT.md); reglas de contacto R19 y
+contacto principal R20 en [`DOMAIN_RULES.md`](DOMAIN_RULES.md).
+
+**Revisión visual (2026-10-29):** la extensión de Chrome **no estaba conectada**. Se revisó con Chrome headless (el de la
+E2E), mirando las capturas una por una:
+
+- **Formularios con errores** a 375 y 1280 px: tutores, jugadores, entrenadores, usuarios, categorías, catálogo de
+  uniformes e inscripciones. Hallazgo corregido: en las rejillas de dos columnas, el mensaje aparecía bajo el campo
+  vecino (p. ej. el del apellido paterno bajo el materno, el del teléfono bajo el correo); ahora va debajo de su campo.
+  Los campos de cada vínculo de tutor ya tienen mensaje.
+- **Expediente, pestaña Tutores:** a 375, 768 y 1280 px, antes y después de «Hacer contacto principal».
+- **Recibo y reporte de jugadores por categoría:** pantalla y vista de impresión, emulada aplicando las reglas
+  `@media print`. No se abrió el diálogo de impresión del sistema.
+- **Resto de páginas:** las 276 capturas de la E2E (todas las páginas del menú de cada rol a 375/768/1280) pasaron las
+  comprobaciones automáticas; se miraron a mano sólo las de este alcance.
 
 ## Cómo leer esta tabla
 
@@ -75,7 +213,7 @@ Modelo: [`database/MARIADB.md`](database/MARIADB.md).
 | HU-045 | 4    | **Completada** | ✔         | ✔ (rpc)   | ✔ (API)        | `BillingService.registerPayment` (`paidAt`), `PaymentPage`                                                                                            | HU4 «HU-045», RPC, CF-4, BR, SV                                                   | Jugador/tutor, fecha capturada (no futura), importe, forma; parcial; saldo y estado recalculados; folio `R-NNNN`                                                                                                                                                                                                                                                       |
 | HU-046 | 4    | **Completada** | ✔         | ✔ (rpc)   | ✔ (API)        | `BillingService.statement`, `StatementPage`                                                                                                           | HU4 «HU-046/047», CF-4, DR-G                                                      | Cargos y pagos, saldo, vencidos aparte, filtro por concepto                                                                                                                                                                                                                                                                                                            |
 | HU-047 | 4    | **Completada** | ✔         | ✔ (rpc)   | ✔ (API)        | `PortalService.child().statement`                                                                                                                     | HU4 «HU-046/047», CF-6                                                            | Sólo hijos vinculados (ajeno → 403); periodo, concepto, monto, pagado y saldo; sólo lectura                                                                                                                                                                                                                                                                            |
-| HU-048 | 4    | **Completada** | ✔         | ✔ (rpc)   | ✔ (API)        | `BillingService.receipts/receipt/receiptByFolio`, `ReceiptPage`                                                                                       | HU4 «HU-048» y «HU-049»                                                           | Folio, fecha, jugador, conceptos, monto y forma; búsqueda por folio; sólo lectura; marca CANCELADO. La impresión es de la UI (sin revisión visual)                                                                                                                                                                                                                     |
+| HU-048 | 4    | **Completada** | ✔         | ✔ (rpc)   | ✔ (API)        | `BillingService.receipts/receipt`, `ReceiptPage`                                                                                                      | HU4 «HU-048» y «HU-049»                                                           | Folio, fecha, jugador, conceptos, monto y forma; búsqueda por folio; sólo lectura; marca CANCELADO. La impresión es de la UI (sin revisión visual)                                                                                                                                                                                                                     |
 | HU-049 | 4    | **Completada** | ✔         | ✔ (rpc)   | ✔ (API)        | `BillingService.cancelPayment`                                                                                                                        | HU4 «HU-049», RPC, CF-4, DR-G                                                     | Sólo Administrador (Secretaría → 403), motivo obligatorio, saldo revertido, pago conservado como CANCELADO con auditoría                                                                                                                                                                                                                                               |
 | HU-050 | 4    | **Completada** | ✔         | ✔ (rpc)   | ✔ (API)        | `BillingService.debts`, `DebtsPage`                                                                                                                   | HU4 «HU-050», DR-G, BR                                                            | Filtro por categoría/periodo, tutor principal y contacto, saldo vencido, cargos cancelados excluidos                                                                                                                                                                                                                                                                   |
 | HU-051 | 4    | **Completada** | ✔         | ✔ (rpc)   | ✔ (API)        | `BillingService.addDiscount`, `DiscountsPage`                                                                                                         | HU4 «HU-051», DR-G, BR                                                            | Tipo y motivo, monto original y final (columna generada), autorizado por; Secretaría sólo consulta (crear → 403)                                                                                                                                                                                                                                                       |

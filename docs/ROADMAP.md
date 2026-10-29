@@ -1,6 +1,6 @@
 # Roadmap
 
-Fuente de verdad de las fases. Última actualización: 2026-10-15 (rama `jorgesucre/api-express`, base `e60c004`).
+Fuente de verdad de las fases. Última actualización: 2026-10-29 (`main` `9107042` + rama `jorgesucre/cierre-borrayo`).
 
 | Fase                             | Estado     | Resultado                                                                                                                                                                              |
 | -------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -39,18 +39,21 @@ Administrador.)
 
 Ninguna es un error crítico: son pendientes acordados para fases posteriores.
 
-| Prioridad      | Pendiente                                                                                                                                                                                |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Siguiente fase | Verificación de cada HU sobre MariaDB (fases 2–6 de [`TRACEABILITY.md`](TRACEABILITY.md))                                                                                                |
-| P2             | `categorias.temporada_id` NOT NULL (HU-015; hoy la unicidad sin temporada la aplica la app, D4/R12)                                                                                      |
-| P2             | `autorizada_por` en la excepción de edad/cupo (HU-017; hoy queda en `historial_categoria.cambiado_por` y en `auditoria`)                                                                 |
-| P2             | Relación N:M `sesion_entrenador` (principal y auxiliares; hoy `sesiones_entrenamiento.entrenador_id` único)                                                                              |
-| P2             | Proveedor de correo real (D4c): sin él, en producción la recuperación y las invitaciones responden 503                                                                                   |
-| P3             | `asistencias.crear` existe en el catálogo de permisos, pero ningún servicio lo verifica (la captura usa `asistencias.editar`)                                                            |
-| Nota           | Una sesión abierta con una versión anterior a `18178ba` no tiene `officePermissions`: al recargar se descarta y el usuario vuelve a iniciar sesión                                       |
-| I2             | Revisión visual pendiente en navegador: pestañas del expediente del jugador y estados vacíos fuera de Jugadores                                                                          |
-| I3             | Validación y foco tras un envío rechazado (alta de jugador, importe de «Registrar pago») probados sólo en jsdom; falta probarlos en un navegador real                                    |
-| A11y           | Revisión manual de accesibilidad pendiente: anillo de foco, recorrido con Tab y foco al cambiar sólo la query (`?player=`); las pestañas del expediente no tienen navegación con flechas |
+| Prioridad      | Pendiente                                                                                                                                                                                                                                                                                      |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Siguiente fase | Verificación criterio por criterio de las 27 HU sin responsable en la matriz actualizada (Padre/Tutor, Entrenador, «Todos», Equipo); las 49 de Administrador/Secretaría se cerraron el 2026-10-29 ([`TRACEABILITY.md`](TRACEABILITY.md#cierre-2026-10-29-49-hu-de-jorge-luis-borrayo-de-anda)) |
+| Seguridad      | B-2 (PR #17, abierto): `TrainingService.get` y `AttendanceService.record` responden 400 a un id inexistente y 403 a uno ajeno; al fusionarlo, su prueba debe usar los mensajes nuevos (`DEVELOPMENT.md` § 5.1)                                                                                 |
+| Decisión       | HU-021: un jugador en baja temporal conserva su inscripción abierta y cuenta en la ocupación, aunque no aparece en el grupo (HU-018). ¿Debe conservar su cupo?                                                                                                                                 |
+| Cond.          | HU-032.4: exportar el reporte de asistencia (criterio condicional, no implementado)                                                                                                                                                                                                            |
+| P2             | `categorias.temporada_id` NOT NULL (HU-015; hoy la unicidad sin temporada la aplica la app, D4/R12)                                                                                                                                                                                            |
+| P2             | `autorizada_por` en la excepción de edad/cupo (HU-017; hoy queda en `historial_categoria.cambiado_por` y en `auditoria`)                                                                                                                                                                       |
+| P2             | Relación N:M `sesion_entrenador` (principal y auxiliares; hoy `sesiones_entrenamiento.entrenador_id` único)                                                                                                                                                                                    |
+| P2             | Proveedor de correo real (D4c): sin él, en producción la recuperación y las invitaciones responden 503                                                                                                                                                                                         |
+| P3             | `asistencias.crear` existe en el catálogo de permisos, pero ningún servicio lo verifica (la captura usa `asistencias.editar`)                                                                                                                                                                  |
+| Nota           | Una sesión abierta con una versión anterior a `18178ba` no tiene `officePermissions`: al recargar se descarta y el usuario vuelve a iniciar sesión                                                                                                                                             |
+| I2             | Revisión visual con la extensión de Chrome (no conectada el 2026-10-29). Hecha con Chrome headless: formularios con errores, pestaña Tutores del expediente, recibo y reporte imprimibles; faltan las demás pestañas del expediente y los estados vacíos fuera de Jugadores                    |
+| I3             | Validación y foco tras un envío rechazado (alta de jugador, importe de «Registrar pago») probados sólo en jsdom; falta probarlos en un navegador real                                                                                                                                          |
+| A11y           | Revisión manual de accesibilidad pendiente: anillo de foco, recorrido con Tab y foco al cambiar sólo la query (`?player=`); las pestañas del expediente no tienen navegación con flechas                                                                                                       |
 
 ## Notas de historial Git
 
