@@ -8,14 +8,14 @@ import {
 } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
-import { FieldError } from '../../shared/field-error';
+import { FieldA11y, FieldError } from '../../shared/field-error';
 import { Submission } from '../../shared/submission';
 import { SubmissionAlert } from '../../shared/ui';
 
 /** HU-005. The backend e-mails the reset link; the UI never reveals whether the e-mail exists. */
 @Component({
   selector: 'app-forgot-password-page',
-  imports: [ReactiveFormsModule, RouterLink, FieldError, SubmissionAlert],
+  imports: [ReactiveFormsModule, RouterLink, FieldError, FieldA11y, SubmissionAlert],
   template: `
     <main class="auth-box">
       <h1>Recuperar contraseña</h1>
@@ -55,13 +55,14 @@ const sameAs =
 const POLICY = [
   Validators.required,
   Validators.minLength(8),
-  Validators.pattern(/^(?=.*[A-Za-zÀ-ÿ])(?=.*\d).+$/),
+  (c: AbstractControl): ValidationErrors | null =>
+    !c.value || /^(?=.*[A-Za-zÀ-ÿ])(?=.*\d).+$/.test(c.value) ? null : { passwordPolicy: true },
 ];
 
 /** HU-005: set a new password with a single-use token (also the initial access of new accounts). */
 @Component({
   selector: 'app-reset-password-page',
-  imports: [ReactiveFormsModule, RouterLink, FieldError, SubmissionAlert],
+  imports: [ReactiveFormsModule, RouterLink, FieldError, FieldA11y, SubmissionAlert],
   template: `
     <main class="auth-box">
       <h1>Nueva contraseña</h1>
@@ -106,7 +107,7 @@ export class ResetPasswordPage {
 /** HU-005: change requires the current password. */
 @Component({
   selector: 'app-change-password-page',
-  imports: [ReactiveFormsModule, FieldError, SubmissionAlert],
+  imports: [ReactiveFormsModule, FieldError, FieldA11y, SubmissionAlert],
   template: `
     <h1>Cambiar contraseña</h1>
     <form [formGroup]="form" (ngSubmit)="submit()" novalidate class="grid-form narrow">

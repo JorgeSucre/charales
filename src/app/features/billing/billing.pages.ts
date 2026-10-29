@@ -1,17 +1,26 @@
 import { Component, computed, inject, resource, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { ChargeStatus, Id } from '../../core/models';
 import { PlayerService } from '../../core/services/player.service';
 import { addDays, today } from '../../shared/dates';
-import { FieldError } from '../../shared/field-error';
+import { catalogNameValidator } from '../../shared/validate';
+import { FormPanel } from '../../shared/form-panel';
+import { focusFirstInvalid } from '../../shared/focus';
+import { FieldA11y, FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
 import { CHARGE_TONE } from '../../shared/status-tone';
 import { Submission } from '../../shared/submission';
-import { Paginator, SubmissionAlert, centsFromInput, idOrNull } from '../../shared/ui';
+import {
+  Paginator,
+  SubmissionAlert,
+  catalogParam,
+  centsFromInput,
+  idOrNull,
+} from '../../shared/ui';
 import { BillingService, CHARGE_STATUS_LABELS, ChargeView } from './billing.service';
 
 const STATUSES = Object.entries(CHARGE_STATUS_LABELS) as [ChargeStatus, string][];
@@ -19,11 +28,31 @@ const STATUSES = Object.entries(CHARGE_STATUS_LABELS) as [ChargeStatus, string][
 /** HU-043: concepts with suggested amount, recurring flag and status; editing the amount never touches past charges. */
 @Component({
   selector: 'app-concepts-page',
-  imports: [ReactiveFormsModule, FieldError, LoadState, MoneyPipe, SubmissionAlert],
+  imports: [ReactiveFormsModule, FieldError, FieldA11y, LoadState, MoneyPipe, SubmissionAlert],
   template: `
-    <h1>Conceptos de cobro</h1>
-    @if (auth.can('cobranza.crear') || editingId()) {
-      <form [formGroup]="form" (ngSubmit)="submit()" novalidate class="grid-form">
+    <div class="page-head">
+      <h1>Conceptos de cobro</h1>
+      @if (auth.can('cobranza.crear')) {
+        <button
+          type="button"
+          (click)="create()"
+          [attr.aria-expanded]="panel.open() && !editingId()"
+          aria-controls="concept-form"
+        >
+          Nuevo concepto
+        </button>
+      }
+    </div>
+    <app-submission-alert [submission]="submission" />
+    @if (panel.open()) {
+      <form
+        id="concept-form"
+        [formGroup]="form"
+        (ngSubmit)="submit()"
+        novalidate
+        class="grid-form"
+        (keydown.escape)="cancel()"
+      >
         <h2>{{ editingId() ? 'Editar concepto' : 'Nuevo concepto' }}</h2>
         <label
           >Nombre <input formControlName="name" placeholder="Mensualidad, Inscripción, Uniforme…"
@@ -38,12 +67,9 @@ const STATUSES = Object.entries(CHARGE_STATUS_LABELS) as [ChargeStatus, string][
           ><input type="checkbox" formControlName="recurring" /> Recurrente (se usa para generar
           mensualidades)</label
         >
-        <app-submission-alert [submission]="submission" />
         <div class="actions">
           <button type="submit" [disabled]="submission.busy()">Guardar</button>
-          @if (editingId()) {
-            <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
-          }
+          <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
         </div>
       </form>
     }
@@ -97,27 +123,51 @@ export class ConceptsPage {
   protected submission = new Submission();
   protected editingId = signal<Id | null>(null);
   protected form = inject(FormBuilder).nonNullable.group({
-    name: ['', Validators.required],
+    name: ['', [Validators.required, catalogNameValidator]],
     amount: [0, [Validators.required, Validators.min(0)]],
     recurring: [false],
   });
 
+  protected panel = new FormPanel('concept-form', () => this.form.dirty);
+
   edit(c: { id: Id; name: string; suggestedAmountCents: number; recurring: boolean }): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.submission.result.set(null);
     this.editingId.set(c.id);
     this.form.setValue({
       name: c.name,
       amount: c.suggestedAmountCents / 100,
       recurring: c.recurring,
     });
+    this.form.markAsPristine();
+    this.panel.show();
   }
 
+  /** Opens an empty form (asks first if the open one has unsaved changes). */
+  create(): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.submission.result.set(null);
+    this.panel.show();
+  }
+
+  /** Closes the form without saving (asks first if it has unsaved changes); the record is untouched. */
   cancel(): void {
+    if (this.panel.close()) this.reset();
+  }
+
+  private reset(): void {
     this.editingId.set(null);
     this.form.reset();
   }
 
   async submit(): Promise<void> {
-    if (this.form.invalid) return this.form.markAllAsTouched();
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      setTimeout(() => focusFirstInvalid(document.getElementById('concept-form')!));
+      return;
+    }
     const { name, amount, recurring } = this.form.getRawValue();
     const draft = {
       id: this.editingId() ?? undefined,
@@ -131,7 +181,8 @@ export class ConceptsPage {
         'Concepto guardado. Los cargos existentes conservan su importe.',
       )
     ) {
-      this.cancel();
+      this.panel.done();
+      this.reset();
       this.concepts.reload();
     }
   }
@@ -153,53 +204,70 @@ export class ConceptsPage {
     <div class="page-head">
       <h1>Cargos</h1>
       @if (auth.can('cobranza.crear')) {
-        <a class="button secondary" routerLink="/admin/billing/monthly">Generar mensualidades</a>
+        <div class="actions">
+          <a class="button secondary" routerLink="/admin/billing/monthly">Generar mensualidades</a>
+          <button
+            type="button"
+            (click)="open()"
+            [attr.aria-expanded]="panel.open()"
+            aria-controls="charge-form"
+          >
+            Nuevo cargo manual
+          </button>
+        </div>
       }
     </div>
     <app-submission-alert [submission]="submission" />
-    @if (auth.can('cobranza.crear')) {
-      <!-- Folded by default; its result shows in the alert above, so it is never hidden in here. -->
-      <details class="grid-form disclosure">
-        <summary>Cargo manual</summary>
-        <form (ngSubmit)="create()" novalidate>
-          <div class="two-col">
-            <label
-              >Jugador
-              <select name="player" [(ngModel)]="draft.playerId">
-                <option [ngValue]="null">Selecciona…</option>
-                @for (p of players.value() ?? []; track p.id) {
-                  <option [ngValue]="p.id">{{ p.name }}</option>
-                }
-              </select>
-            </label>
-            <label
-              >Concepto
-              <select
-                name="concept"
-                [ngModel]="draft.conceptId"
-                (ngModelChange)="pickConcept($event)"
-              >
-                <option [ngValue]="null">Selecciona…</option>
-                @for (c of activeConcepts(); track c.id) {
-                  <option [ngValue]="c.id">{{ c.name }}</option>
-                }
-              </select>
-            </label>
-            <label
-              >Importe (MXN)
-              <input type="number" min="0.01" step="0.01" name="amount" [(ngModel)]="draft.amount"
-            /></label>
-            <label>Vence <input type="date" name="due" [(ngModel)]="draft.dueDate" /></label>
-          </div>
-          <label>Referencia (opcional) <input name="ref" [(ngModel)]="draft.reference" /></label>
+    @if (panel.open()) {
+      <!-- Closed by default; its result shows in the alert above, so it is never hidden in here. -->
+      <form
+        id="charge-form"
+        class="grid-form"
+        (ngSubmit)="create()"
+        (keydown.escape)="cancel()"
+        novalidate
+      >
+        <h2>Cargo manual</h2>
+        <div class="two-col">
+          <label
+            >Jugador
+            <select name="player" [(ngModel)]="draft.playerId">
+              <option [ngValue]="null">Selecciona…</option>
+              @for (p of players.value() ?? []; track p.id) {
+                <option [ngValue]="p.id">{{ p.name }}</option>
+              }
+            </select>
+          </label>
+          <label
+            >Concepto
+            <select
+              name="concept"
+              [ngModel]="draft.conceptId"
+              (ngModelChange)="pickConcept($event)"
+            >
+              <option [ngValue]="null">Selecciona…</option>
+              @for (c of activeConcepts(); track c.id) {
+                <option [ngValue]="c.id">{{ c.name }}</option>
+              }
+            </select>
+          </label>
+          <label
+            >Importe (MXN)
+            <input type="number" min="0.01" step="0.01" name="amount" [(ngModel)]="draft.amount"
+          /></label>
+          <label>Vence <input type="date" name="due" [(ngModel)]="draft.dueDate" /></label>
+        </div>
+        <label>Referencia (opcional) <input name="ref" [(ngModel)]="draft.reference" /></label>
+        <div class="actions">
           <button
             type="submit"
             [disabled]="submission.busy() || !draft.playerId || !draft.conceptId"
           >
             Crear cargo
           </button>
-        </form>
-      </details>
+          <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
+        </div>
+      </form>
     }
     <div class="filters">
       <label
@@ -297,7 +365,10 @@ export class ChargesPage {
   protected concepts = resource({ loader: () => this.service.concepts() });
   protected activeConcepts = computed(() => (this.concepts.value() ?? []).filter((c) => c.active));
   protected query = signal('');
-  protected status = signal<ChargeStatus | ''>('');
+  /** `?status=` preselects the filter (links from the Tablero). */
+  protected status = signal<ChargeStatus | ''>(
+    catalogParam(inject(ActivatedRoute).snapshot.queryParamMap.get('status'), CHARGE_STATUS_LABELS),
+  );
   protected conceptId = signal<Id | null>(null);
   protected period = signal('');
   protected page = signal(1);
@@ -313,6 +384,21 @@ export class ChargesPage {
   });
   protected submission = new Submission();
   protected draft = this.blank();
+  private opened = '';
+  protected panel = new FormPanel('charge-form', () => JSON.stringify(this.draft) !== this.opened);
+
+  open(): void {
+    if (!this.panel.close()) return;
+    this.draft = this.blank();
+    this.opened = JSON.stringify(this.draft);
+    this.submission.result.set(null);
+    this.panel.show();
+  }
+
+  /** Closes the form without creating anything (asks first if it has unsaved changes). */
+  cancel(): void {
+    if (this.panel.close()) this.draft = this.blank();
+  }
 
   private blank() {
     return {
@@ -340,6 +426,7 @@ export class ChargesPage {
       reference: d.reference,
     };
     if (await this.submission.run(() => this.service.createCharge(draft), 'Cargo creado.')) {
+      this.panel.done();
       this.draft = this.blank();
       this.charges.reload();
     }
@@ -442,9 +529,28 @@ export class MonthlyFeesPage {
   selector: 'app-discounts-page',
   imports: [FormsModule, LoadState, MoneyPipe, SubmissionAlert, DatePipe],
   template: `
-    <h1>Descuentos y becas</h1>
-    @if (auth.can('descuentos.crear')) {
-      <form class="grid-form" (ngSubmit)="submit()" novalidate>
+    <div class="page-head">
+      <h1>Descuentos y becas</h1>
+      @if (auth.can('descuentos.crear')) {
+        <button
+          type="button"
+          (click)="open()"
+          [attr.aria-expanded]="panel.open()"
+          aria-controls="discount-form"
+        >
+          Registrar ajuste
+        </button>
+      }
+    </div>
+    <app-submission-alert [submission]="submission" />
+    @if (panel.open()) {
+      <form
+        id="discount-form"
+        class="grid-form"
+        (ngSubmit)="submit()"
+        (keydown.escape)="cancel()"
+        novalidate
+      >
         <h2>Registrar ajuste</h2>
         <label
           >Jugador
@@ -482,8 +588,10 @@ export class MonthlyFeesPage {
           /></label>
         </div>
         <label>Motivo <input name="reason" [(ngModel)]="reason" /></label>
-        <app-submission-alert [submission]="submission" />
-        <button type="submit" [disabled]="submission.busy() || !chargeId">Aplicar</button>
+        <div class="actions">
+          <button type="submit" [disabled]="submission.busy() || !chargeId">Aplicar</button>
+          <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
+        </div>
       </form>
     }
     <app-load-state [res]="discounts" emptyText="Sin descuentos registrados."
@@ -540,6 +648,39 @@ export class DiscountsPage {
   protected type: 'DESCUENTO' | 'BECA' = 'BECA';
   protected adjustment = 0;
   protected reason = '';
+  private opened = '';
+  protected panel = new FormPanel('discount-form', () => this.snapshot() !== this.opened);
+
+  private snapshot(): string {
+    return JSON.stringify([
+      this.playerId(),
+      this.chargeId,
+      this.type,
+      this.adjustment,
+      this.reason,
+    ]);
+  }
+
+  open(): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.opened = this.snapshot();
+    this.submission.result.set(null);
+    this.panel.show();
+  }
+
+  /** Closes the form without applying anything (asks first if it has unsaved changes). */
+  cancel(): void {
+    if (this.panel.close()) this.reset();
+  }
+
+  private reset(): void {
+    this.playerId.set(null);
+    this.chargeId = null;
+    this.type = 'BECA';
+    this.adjustment = 0;
+    this.reason = '';
+  }
 
   async submit(): Promise<void> {
     const draft = {
@@ -554,8 +695,8 @@ export class DiscountsPage {
         'Ajuste aplicado; el importe original se conserva.',
       )
     ) {
-      this.chargeId = null;
-      this.reason = '';
+      this.panel.done();
+      this.reset();
       this.discounts.reload();
       this.openCharges.reload();
     }

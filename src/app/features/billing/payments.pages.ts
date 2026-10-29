@@ -83,6 +83,7 @@ import { BillingService, CHARGE_STATUS_LABELS, METHOD_LABELS } from './billing.s
                 inputmode="decimal"
                 name="amount"
                 aria-describedby="amount-error"
+                [attr.aria-invalid]="amountModel.touched && amountModel.invalid ? 'true' : null"
                 [(ngModel)]="amount"
                 #amountModel="ngModel"
               />
@@ -207,10 +208,10 @@ export class PaymentPage {
 
   /** Client check of the amount (required, ≥ $0.01, ≤ balance of the selected charges); the server still validates. */
   amountError(errors: ValidationErrors | null): string {
-    if (errors?.['required']) return 'Campo requerido.';
-    if (errors?.['min']) return 'Debe ser al menos $0.01.';
+    if (errors?.['required']) return 'Este campo es obligatorio.';
+    if (errors?.['min']) return 'Ingresa un importe de al menos $0.01.';
     if (errors?.['max'])
-      return `No puede superar el saldo de los cargos seleccionados (${this.money.transform(this.due())}).`;
+      return `El importe no puede superar el saldo de los cargos seleccionados (${this.money.transform(this.due())}).`;
     return '';
   }
 

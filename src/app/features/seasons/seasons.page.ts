@@ -2,7 +2,10 @@ import { Component, inject, resource, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AuthService } from '../../core/auth/auth.service';
 import { Id } from '../../core/models';
-import { FieldError } from '../../shared/field-error';
+import { catalogNameValidator } from '../../shared/validate';
+import { FormPanel } from '../../shared/form-panel';
+import { focusFirstInvalid } from '../../shared/focus';
+import { FieldA11y, FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
 import { Submission } from '../../shared/submission';
 import { SubmissionAlert } from '../../shared/ui';
@@ -11,32 +14,53 @@ import { SeasonService, SeasonView } from './season.service';
 /** HU-070: seasons; one can be marked current; closed seasons stay queryable with their linked data. */
 @Component({
   selector: 'app-seasons-page',
-  imports: [ReactiveFormsModule, FieldError, LoadState, SubmissionAlert],
+  imports: [ReactiveFormsModule, FieldError, FieldA11y, LoadState, SubmissionAlert],
   template: `
-    <h1>Temporadas</h1>
-    @if (auth.can('temporadas.crear') || editingId()) {
-      <form [formGroup]="form" (ngSubmit)="submit()" novalidate class="grid-form">
+    <div class="page-head">
+      <h1>Temporadas</h1>
+      @if (auth.can('temporadas.crear')) {
+        <button
+          type="button"
+          (click)="create()"
+          [attr.aria-expanded]="panel.open() && !editingId()"
+          aria-controls="season-form"
+        >
+          Nueva temporada
+        </button>
+      }
+    </div>
+    <app-submission-alert [submission]="submission" />
+    @if (panel.open()) {
+      <form
+        id="season-form"
+        [formGroup]="form"
+        (ngSubmit)="submit()"
+        novalidate
+        class="grid-form"
+        (keydown.escape)="cancel()"
+      >
         <h2>{{ editingId() ? 'Editar temporada' : 'Nueva temporada' }}</h2>
         <label>Nombre <input formControlName="name" placeholder="Temporada 2027-2028" /></label>
         <app-field-error [control]="form.controls.name" />
         <div class="two-col">
-          <label>Inicio <input type="date" formControlName="startDate" /></label>
-          <label>Fin <input type="date" formControlName="endDate" /></label>
+          <div>
+            <label>Inicio <input type="date" formControlName="startDate" /></label>
+            <app-field-error [control]="form.controls.startDate" />
+          </div>
+          <div>
+            <label>Fin <input type="date" formControlName="endDate" /></label>
+            <app-field-error [control]="form.controls.endDate" />
+          </div>
         </div>
-        <app-field-error [control]="form.controls.startDate" />
-        <app-field-error [control]="form.controls.endDate" />
         <label class="check"
           ><input type="checkbox" formControlName="active" /> Activa (abierta)</label
         >
         <label class="check"
           ><input type="checkbox" formControlName="isCurrent" /> Temporada actual</label
         >
-        <app-submission-alert [submission]="submission" />
         <div class="actions">
           <button type="submit" [disabled]="submission.busy()">Guardar</button>
-          @if (editingId()) {
-            <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
-          }
+          <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
         </div>
       </form>
     }
@@ -96,14 +120,19 @@ export class SeasonsPage {
   protected submission = new Submission();
   protected editingId = signal<Id | null>(null);
   protected form = inject(FormBuilder).nonNullable.group({
-    name: ['', Validators.required],
+    name: ['', [Validators.required, catalogNameValidator]],
     startDate: ['', Validators.required],
     endDate: ['', Validators.required],
     active: [true],
     isCurrent: [false],
   });
 
+  protected panel = new FormPanel('season-form', () => this.form.dirty);
+
   edit(s: SeasonView): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.submission.result.set(null);
     this.editingId.set(s.id);
     this.form.setValue({
       name: s.name,
@@ -112,18 +141,38 @@ export class SeasonsPage {
       active: s.active,
       isCurrent: s.isCurrent,
     });
+    this.form.markAsPristine();
+    this.panel.show();
   }
 
+  /** Opens an empty form (asks first if the open one has unsaved changes). */
+  create(): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.submission.result.set(null);
+    this.panel.show();
+  }
+
+  /** Closes the form without saving (asks first if it has unsaved changes); the record is untouched. */
   cancel(): void {
+    if (this.panel.close()) this.reset();
+  }
+
+  private reset(): void {
     this.editingId.set(null);
     this.form.reset();
   }
 
   async submit(): Promise<void> {
-    if (this.form.invalid) return this.form.markAllAsTouched();
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      setTimeout(() => focusFirstInvalid(document.getElementById('season-form')!));
+      return;
+    }
     const draft = { ...this.form.getRawValue(), id: this.editingId() ?? undefined };
     if (await this.submission.run(() => this.service.save(draft), 'Temporada guardada.')) {
-      this.cancel();
+      this.panel.done();
+      this.reset();
       this.seasons.reload();
     }
   }

@@ -1,16 +1,16 @@
 import { Component, effect, inject, input, numberAttribute, resource, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Id } from '../../core/models';
 import { TYPE_LABELS } from '../../core/services/competition.service';
 import { WEEKDAYS, addDays, today } from '../../shared/dates';
-import { FieldError } from '../../shared/field-error';
+import { FieldA11y, FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
 import { Submission } from '../../shared/submission';
 import { SubmissionAlert } from '../../shared/ui';
-import { PHONE_PATTERN } from '../../shared/validate';
+import { emailValidator, phoneValidator } from '../../shared/validate';
 import { CHARGE_STATUS_LABELS } from '../billing/billing.service';
 import { MATCH_STATUS_LABELS } from '../matches/match.service';
 import { ATTENDANCE_LABELS } from '../trainings/attendance.service';
@@ -315,7 +315,7 @@ export class PortalNoticesPage {
 /** HU-064: the tutor edits only their contact data (never the player's identity); validated and audited. */
 @Component({
   selector: 'app-profile-page',
-  imports: [ReactiveFormsModule, FieldError, LoadState, SubmissionAlert],
+  imports: [ReactiveFormsModule, FieldError, FieldA11y, LoadState, SubmissionAlert],
   template: `
     <h1>Mi perfil</h1>
     <app-load-state [res]="profile"
@@ -346,8 +346,8 @@ export class ProfilePage {
   protected profile = resource({ loader: () => this.service.profile() });
   protected submission = new Submission();
   protected form = inject(FormBuilder).nonNullable.group({
-    phone: ['', Validators.pattern(PHONE_PATTERN)],
-    email: ['', Validators.email],
+    phone: ['', phoneValidator],
+    email: ['', emailValidator],
     address: [''],
   });
 

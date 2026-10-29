@@ -5,9 +5,12 @@ import { AuthService } from '../../core/auth/auth.service';
 import { ROLE_LABELS } from '../../core/auth/permissions';
 import { Id, Permission } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
-import { FieldError } from '../../shared/field-error';
+import { FormPanel } from '../../shared/form-panel';
+import { focusFirstInvalid } from '../../shared/focus';
+import { FieldA11y, FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
 import { Submission } from '../../shared/submission';
+import { emailValidator, personNameValidator } from '../../shared/validate';
 import { Paginator, SubmissionAlert, idOrNull } from '../../shared/ui';
 import { RoleService } from './role.service';
 import { UserService, UserView } from './user.service';
@@ -15,11 +18,39 @@ import { UserService, UserView } from './user.service';
 /** HU-004: staff accounts (security role) — create, edit, activate/deactivate; tutor/coach accounts come from their profile. */
 @Component({
   selector: 'app-users-page',
-  imports: [ReactiveFormsModule, FormsModule, FieldError, LoadState, SubmissionAlert, DatePipe],
+  imports: [
+    ReactiveFormsModule,
+    FormsModule,
+    FieldError,
+    FieldA11y,
+    LoadState,
+    SubmissionAlert,
+    DatePipe,
+  ],
   template: `
-    <h1>Usuarios</h1>
-    @if (auth.can('usuarios.crear') || editingId()) {
-      <form [formGroup]="form" (ngSubmit)="submit()" novalidate class="grid-form">
+    <div class="page-head">
+      <h1>Usuarios</h1>
+      @if (auth.can('usuarios.crear')) {
+        <button
+          type="button"
+          (click)="create()"
+          [attr.aria-expanded]="panel.open() && !editingId()"
+          aria-controls="user-form"
+        >
+          Nueva cuenta
+        </button>
+      }
+    </div>
+    <app-submission-alert [submission]="submission" />
+    @if (panel.open()) {
+      <form
+        id="user-form"
+        [formGroup]="form"
+        (ngSubmit)="submit()"
+        novalidate
+        class="grid-form"
+        (keydown.escape)="cancel()"
+      >
         <h2>{{ editingId() ? 'Editar cuenta de personal' : 'Nueva cuenta de personal' }}</h2>
         <p class="muted">
           Las cuentas de tutores y entrenadores se crean al vincular su perfil (Tutores /
@@ -29,6 +60,7 @@ import { UserService, UserView } from './user.service';
         <label>Nombre <input formControlName="firstName" autocomplete="off" /></label>
         <app-field-error [control]="form.controls.firstName" />
         <label>Apellido <input formControlName="lastName" autocomplete="off" /></label>
+        <app-field-error [control]="form.controls.lastName" />
         <label>Correo <input type="email" formControlName="email" autocomplete="off" /></label>
         <app-field-error [control]="form.controls.email" />
         <label
@@ -40,12 +72,9 @@ import { UserService, UserView } from './user.service';
           </select>
         </label>
         <app-field-error [control]="form.controls.roleId" />
-        <app-submission-alert [submission]="submission" />
         <div class="actions">
           <button type="submit" [disabled]="submission.busy()">Guardar</button>
-          @if (editingId()) {
-            <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
-          }
+          <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
         </div>
       </form>
     }
@@ -129,9 +158,9 @@ export class UsersPage {
   protected submission = new Submission();
   protected editingId = signal<Id | null>(null);
   protected form = inject(FormBuilder).nonNullable.group({
-    firstName: ['', Validators.required],
-    lastName: [''],
-    email: ['', [Validators.required, Validators.email]],
+    firstName: ['', [Validators.required, personNameValidator]],
+    lastName: ['', personNameValidator],
+    email: ['', [Validators.required, emailValidator]],
     roleId: [2 as Id, Validators.required],
   });
 
@@ -145,7 +174,12 @@ export class UsersPage {
       .join(' · ');
   }
 
+  protected panel = new FormPanel('user-form', () => this.form.dirty);
+
   edit(u: UserView): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.submission.result.set(null);
     this.editingId.set(u.id);
     this.form.setValue({
       firstName: u.firstName ?? '',
@@ -153,15 +187,34 @@ export class UsersPage {
       email: u.email,
       roleId: u.roleId!,
     });
+    this.form.markAsPristine();
+    this.panel.show();
   }
 
+  /** Opens an empty form (asks first if the open one has unsaved changes). */
+  create(): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.submission.result.set(null);
+    this.panel.show();
+  }
+
+  /** Closes the form without saving (asks first if it has unsaved changes); the record is untouched. */
   cancel(): void {
+    if (this.panel.close()) this.reset();
+  }
+
+  private reset(): void {
     this.editingId.set(null);
     this.form.reset();
   }
 
   async submit(): Promise<void> {
-    if (this.form.invalid) return this.form.markAllAsTouched();
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      setTimeout(() => focusFirstInvalid(document.getElementById('user-form')!));
+      return;
+    }
     const draft = { ...this.form.getRawValue(), id: this.editingId() ?? undefined };
     const ok = await this.submission.run(
       () => this.service.save(draft),
@@ -171,7 +224,8 @@ export class UsersPage {
           : `Cuenta creada. Se envió a ${u.email} el enlace para definir su contraseña.`,
     );
     if (ok) {
-      this.cancel();
+      this.panel.done();
+      this.reset();
       this.users.reload();
     }
   }

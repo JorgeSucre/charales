@@ -18,7 +18,7 @@ import {
   ReactiveFormsModule,
   Validators,
 } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { Id, PlayerStatus, Sex } from '../../core/models';
 import { CategoryService } from '../../core/services/category.service';
@@ -29,7 +29,7 @@ import {
   STATUS_LABELS,
 } from '../../core/services/player.service';
 import { ageOn, today } from '../../shared/dates';
-import { FieldError } from '../../shared/field-error';
+import { FieldA11y, FieldError } from '../../shared/field-error';
 import { focusFirstInvalid } from '../../shared/focus';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
@@ -42,12 +42,13 @@ import {
   PLAYER_TONE,
   toneOf,
 } from '../../shared/status-tone';
-import { Paginator, SubmissionAlert, idOrNull } from '../../shared/ui';
-import { PHONE_PATTERN } from '../../shared/validate';
+import { Paginator, SubmissionAlert, catalogParam, idOrNull } from '../../shared/ui';
+import { emailValidator, personNameValidator, phoneValidator } from '../../shared/validate';
 import { CHARGE_STATUS_LABELS } from '../billing/billing.service';
 import { ENROLLMENT_LABELS } from '../enrollments/enrollment.service';
 import { ORDER_STATUS_LABELS } from '../uniforms/uniform.service';
 import { PlayerCategoryService } from '../enrollments/player-category.service';
+import { TutorService } from '../tutors/tutor.service';
 
 const STATUSES = Object.entries(STATUS_LABELS) as [PlayerStatus, string][];
 
@@ -140,7 +141,10 @@ export class PlayersPage {
   protected categories = resource({ loader: () => this.categoryService.list() });
   protected query = signal('');
   protected categoryId = signal<Id | null>(null);
-  protected status = signal<PlayerStatus | ''>('');
+  /** `?status=` preselects the filter (links from the Tablero). */
+  protected status = signal<PlayerStatus | ''>(
+    catalogParam(inject(ActivatedRoute).snapshot.queryParamMap.get('status'), STATUS_LABELS),
+  );
   protected page = signal(1);
   protected result = resource({
     params: () => ({
@@ -156,7 +160,7 @@ export class PlayersPage {
 /** HU-008 (create, with generated identifier and age) and HU-009 (edit keeping id/identifier). */
 @Component({
   selector: 'app-player-form-page',
-  imports: [ReactiveFormsModule, RouterLink, FieldError, SubmissionAlert],
+  imports: [ReactiveFormsModule, RouterLink, FieldError, FieldA11y, SubmissionAlert],
   template: `
     <a [routerLink]="id() ? ['/admin/players', id()] : '/admin/players'">← Volver</a>
     <h1>{{ id() ? 'Editar jugador' : 'Registrar jugador' }}</h1>
@@ -166,14 +170,22 @@ export class PlayersPage {
         <label>Nombre(s) <input formControlName="firstName" autocomplete="off" /></label>
         <app-field-error [control]="form.controls.firstName" />
         <div class="two-col">
-          <label>Apellido paterno <input formControlName="lastName1" autocomplete="off" /></label>
-          <label>Apellido materno <input formControlName="lastName2" autocomplete="off" /></label>
+          <div>
+            <label>Apellido paterno <input formControlName="lastName1" autocomplete="off" /></label>
+            <app-field-error [control]="form.controls.lastName1" />
+          </div>
+          <div>
+            <label>Apellido materno <input formControlName="lastName2" autocomplete="off" /></label>
+            <app-field-error [control]="form.controls.lastName2" />
+          </div>
         </div>
-        <app-field-error [control]="form.controls.lastName1" />
         <div class="two-col">
-          <label
-            >Fecha de nacimiento <input type="date" formControlName="birthDate" [max]="maxDate"
-          /></label>
+          <div>
+            <label
+              >Fecha de nacimiento <input type="date" formControlName="birthDate" [max]="maxDate"
+            /></label>
+            <app-field-error [control]="form.controls.birthDate" />
+          </div>
           <label
             >Sexo (opcional)
             <select formControlName="sex">
@@ -183,7 +195,6 @@ export class PlayersPage {
             </select>
           </label>
         </div>
-        <app-field-error [control]="form.controls.birthDate" />
         @if (age() !== null) {
           <p class="muted">Edad: {{ age() }} años</p>
         }
@@ -191,15 +202,19 @@ export class PlayersPage {
       <fieldset class="stack">
         <legend>Contacto del jugador</legend>
         <div class="two-col">
-          <label
-            >Teléfono del jugador <input type="tel" formControlName="phone" autocomplete="off"
-          /></label>
-          <label
-            >Correo del jugador <input type="email" formControlName="email" autocomplete="off"
-          /></label>
+          <div>
+            <label
+              >Teléfono del jugador <input type="tel" formControlName="phone" autocomplete="off"
+            /></label>
+            <app-field-error [control]="form.controls.phone" />
+          </div>
+          <div>
+            <label
+              >Correo del jugador <input type="email" formControlName="email" autocomplete="off"
+            /></label>
+            <app-field-error [control]="form.controls.email" />
+          </div>
         </div>
-        <app-field-error [control]="form.controls.phone" />
-        <app-field-error [control]="form.controls.email" />
         <label>Dirección <input formControlName="address" autocomplete="off" /></label>
       </fieldset>
       @if (!id()) {
@@ -234,13 +249,13 @@ export class PlayerFormPage {
   protected maxDate = today();
   protected submission = new Submission();
   protected form = inject(FormBuilder).nonNullable.group({
-    firstName: ['', [Validators.required, Validators.maxLength(100)]],
-    lastName1: ['', [Validators.required, Validators.maxLength(100)]],
-    lastName2: [''],
+    firstName: ['', [Validators.required, Validators.maxLength(100), personNameValidator]],
+    lastName1: ['', [Validators.required, Validators.maxLength(100), personNameValidator]],
+    lastName2: ['', [Validators.maxLength(100), personNameValidator]],
     birthDate: ['', Validators.required],
     sex: ['NO_ESPECIFICADO' as Sex],
-    phone: ['', Validators.pattern(PHONE_PATTERN)],
-    email: ['', Validators.email],
+    phone: ['', phoneValidator],
+    email: ['', emailValidator],
     address: [''],
   });
   private birthDate = signal('');
@@ -412,12 +427,24 @@ type Tab = 'datos' | 'tutores' | 'categorias' | 'pagos' | 'uniformes' | 'compete
                 </ul>
               }
               @case ('tutores') {
+                @if (r.tutors.length && !hasPrimary(r.tutors)) {
+                  <p class="tag warn">Sin contacto principal.</p>
+                }
                 <ul class="list">
                   @for (t of r.tutors; track t.tutorId) {
                     <li>
                       <strong>{{ t.name }}</strong> ({{ t.relationship }})
                       @if (t.isPrimary) {
                         <span class="tag">Contacto principal</span>
+                      } @else if (auth.can('tutores.editar')) {
+                        <button
+                          type="button"
+                          class="link"
+                          [disabled]="submission.busy()"
+                          (click)="makePrimary(t.tutorId)"
+                        >
+                          Hacer contacto principal
+                        </button>
                       }
                       <br /><span class="muted">{{ t.phone ?? '' }} {{ t.email ?? '' }}</span>
                     </li>
@@ -662,6 +689,7 @@ export class PlayerRecordPage {
   private service = inject(PlayerService);
   private membership = inject(PlayerCategoryService);
   private categoryService = inject(CategoryService);
+  private tutors = inject(TutorService);
   protected auth = inject(AuthService);
   protected idOrNull = idOrNull;
   protected statusLabels = STATUS_LABELS;
@@ -741,5 +769,20 @@ export class PlayerRecordPage {
       this.statusReason = '';
       this.record.reload();
     }
+  }
+
+  protected hasPrimary(tutors: { isPrimary: boolean }[]): boolean {
+    return tutors.some((t) => t.isPrimary);
+  }
+
+  /** HU-011: one operation replaces the current primary contact (TutorService.setPrimary). */
+  async makePrimary(tutorId: Id): Promise<void> {
+    if (
+      await this.submission.run(
+        () => this.tutors.setPrimary(this.id(), tutorId),
+        'Contacto principal actualizado.',
+      )
+    )
+      this.record.reload();
   }
 }

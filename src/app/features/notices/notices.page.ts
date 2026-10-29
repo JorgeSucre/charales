@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/auth/auth.service';
 import { Id } from '../../core/models';
 import { CategoryService } from '../../core/services/category.service';
+import { FormPanel } from '../../shared/form-panel';
 import { LoadState } from '../../shared/load-state';
 import { Submission } from '../../shared/submission';
 import { SubmissionAlert } from '../../shared/ui';
@@ -20,9 +21,28 @@ const toInput = (v: string | null) => (v ? v.slice(0, 16) : '');
   selector: 'app-notices-page',
   imports: [FormsModule, LoadState, SubmissionAlert, DatePipe],
   template: `
-    <h1>Avisos</h1>
-    @if (auth.can('avisos.crear') || editingId()) {
-      <form class="grid-form" (ngSubmit)="submit()" novalidate>
+    <div class="page-head">
+      <h1>Avisos</h1>
+      @if (auth.can('avisos.crear')) {
+        <button
+          type="button"
+          (click)="create()"
+          [attr.aria-expanded]="panel.open() && !editingId()"
+          aria-controls="notice-form"
+        >
+          Nuevo aviso
+        </button>
+      }
+    </div>
+    <app-submission-alert [submission]="submission" />
+    @if (panel.open()) {
+      <form
+        id="notice-form"
+        class="grid-form"
+        (ngSubmit)="submit()"
+        (keydown.escape)="cancel()"
+        novalidate
+      >
         <h2>{{ editingId() ? 'Editar aviso' : 'Nuevo aviso' }}</h2>
         <label>Título <input name="title" [(ngModel)]="draft.title" maxlength="200" /></label>
         <label
@@ -68,12 +88,9 @@ const toInput = (v: string | null) => (v ? v.slice(0, 16) : '');
         <label class="check"
           ><input type="checkbox" name="pub" [(ngModel)]="draft.published" /> Publicado</label
         >
-        <app-submission-alert [submission]="submission" />
         <div class="actions">
           <button type="submit" [disabled]="submission.busy()">Guardar</button>
-          @if (editingId()) {
-            <button type="button" class="secondary" (click)="reset()">Cancelar</button>
-          }
+          <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
         </div>
       </form>
     }
@@ -128,6 +145,9 @@ export class NoticesPage {
   protected submission = new Submission();
   protected editingId = signal<Id | null>(null);
   protected draft = this.blank();
+  /** The draft as it was when the form opened: anything else is an unsaved change. */
+  private opened = '';
+  protected panel = new FormPanel('notice-form', () => JSON.stringify(this.draft) !== this.opened);
 
   private blank() {
     return {
@@ -142,7 +162,15 @@ export class NoticesPage {
     };
   }
 
+  /** Opens an empty form (asks first if the open one has unsaved changes). */
+  create(): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.open();
+  }
+
   edit(n: NoticeView): void {
+    if (!this.panel.close()) return;
     this.editingId.set(n.id);
     const ids = (k: 'categoryId' | 'tutorId' | 'coachId') =>
       n.recipients.map((r) => r[k]).filter((x): x is Id => x !== null);
@@ -156,9 +184,21 @@ export class NoticesPage {
       tutorIds: ids('tutorId'),
       coachIds: ids('coachId'),
     };
+    this.open();
   }
 
-  reset(): void {
+  /** Closes the form without saving (asks first if it has unsaved changes); the notice is untouched. */
+  cancel(): void {
+    if (this.panel.close()) this.reset();
+  }
+
+  private open(): void {
+    this.opened = JSON.stringify(this.draft);
+    this.submission.result.set(null);
+    this.panel.show();
+  }
+
+  private reset(): void {
     this.editingId.set(null);
     this.draft = this.blank();
   }
@@ -172,6 +212,7 @@ export class NoticesPage {
       endsAt: toDateTime(d.endsAt),
     };
     if (await this.submission.run(() => this.service.save(draft), 'Aviso guardado.')) {
+      this.panel.done();
       this.reset();
       this.notices.reload();
     }

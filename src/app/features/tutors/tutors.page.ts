@@ -1,14 +1,16 @@
 import { Component, inject, resource, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { Id } from '../../core/models';
 import { PlayerService } from '../../core/services/player.service';
-import { FieldError } from '../../shared/field-error';
+import { FieldA11y, FieldError } from '../../shared/field-error';
+import { focusFirstInvalid } from '../../shared/focus';
+import { FormPanel } from '../../shared/form-panel';
 import { LoadState } from '../../shared/load-state';
 import { Submission } from '../../shared/submission';
 import { SubmissionAlert } from '../../shared/ui';
-import { PHONE_PATTERN } from '../../shared/validate';
+import { emailValidator, personNameValidator, phoneValidator } from '../../shared/validate';
 import { TutorService, TutorView } from './tutor.service';
 
 /**
@@ -17,27 +19,64 @@ import { TutorService, TutorView } from './tutor.service';
  */
 @Component({
   selector: 'app-tutors-page',
-  imports: [ReactiveFormsModule, FormsModule, RouterLink, FieldError, LoadState, SubmissionAlert],
+  imports: [
+    ReactiveFormsModule,
+    FormsModule,
+    RouterLink,
+    FieldError,
+    FieldA11y,
+    LoadState,
+    SubmissionAlert,
+  ],
   template: `
-    <h1>Padres / tutores</h1>
-    @if (auth.can('tutores.crear') || editing()) {
-      <form [formGroup]="form" (ngSubmit)="submit()" novalidate class="grid-form">
+    <div class="page-head">
+      <h1>Padres / tutores</h1>
+      @if (auth.can('tutores.crear')) {
+        <button
+          type="button"
+          (click)="create()"
+          [attr.aria-expanded]="panel.open() && !editing()"
+          aria-controls="tutor-form"
+        >
+          Registrar tutor
+        </button>
+      }
+    </div>
+    <app-submission-alert [submission]="submission" />
+    @if (panel.open()) {
+      <form
+        id="tutor-form"
+        [formGroup]="form"
+        (ngSubmit)="submit()"
+        (keydown.escape)="cancel()"
+        novalidate
+        class="grid-form"
+      >
         <h2>{{ editing() ? 'Editar tutor' : 'Registrar tutor' }}</h2>
         <label>Nombre(s) <input formControlName="firstName" autocomplete="off" /></label>
         <app-field-error [control]="form.controls.firstName" />
         <div class="two-col">
-          <label>Apellido paterno <input formControlName="lastName1" autocomplete="off" /></label>
-          <label>Apellido materno <input formControlName="lastName2" autocomplete="off" /></label>
+          <div>
+            <label>Apellido paterno <input formControlName="lastName1" autocomplete="off" /></label>
+            <app-field-error [control]="form.controls.lastName1" />
+          </div>
+          <div>
+            <label>Apellido materno <input formControlName="lastName2" autocomplete="off" /></label>
+            <app-field-error [control]="form.controls.lastName2" />
+          </div>
         </div>
-        <app-field-error [control]="form.controls.lastName1" />
         <div class="two-col">
-          <label>Teléfono <input type="tel" formControlName="phone" autocomplete="off" /></label>
-          <label
-            >Correo de contacto <input type="email" formControlName="email" autocomplete="off"
-          /></label>
+          <div>
+            <label>Teléfono <input type="tel" formControlName="phone" autocomplete="off" /></label>
+            <app-field-error [control]="form.controls.phone" />
+          </div>
+          <div>
+            <label
+              >Correo de contacto <input type="email" formControlName="email" autocomplete="off"
+            /></label>
+            <app-field-error [control]="form.controls.email" />
+          </div>
         </div>
-        <app-field-error [control]="form.controls.phone" />
-        <app-field-error [control]="form.controls.email" />
         <label>Dirección <input formControlName="address" autocomplete="off" /></label>
 
         <fieldset formArrayName="links">
@@ -60,21 +99,20 @@ import { TutorService, TutorView } from './tutor.service';
               >
               <button type="button" class="link danger" (click)="links.removeAt(i)">Quitar</button>
             </div>
+            <app-field-error [control]="link.controls.playerId" label="Jugador" />
+            <app-field-error [control]="link.controls.relationship" label="Parentesco" />
           }
           <button type="button" class="secondary" (click)="addLink()">Agregar jugador</button>
         </fieldset>
 
-        <app-submission-alert [submission]="submission" />
         <div class="actions">
           <button type="submit" [disabled]="submission.busy()">Guardar</button>
-          @if (editing()) {
-            <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
-          }
+          <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
         </div>
       </form>
     }
 
-    @if (editing(); as t) {
+    @if (panel.open() && editing(); as t) {
       <section class="grid-form">
         <h2>Acceso al portal</h2>
         @if (t.accountEmail) {
@@ -146,6 +184,10 @@ export class TutorsPage {
   private service = inject(TutorService);
   private playerService = inject(PlayerService);
   protected auth = inject(AuthService);
+  /** `?nuevo=1` (a quick task of the Tablero) opens the create form at once, if the role may create. */
+  private openOnArrival = inject(ActivatedRoute).snapshot.queryParamMap.has('nuevo')
+    ? setTimeout(() => this.auth.can('tutores.crear') && this.create())
+    : null;
   private fb = inject(FormBuilder).nonNullable;
   protected players = resource({ loader: () => this.playerService.options() });
   protected query = signal('');
@@ -157,15 +199,16 @@ export class TutorsPage {
   protected editing = signal<TutorView | null>(null);
   protected accountEmail = '';
   protected form = this.fb.group({
-    firstName: ['', Validators.required],
-    lastName1: ['', Validators.required],
-    lastName2: [''],
-    phone: ['', Validators.pattern(PHONE_PATTERN)],
-    email: ['', Validators.email],
+    firstName: ['', [Validators.required, personNameValidator]],
+    lastName1: ['', [Validators.required, personNameValidator]],
+    lastName2: ['', personNameValidator],
+    phone: ['', phoneValidator],
+    email: ['', emailValidator],
     address: [''],
     links: this.fb.array([this.linkGroup()]),
   });
   protected links = this.form.controls.links;
+  protected panel = new FormPanel('tutor-form', () => this.form.dirty);
 
   private linkGroup(playerId: Id | null = null, relationship = '', isPrimary = false) {
     return this.fb.group({
@@ -179,7 +222,18 @@ export class TutorsPage {
     this.links.push(this.linkGroup());
   }
 
+  /** Opens an empty form (asks first if the open one has unsaved changes). */
+  create(): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.submission.result.set(null);
+    this.panel.show();
+  }
+
   edit(t: TutorView): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.submission.result.set(null);
     this.editing.set(t);
     this.accountEmail = t.email ?? '';
     this.links.clear();
@@ -193,9 +247,15 @@ export class TutorsPage {
       email: t.email ?? '',
       address: t.address ?? '',
     });
+    this.panel.show();
   }
 
+  /** Closes the form without saving (asks first if it has unsaved changes); the record is untouched. */
   cancel(): void {
+    if (this.panel.close()) this.reset();
+  }
+
+  private reset(): void {
     this.editing.set(null);
     this.form.reset();
     this.links.clear();
@@ -203,7 +263,11 @@ export class TutorsPage {
   }
 
   async submit(): Promise<void> {
-    if (this.form.invalid) return this.form.markAllAsTouched();
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      setTimeout(() => focusFirstInvalid(document.getElementById('tutor-form')!));
+      return;
+    }
     const { links, ...rest } = this.form.getRawValue();
     const draft = {
       ...rest,
@@ -214,13 +278,26 @@ export class TutorsPage {
         isPrimary: l.isPrimary,
       })),
     };
+    // HU-011: the primary contact is optional, so leaving a player without one is allowed, but never silently.
+    const orphaned = (this.editing()?.links ?? []).filter(
+      (l) => l.isPrimary && !draft.links.some((n) => n.playerId === l.playerId && n.isPrimary),
+    );
+    if (
+      orphaned.length &&
+      !confirm(
+        `${orphaned.map((l) => l.playerName).join(', ')} quedará sin contacto principal. ` +
+          'Puedes asignarlo después desde el expediente. ¿Guardar de todos modos?',
+      )
+    )
+      return;
     if (
       await this.submission.run(
         () => this.service.save(draft),
         draft.id ? 'Tutor actualizado.' : 'Tutor registrado.',
       )
     ) {
-      this.cancel();
+      this.panel.done();
+      this.reset();
       this.tutors.reload();
     }
   }

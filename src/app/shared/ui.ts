@@ -60,6 +60,14 @@ export function centsFromInput(value: number | string | null): Cents {
   return parseMoney(typeof value === 'number' ? value.toFixed(2) : value);
 }
 
+/** A catalog value from the URL (`?status=VENCIDO`, a link from the Tablero): only a key of `labels`, else ''. */
+export function catalogParam<T extends string>(
+  value: string | null,
+  labels: Record<T, string>,
+): T | '' {
+  return value !== null && Object.hasOwn(labels, value) ? (value as T) : '';
+}
+
 /** Select value ('' or a numeric string) → Id | null. */
 export function idOrNull(value: string | number | null | undefined): number | null {
   return value === '' || value === null || value === undefined ? null : Number(value);

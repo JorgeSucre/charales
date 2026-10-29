@@ -3,6 +3,8 @@ import { TestBed } from '@angular/core/testing';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { baseProviders } from '../../app.config';
 import { AuthService } from '../../core/auth/auth.service';
+import { MockDb } from '../../core/data/mock-db';
+import { TutorService } from '../tutors/tutor.service';
 
 /** F3.1: focus after a rejected submit, status tones, record header, tabs and the empty state, over MockDb. */
 describe('players pages (F3.1)', () => {
@@ -39,6 +41,61 @@ describe('players pages (F3.1)', () => {
       /estatus/i.test(b.textContent ?? ''),
     )!;
 
+  const tutorsTab = (el: HTMLElement) =>
+    [...el.querySelectorAll<HTMLButtonElement>('[role=tab]')].find((b) =>
+      /tutores/i.test(b.textContent ?? ''),
+    )!;
+
+  it('HU-011: the Tutores tab makes a linked tutor the primary contact in one click', async () => {
+    await TestBed.inject(AuthService).login('secretaria@example.com', 'demo1234');
+    const ana = await TestBed.inject(TutorService).save({
+      firstName: 'Ana',
+      lastName1: 'Segunda',
+      lastName2: null,
+      phone: '3311110000',
+      email: null,
+      address: null,
+      links: [{ playerId: 4, relationship: 'Madre', isPrimary: false }],
+    });
+    let el = await open('secretaria@example.com', '/admin/players/4');
+    tutorsTab(el).click();
+    el = await settle();
+    expect(el.querySelector('#record-panel .tag.warn')).toBeNull();
+    [...el.querySelectorAll<HTMLButtonElement>('#record-panel button')]
+      .find((b) => /hacer contacto principal/i.test(b.textContent ?? ''))!
+      .click();
+    el = await settle();
+    const db = TestBed.inject(MockDb);
+    expect(db.tutorPlayers.filter((tp) => tp.playerId === 4 && tp.isPrimary)).toEqual([
+      expect.objectContaining({ tutorId: ana.id }),
+    ]);
+    expect(el.textContent).toContain('Contacto principal actualizado.');
+  }, 20_000);
+
+  it('HU-011: a player with tutors but no primary contact is flagged in the Tutores tab', async () => {
+    const db = TestBed.inject(MockDb);
+    db.tutorPlayers = db.tutorPlayers.map((tp) =>
+      tp.playerId === 4 ? { ...tp, isPrimary: false } : tp,
+    );
+    let el = await open('secretaria@example.com', '/admin/players/4');
+    tutorsTab(el).click();
+    el = await settle();
+    expect(el.querySelector('#record-panel .tag.warn')?.textContent).toContain(
+      'Sin contacto principal.',
+    );
+  }, 20_000);
+
+  it('HU-014.4: each search result links to the player record', async () => {
+    let el = await open('secretaria@example.com', '/admin/players');
+    const link = [...el.querySelectorAll<HTMLAnchorElement>('table a')].find((a) =>
+      /diego/i.test(a.textContent ?? ''),
+    )!;
+    expect(link.getAttribute('href')).toBe('/admin/players/1');
+    link.click();
+    el = await settle();
+    expect(el.querySelector('h1')?.textContent).toContain('Diego');
+  }, 20_000);
+
   it('a rejected registration focuses the first invalid field; typing does not move focus', async () => {
     const el = await open('secretaria@example.com', '/admin/players/new');
     expect([...el.querySelectorAll('fieldset > legend')].map((l) => l.textContent)).toEqual([
@@ -48,7 +105,7 @@ describe('players pages (F3.1)', () => {
     el.querySelector<HTMLButtonElement>('form button[type=submit]')!.click();
     await settle();
     expect(document.activeElement).toBe(el.querySelector('[formcontrolname=firstName]'));
-    expect(el.textContent).toContain('Campo requerido.');
+    expect(el.textContent).toContain('Este campo es obligatorio.');
 
     const last = el.querySelector<HTMLInputElement>('[formcontrolname=lastName1]')!;
     last.focus();
@@ -72,7 +129,7 @@ describe('players pages (F3.1)', () => {
       .click();
     await settle();
     expect(confirmSpy).toHaveBeenCalledTimes(1);
-    expect(el.textContent).toContain('El motivo es obligatorio.');
+    expect(el.textContent).toContain('Falta el motivo. Es un dato obligatorio.');
   }, 20_000);
 
   it('record: summary with status, age, category and balance; tabs keep role=tab and point to their panel', async () => {
