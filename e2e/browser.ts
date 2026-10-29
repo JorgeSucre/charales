@@ -21,10 +21,21 @@ export interface Page {
   errors(): string[];
   /** How to answer the next confirm() dialogs (accept or dismiss); returns the messages seen so far. */
   dialogs(accept: boolean): string[];
-  /** Opt-in: the headless page behaves as focused (document.hasFocus(), :focus-visible). Off by default. */
-  focusEmulation(enabled?: boolean): Promise<void>;
   close(): Promise<void>;
 }
+
+/** Keys press() knows: DOM `key`, `code` and Windows virtual key code, as Chrome expects them. */
+const KEYS = {
+  Tab: ['Tab', 9],
+  Escape: ['Escape', 27],
+  Enter: ['Enter', 13],
+  ' ': ['Space', 32],
+  ArrowLeft: ['ArrowLeft', 37],
+  ArrowRight: ['ArrowRight', 39],
+  Home: ['Home', 36],
+  End: ['End', 35],
+} as const;
+export type Key = keyof typeof KEYS;
 
 export const chromeAvailable = () => existsSync(CHROME);
 
@@ -172,9 +183,6 @@ export async function openBrowser(): Promise<Page> {
     dialogs(accept) {
       acceptDialogs = accept;
       return dialogMessages.splice(0);
-    },
-    async focusEmulation(enabled = true) {
-      await send('Emulation.setFocusEmulationEnabled', { enabled });
     },
     async close() {
       ws.close();

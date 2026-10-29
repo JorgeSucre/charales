@@ -20,6 +20,7 @@
     "db:mariadb:demo": "npm run api:build && node --env-file-if-exists=.env api/demo.ts",
     "e2e": "npm run build && npm run api:build && node --env-file-if-exists=.env --test e2e/*.e2e.ts",
     "db:setup": "npm run api:build && node --env-file-if-exists=.env api/setup.ts",
+    "db:demo:reset": "npm run db:setup -- --demo --ampliada --reset",
     "db:admin": "npm run api:build && node --env-file-if-exists=.env api/create-admin.ts",
     "test:all": "ng test --watch=false && npm run api:typecheck && npm run api:test"
   },

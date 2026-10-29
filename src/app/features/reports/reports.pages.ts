@@ -6,7 +6,7 @@ import { RouterLink } from '@angular/router';
 import { Id, PlayerStatus } from '../../core/models';
 import { CategoryService } from '../../core/services/category.service';
 import { STATUS_LABELS } from '../../core/services/player.service';
-import { WEEKDAYS, addDays, addMonths, monthGrid, today } from '../../shared/dates';
+import { WEEKDAYS, addDays, addMonths, dateRangeLabel, monthGrid, today } from '../../shared/dates';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
 import { idOrNull } from '../../shared/ui';
@@ -28,10 +28,10 @@ import { ReportService } from './report.service';
     <app-load-state [res]="data"
       ><ng-template>
         @if (data.value(); as d) {
-          <div class="kpis">
+          <div class="kpis six">
             @for (k of d.kpis; track k.label) {
               <a class="kpi" [routerLink]="k.link" [title]="'Fuente: ' + k.source">
-                <span>{{ k.label }}</span>
+                <span>{{ kpiLabel(k.label, d.period) }}</span>
                 <strong>{{ k.money ? (k.value | money) : k.value }}</strong>
                 <small class="muted">{{ k.source }}</small>
               </a>
@@ -82,8 +82,19 @@ export class DashboardPage {
   protected to = signal(today());
   protected data = resource({
     params: () => ({ from: this.from(), to: this.to() }),
-    loader: ({ params }) => this.service.dashboard(params.from, params.to),
+    // The period travels with its data, so the label names the range these figures were computed for.
+    loader: async ({ params }) => ({
+      ...(await this.service.dashboard(params.from, params.to)),
+      period: params,
+    }),
   });
+
+  /** «Ingresos 2026-10-01 a 2026-10-21» (ReportService label, inclusive bounds) → «Ingresos del 1 al 21 de octubre…». */
+  protected kpiLabel(label: string, { from, to }: { from: string; to: string }): string {
+    if (label !== `Ingresos ${from} a ${to}`) return label;
+    const range = dateRangeLabel(from, to);
+    return range ? `Ingresos ${range}` : 'Ingresos (periodo no disponible)';
+  }
 }
 
 /** HU-066: players by category with primary tutor and contact, totals per category, printable. */

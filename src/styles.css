@@ -1221,6 +1221,10 @@ a.kpi:hover {
 .kpis.six .kpi {
   align-content: space-between;
 }
+/* Tablero cards also carry a source line: label, figure and source stay together at the top. */
+.kpis.six .kpi:has(> small) {
+  align-content: start;
+}
 /* Counts and amounts only here: a figure never breaks across lines (the E2E fails if it does not fit). */
 .kpis.six .kpi strong {
   overflow-wrap: normal;

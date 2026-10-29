@@ -60,28 +60,29 @@ usan `DATABASE_URL` (opcional).
 
 Todos están definidos en `package.json`.
 
-| Comando                                 | Qué hace                                                                                                          |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `npm start`                             | Servidor de desarrollo (`ng serve`)                                                                               |
-| `npm run build`                         | Build de producción en `dist/`                                                                                    |
-| `npm run watch`                         | Build de desarrollo en modo watch                                                                                 |
-| `npm test`                              | Pruebas Angular (Vitest) en modo watch. Para una sola corrida: `npx ng test --watch=false`                        |
-| `npm run ng -- <args>`                  | Angular CLI                                                                                                       |
-| `npm run db:setup`                      | Prepara `DB_NAME` (esquema si está vacía, migraciones, permisos); seguro de repetir. `-- --demo`: datos ficticios |
-| `npm run db:admin`                      | Crea un administrador (pide correo y contraseña); nunca sobrescribe una cuenta                                    |
-| `npm run test:all`                      | Frontend + typecheck + API sobre MariaDB                                                                          |
-| `npm run api:start`                     | API en :3000 (empaqueta el dominio con `api:build`; lee `.env`)                                                   |
-| `npm run api:test`                      | Pruebas de la API sobre MariaDB, en bases temporales `ef_*` que se borran al terminar                             |
-| `npm run api:typecheck`                 | Typecheck de `api/`, `api/domain` y `e2e/`                                                                        |
-| `npm run e2e`                           | Build + E2E en Chrome headless sobre una base temporal (necesita Google Chrome)                                   |
-| `npm run db:mariadb:migrate`            | Aplica `db/mariadb/migrations` a `DB_NAME` (idempotentes)                                                         |
-| `npm run db:mariadb:demo`               | Datos de demostración en `DB_NAME` (sólo si la base está vacía)                                                   |
-| `npm run db:mariadb:test-backup`        | MariaDB: 42 checks del esquema + respaldo/restauración en bases temporales `ef_bktest_*`                          |
-| `npx prettier --check .` / `--write .`  | Revisar / aplicar formato (no hay script `format`)                                                                |
-| `npx tsc -p tsconfig.app.json --noEmit` | Typecheck de la app (igual con `tsconfig.spec.json` para las pruebas)                                             |
-| `npm run db:migrate`                    | Histórico (PostgreSQL): aplica las migraciones pendientes a `$DATABASE_URL`                                       |
-| `npm run db:reset`                      | Histórico (PostgreSQL): **borra** y recrea `charales_dev` con migraciones + seed                                  |
-| `npm run db:test`                       | Histórico (PostgreSQL): recrea `charales_test`, 57 pruebas de integridad y 21 consultas                           |
+| Comando                                             | Qué hace                                                                                                                |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `npm start`                                         | Servidor de desarrollo (`ng serve`)                                                                                     |
+| `npm run build`                                     | Build de producción en `dist/`                                                                                          |
+| `npm run watch`                                     | Build de desarrollo en modo watch                                                                                       |
+| `npm test`                                          | Pruebas Angular (Vitest) en modo watch. Para una sola corrida: `npx ng test --watch=false`                              |
+| `npm run ng -- <args>`                              | Angular CLI                                                                                                             |
+| `npm run db:setup`                                  | Prepara `DB_NAME` (esquema si está vacía, migraciones, permisos); seguro de repetir. `-- --demo`: datos ficticios       |
+| `npm run db:admin`                                  | Crea un administrador (pide correo y contraseña); nunca sobrescribe una cuenta                                          |
+| `npm run test:all`                                  | Frontend + typecheck + API sobre MariaDB                                                                                |
+| `npm run api:start`                                 | API en :3000 (empaqueta el dominio con `api:build`; lee `.env`)                                                         |
+| `npm run api:test`                                  | Pruebas de la API sobre MariaDB, en bases temporales `ef_*` que se borran al terminar                                   |
+| `npm run api:typecheck`                             | Typecheck de `api/`, `api/domain` y `e2e/`                                                                              |
+| `npm run e2e`                                       | Build + E2E en Chrome headless sobre una base temporal (necesita Google Chrome)                                         |
+| `npm run db:mariadb:migrate`                        | Aplica `db/mariadb/migrations` a `DB_NAME` (idempotentes)                                                               |
+| `npm run db:mariadb:demo`                           | Datos de demostración en `DB_NAME` (sólo si la base está vacía)                                                         |
+| `DB_NAME=escuela_futbol_demo npm run db:demo:reset` | Borra y rehace la base de demostración ampliada; sólo bases `*_demo`, nunca con `NODE_ENV=production` (`docs/SETUP.md`) |
+| `npm run db:mariadb:test-backup`                    | MariaDB: 42 checks del esquema + respaldo/restauración en bases temporales `ef_bktest_*`                                |
+| `npx prettier --check .` / `--write .`              | Revisar / aplicar formato (no hay script `format`)                                                                      |
+| `npx tsc -p tsconfig.app.json --noEmit`             | Typecheck de la app (igual con `tsconfig.spec.json` para las pruebas)                                                   |
+| `npm run db:migrate`                                | Histórico (PostgreSQL): aplica las migraciones pendientes a `$DATABASE_URL`                                             |
+| `npm run db:reset`                                  | Histórico (PostgreSQL): **borra** y recrea `charales_dev` con migraciones + seed                                        |
+| `npm run db:test`                                   | Histórico (PostgreSQL): recrea `charales_test`, 57 pruebas de integridad y 21 consultas                                 |
 
 No existen `db:seed` ni `lint`: el seed se carga con `db:reset` y no hay ESLint configurado.
 

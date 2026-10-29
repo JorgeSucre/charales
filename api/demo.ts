@@ -11,6 +11,7 @@
 import type { Pool } from 'mariadb';
 import { hashPassword } from './auth.ts';
 import { domain, unitOfWork, type Tables } from './rpc.ts';
+import { assertDemoAllowed } from './schema.ts';
 import { createPool } from './server.ts';
 
 const SECURITY = ['roles', 'permissions', 'rolePermissions'];
@@ -58,6 +59,7 @@ export async function loadDemo(db: Pool): Promise<void> {
 }
 
 if (import.meta.main) {
+  assertDemoAllowed(process.env, { demoDatabase: false }); // never with NODE_ENV=production
   const db = createPool();
   try {
     await loadDemo(db);
