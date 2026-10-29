@@ -5,24 +5,44 @@ import { MockDb } from '../../core/data/mock-db';
 import { Cents, Id, ISODate, PlayerStatus, Time, fullName } from '../../core/models';
 import { addDays, ageOn, today, isCurrentAssignment } from '../../shared/dates';
 import {
+  chargeBalance,
   debtsByPlayer,
   effectiveApplications,
   incomeByMonthAndConcept,
+  netAmount,
 } from '../billing/billing.rules';
 import { BillingService } from '../billing/billing.service';
 import { MatchService } from '../matches/match.service';
 
-/** A KPI always says where it comes from (HU-065.2): table(s) and rule. */
+export type KpiKey = 'players' | 'categories' | 'matches' | 'overdue' | 'overduePlayers' | 'income';
+
+/** A KPI says in plain words what it counts (HU-065.2) and links to the module behind it. */
 export interface Kpi {
+  key: KpiKey;
   label: string;
   value: number;
   money?: boolean;
-  source: string;
+  /** What the number means, for the user (never table or column names). */
+  hint: string;
   link: string;
 }
 
+/** Charges by their derived status (HU-044.3); CANCELADO never counts. */
+export type OpenChargeStatus = 'PENDIENTE' | 'PARCIAL' | 'PAGADO' | 'VENCIDO';
+
 export interface Dashboard {
+  /** The period of the income KPI (inclusive dates); every other KPI is a snapshot of today. */
+  period: { from: ISODate; to: ISODate };
   kpis: Kpi[];
+  /** Every player by status (ACTIVO, BAJA_TEMPORAL, BAJA_DEFINITIVA), zeros included. */
+  playersByStatus: { status: PlayerStatus; count: number }[];
+  /** Non-cancelled charges by status: how many, what they amount to after discounts, and what is still owed. */
+  chargesByStatus: {
+    status: OpenChargeStatus;
+    count: number;
+    netCents: Cents;
+    balanceCents: Cents;
+  }[];
   categories: { id: Id; name: string; occupancy: number; capacity: number | null }[];
   upcoming: {
     date: ISODate;
@@ -74,7 +94,10 @@ export class ReportService {
   private billing = inject(BillingService);
   private matches = inject(MatchService);
 
-  /** HU-065: KPIs for a period (default: current month) with their sources and links. */
+  /**
+   * HU-065: KPIs (income for the period, default the current month up to today; the rest a snapshot of today) and
+   * the dashboard charts. Charge states are synced first, so VENCIDO is current.
+   */
   async dashboard(
     from: ISODate = `${today().slice(0, 7)}-01`,
     to: ISODate = today(),
@@ -91,46 +114,69 @@ export class ReportService {
       .views({ from: on, to: addDays(on, 14) })
       .filter((m) => m.upcoming);
     return this.db.respond({
+      period: { from, to },
       kpis: [
         {
+          key: 'players',
           label: 'Jugadores activos',
           value: this.db.players.filter((p) => p.status === 'ACTIVO').length,
-          source: 'jugadores.estatus = ACTIVO',
+          hint: 'Con estatus Activo; no incluye bajas temporales ni definitivas.',
           link: '/admin/players',
         },
         {
+          key: 'categories',
           label: 'Categorías activas',
           value: categories.length,
-          source: 'categorias activas de la temporada actual',
+          hint: season
+            ? `Categorías activas de la temporada actual (${season.name}).`
+            : 'No hay temporada actual.',
           link: '/sports/categories',
         },
         {
-          label: 'Partidos próximos (14 días)',
+          key: 'matches',
+          label: 'Partidos próximos',
           value: upcoming.length,
-          source: 'partidos PROGRAMADO/REPROGRAMADO',
+          hint: 'Programados o reprogramados en los próximos 14 días.',
           link: '/sports/matches',
         },
         {
+          key: 'overdue',
           label: 'Adeudo vencido',
           value: sumCents(debts.map((d) => d.overdueCents)),
           money: true,
-          source: 'cargos vencidos − descuentos − pagos aplicados',
+          hint: 'Saldo de cargos con vencimiento pasado, ya con descuentos y pagos aplicados.',
           link: '/admin/billing/debts',
         },
         {
-          label: 'Familias con adeudo vencido',
+          // Counted per player (debtsByPlayer), as it always was; the label used to say «familias».
+          key: 'overduePlayers',
+          label: 'Jugadores con adeudo vencido',
           value: debts.filter((d) => d.overdueCents > 0).length,
-          source: 'jugadores con saldo vencido',
+          hint: 'Jugadores con al menos un cargo vencido sin pagar.',
           link: '/admin/billing/debts',
         },
         {
-          label: `Ingresos ${from} a ${to}`,
+          key: 'income',
+          label: 'Ingresos del periodo',
           value: sumCents(income.map((r) => r.totalCents)),
           money: true,
-          source: 'pago_aplicacion de pagos APLICADO',
+          hint: 'Pagos registrados en el periodo; los cancelados no cuentan.',
           link: '/admin/reports/income',
         },
       ],
+      playersByStatus: (['ACTIVO', 'BAJA_TEMPORAL', 'BAJA_DEFINITIVA'] as const).map((status) => ({
+        status,
+        count: this.db.players.filter((p) => p.status === status).length,
+      })),
+      chargesByStatus: (['PENDIENTE', 'PARCIAL', 'VENCIDO', 'PAGADO'] as const).map((status) => {
+        const rows = this.db.charges.filter((c) => c.status === status);
+        return {
+          status,
+          count: rows.length,
+          netCents: sumCents(rows.map((c) => netAmount(c, this.db.discounts))),
+          balanceCents: sumCents(rows.map((c) => chargeBalance(c, apps, this.db.discounts))),
+        };
+      }),
       categories: categories.map((c) => ({
         id: c.id,
         name: c.name,

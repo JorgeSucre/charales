@@ -26,6 +26,13 @@
   --warn-bg: #fef3e2;
   --error-bg: #fdecec;
   --info-bg: var(--primary-soft);
+  /* Charts (docs/DEVELOPMENT.md § 5.3): one meaning per colour; ≥ 3:1 against white, always with a label. */
+  --chart-brand: var(--primary);
+  --chart-ok: #15803d;
+  --chart-warn: #b45309;
+  --chart-warn-soft: #d97706;
+  --chart-danger: var(--danger);
+  --chart-neutral: #868e96;
   --radius: 8px;
   --radius-lg: 12px;
   --shadow-sm: 0 1px 2px rgb(17 24 39 / 0.06);
@@ -393,76 +400,6 @@ main:focus {
     grid-column: 2;
   }
 }
-.welcome {
-  margin-bottom: 1.5rem;
-}
-.welcome h1 {
-  margin-bottom: 0.25rem;
-}
-.welcome p {
-  margin: 0;
-}
-.eyebrow {
-  color: var(--primary);
-  font-size: 0.875rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.eyebrow::first-letter {
-  text-transform: uppercase;
-}
-.section-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem 1rem;
-}
-.module-index {
-  border-top: 1px solid var(--border);
-}
-/* One area per row: name on the left, its links flowing on the right (stacked on phones). */
-.module-row {
-  display: grid;
-  grid-template-columns: 13rem minmax(0, 1fr);
-  gap: 0.25rem 1rem;
-  align-items: baseline;
-  padding: 0.625rem 0;
-  border-bottom: 1px solid var(--border);
-}
-.module-row h3 {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.8125rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.module-row h3 .icon {
-  width: 1rem;
-  height: 1rem;
-}
-.module-row ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 1.25rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.module-row li a {
-  display: inline-block;
-  padding: 0.125rem 0;
-}
-/* Below 1000 px: area name above its links, which then use the full width (after the base rule on purpose). */
-@media (max-width: 1000px) {
-  .module-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -653,6 +590,7 @@ textarea.ng-invalid.ng-touched {
   border-color: var(--danger);
 }
 .field-error {
+  display: block;
   color: var(--danger);
   font-size: 0.875rem;
 }
@@ -901,6 +839,7 @@ tbody tr:hover {
   margin-bottom: 1rem;
 }
 .page-head h1,
+.page-head h2,
 .page-head h3 {
   margin: 0;
 }
@@ -925,16 +864,7 @@ a.button.secondary {
 a.button.secondary:hover {
   background: var(--primary-soft);
 }
-/* Side menu: «Inicio», then one collapsible group per area (button with aria-expanded + its links). */
-.sidenav a.nav-home {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.nav-home .icon {
-  width: 1rem;
-  height: 1rem;
-}
+/* Side menu: one collapsible group per area (button with aria-expanded + its links); the Tablero is the first. */
 .nav-section {
   display: flex;
   align-items: center;
@@ -1016,14 +946,12 @@ a.button.secondary:hover {
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
-  .layout.rail .sidenav a.nav-home,
   .layout.rail .nav-section {
     position: relative;
     justify-content: center;
     margin: 0.25rem 0 0;
     padding: 0.625rem 0;
   }
-  .layout.rail .nav-home .icon,
   .layout.rail .nav-section .icon {
     width: 1.25rem;
     height: 1.25rem;
@@ -1213,7 +1141,7 @@ a.kpi:hover {
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
-/* Inicio's six indicators: 3 × 2 on desktop, 2 × 3 below (no card left alone on a last row). */
+/* The Tablero's six indicators: 3 × 2 on desktop, 2 × 3 below (no card left alone on a last row). */
 .kpis.six {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -1435,4 +1363,145 @@ table.calendar td.today .day-number {
 .month-title {
   align-self: center;
   text-transform: capitalize;
+}
+
+/* ── Charts (shared/charts.ts) ── */
+.chart-brand {
+  --c: var(--chart-brand);
+}
+.chart-ok {
+  --c: var(--chart-ok);
+}
+.chart-warn {
+  --c: var(--chart-warn);
+}
+.chart-warnSoft {
+  --c: var(--chart-warn-soft);
+}
+.chart-danger {
+  --c: var(--chart-danger);
+}
+.chart-neutral {
+  --c: var(--chart-neutral);
+}
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.chart-grid > .panel,
+section.panel {
+  min-width: 0;
+}
+.chart-grid h2,
+section.panel h2 {
+  margin-top: 0;
+  font-size: 1.125rem;
+}
+.chart-empty {
+  margin: 0.5rem 0;
+  padding: 1rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  text-align: center;
+}
+.donut {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 1.5rem;
+}
+.donut svg {
+  width: 9rem;
+  height: 9rem;
+  flex: none;
+}
+.donut circle {
+  fill: none;
+  stroke-width: 6;
+}
+.donut-track {
+  stroke: var(--surface-2);
+}
+.donut-arc {
+  stroke: var(--c);
+}
+.donut-total {
+  fill: var(--text);
+  font-size: 0.5rem;
+  font-weight: 700;
+  text-anchor: middle;
+}
+.donut-unit {
+  fill: var(--muted);
+  font-size: 0.25rem;
+  text-anchor: middle;
+}
+.chart-legend {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chart-legend li {
+  display: block;
+}
+.swatch {
+  display: inline-block;
+  margin-right: 0.375rem;
+  vertical-align: -0.0625rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 2px;
+  background: var(--c);
+}
+.bars {
+  display: grid;
+  gap: 0.625rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.bars li {
+  display: grid;
+  grid-template-columns: minmax(6rem, 10rem) minmax(0, 1fr);
+  grid-template-areas: 'label track' 'label text';
+  gap: 0.125rem 0.75rem;
+  align-items: center;
+}
+.bar-label {
+  grid-area: label;
+  overflow-wrap: anywhere;
+}
+.bar-track {
+  grid-area: track;
+  height: 0.75rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--c);
+}
+.bar-text {
+  grid-area: text;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+/* Phones: the label above its bar, so the bar keeps a usable width. */
+@media (max-width: 480px) {
+  .bars li {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'label' 'track' 'text';
+  }
+}
+.kpi-error {
+  color: var(--danger);
+  font-size: 1rem;
 }

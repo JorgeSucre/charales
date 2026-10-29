@@ -129,7 +129,7 @@ async function check(path: string, width: number, who: string, home: string): Pr
     crest: [...document.querySelectorAll('img[src$="CHCH23logo.webp"]')].some((i) => i.complete && i.naturalWidth > 0),
     english: (document.querySelector('main').innerText.match(/\\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Apr|May|Aug|Dec)\\b/) ?? [])[0] ?? null,
   })`);
-  // «Inicio» (/) takes coaches and tutors to their own panel (AuthService.homeUrl).
+  // '/' takes each session to its main page: Tablero, coach panel or portal (AuthService.homeUrl).
   if (state.path !== path && !(path === '/' && state.path === home))
     problems.push(`redirigió a ${state.path}`);
   if (state.overflow > 1) problems.push(`scroll horizontal de ${state.overflow}px`);
@@ -150,8 +150,8 @@ async function check(path: string, width: number, who: string, home: string): Pr
 }
 
 const ROLES: [string, string][] = [
-  ['admin@example.com', '/'],
-  ['secretaria@example.com', '/'],
+  ['admin@example.com', '/admin/dashboard'],
+  ['secretaria@example.com', '/admin/dashboard'],
   ['coach@example.com', '/coach'],
   ['tutor@example.com', '/portal'],
   ['marta@example.com', '/coach'],
@@ -409,39 +409,50 @@ test('user menu: its button opens it, Escape closes it back on its button, an ou
   assert.deepEqual(page.errors(), []);
 });
 
-test('Inicio: six indicators in full rows (3 × 2 desktop, 2 × 3 tablet/phone), a large amount fits, phone menu closes on Escape', async () => {
+test('Tablero: six indicators in full rows (3 × 2 desktop, 2 × 3 tablet/phone), charts with text, quick tasks, a large amount fits, phone menu closes on Escape', async () => {
   await login('admin@example.com');
   for (const [width, perRow] of [
     [1280, 3],
     [768, 2],
     [375, 2],
   ] as const) {
-    await page.size(width, 2600); // tall: the screenshot shows the whole page down to «Otros módulos»
-    await page.goto(`${app}/`);
-    await page.until(`document.querySelectorAll('.kpis.six .kpi').length === 6`);
-    if (SHOTS) writeFileSync(join(SHOTS, `inicio_full_${width}.png`), await page.screenshot());
+    await page.size(width, 2600); // tall: the screenshot shows the whole Tablero
+    await page.goto(`${app}/`); // the old Inicio leads to the Tablero
+    await page.until(`location.pathname === '/admin/dashboard'`);
+    await page.until(
+      `document.querySelectorAll('.kpis.six .kpi').length === 6 && document.querySelector('.bars li')`,
+    );
+    if (SHOTS) writeFileSync(join(SHOTS, `tablero_full_${width}.png`), await page.screenshot());
     const rows = await page.eval<number[]>(
       `Object.values([...document.querySelectorAll('.kpis.six .kpi')].reduce((r, k) => ((r[k.offsetTop] = (r[k.offsetTop] ?? 0) + 1), r), {}))`,
     );
     assert.deepEqual(rows, Array(6 / perRow).fill(perRow), `@${width}: rows of ${perRow}`);
-    const quickRows = await page.eval<number[]>(
-      `Object.values([...document.querySelectorAll('.cards.quick .card')].reduce((r, k) => ((r[k.offsetTop] = (r[k.offsetTop] ?? 0) + 1), r), {}))`,
+    assert.equal(
+      await page.eval<number>('document.documentElement.scrollWidth - window.innerWidth'),
+      0,
+      `@${width}: no horizontal scroll`,
     );
-    const quickPerRow = width === 1280 ? 3 : 1;
-    // «Otros módulos»: area name beside its links on desktop, above them below 1000 px.
-    const stacked = await page.eval<boolean>(`(() => {
-      const row = document.querySelector('.module-row');
-      return row.querySelector('ul').offsetTop > row.querySelector('h3').offsetTop + 4;
-    })()`);
-    assert.equal(stacked, width !== 1280, `@${width}: module rows stacked below 1000 px`);
-    assert.deepEqual(
-      quickRows,
-      Array(9 / quickPerRow).fill(quickPerRow),
-      `@${width}: quick access rows`,
+    // Charts: an accessible donut and lists of bars whose figures are text; nothing of «Otros módulos» left.
+    assert.match(
+      await page.eval<string>(`document.querySelector('.donut svg').getAttribute('aria-label')`),
+      /\d+ jugadores: Activo \d+/,
+    );
+    assert.ok(
+      (await page.eval<number>(`document.querySelectorAll('ul.bars[aria-label]').length`)) >= 2,
+      'collection and occupancy bars',
+    );
+    // Income follows the real clock here: bars, or the explicit «no payments» message — never a blank.
+    await page.until(
+      `(() => { const s = document.querySelector('#income-title').closest('section'); return s.querySelector('ul.bars') || /No hay pagos registrados/.test(s.textContent); })()`,
+    );
+    assert.equal(await page.eval<number>(`document.querySelectorAll('.module-row').length`), 0);
+    assert.equal(
+      await page.eval<number>(`document.querySelectorAll('.cards.quick .card').length`),
+      7,
     );
     assert.match(
       await page.eval<string>(`document.querySelector('.kpis.six').innerText`),
-      /Ingresos del \d+ (de \w+ )?al \d+ de \w+ de \d{4}/,
+      /del \d+ (de \w+ )?al \d+ de \w+ de \d{4}/,
     );
     // Display-only probe (no data changes): the widest amount the school could plausibly reach still fits.
     const clipped = await page.eval<number>(`(() => {
@@ -466,7 +477,7 @@ test('Inicio: six indicators in full rows (3 × 2 desktop, 2 × 3 tablet/phone),
     await page.eval<boolean>(`document.activeElement === document.querySelector('.menu-toggle')`),
     true,
   );
-  if (SHOTS) writeFileSync(join(SHOTS, 'inicio_menu_closed_375.png'), await page.screenshot());
+  if (SHOTS) writeFileSync(join(SHOTS, 'tablero_menu_closed_375.png'), await page.screenshot());
   assert.deepEqual(page.errors(), []);
 });
 
@@ -495,7 +506,7 @@ test('side menu: compact mode on desktop (remembered) and tablet, tooltips, coll
   await page.eval(`document.querySelector('.rail-toggle').click()`);
   await page.until(`document.querySelector('.layout.rail')`);
   assert.equal(await width('.sidenav'), 72);
-  assert.equal(await visibleLinks(), 1, 'compact: only «Inicio» is a link, the areas are buttons');
+  assert.equal(await visibleLinks(), 0, 'compact: the areas are buttons, no loose link');
   // Tooltip on keyboard focus too, and every area button keeps its accessible name.
   await page.focusEmulation();
   await page.eval(`document.querySelector('.nav-group.current .nav-section').focus()`);

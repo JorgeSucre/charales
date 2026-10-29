@@ -45,7 +45,7 @@ describe('auth, sessions & RBAC', () => {
       await expect(auth.login(email, pwd)).rejects.toThrow('Correo o contraseña incorrectos.');
     const user = await auth.login(' Secretaria@Example.com ', PASSWORD);
     expect(user).toMatchObject({ roles: ['SECRETARIA'], isStaff: true });
-    expect(auth.homeUrl()).toBe('/');
+    expect(auth.homeUrl()).toBe('/admin/dashboard'); // staff land on the Tablero
   });
 
   it('records the access with date/time (sesiones + auditoría LOGIN) and closes it on logout (HU-001.3)', async () => {
