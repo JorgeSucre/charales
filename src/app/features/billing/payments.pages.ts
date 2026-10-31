@@ -158,6 +158,7 @@ export class PaymentPage {
   protected chargeTone = CHARGE_TONE;
   protected methodLabels = METHOD_LABELS;
   protected methods = Object.entries(METHOD_LABELS) as [PaymentMethod, string][];
+  protected reference: string = '';
   private formEl = viewChild.required<ElementRef<HTMLFormElement>>('formEl');
   private amountModel = viewChild<NgModel>('amountModel');
   private money = new MoneyPipe();
@@ -227,12 +228,17 @@ export class PaymentPage {
       focusFirstInvalid(this.formEl().nativeElement);
       return;
     }
+    if ((this.method === 'TRANSFERENCIA' || this.method === 'TARJETA') && !this.reference.trim()) {
+    alert('Por favor ingresa el número de referencia o comprobante.');
+    return;
+    }
     if (!confirm(`¿Registrar el pago por $${this.amount}?`)) return;
     const draft = {
       playerId: this.playerId()!,
       tutorId: this.tutorId,
       amountCents: centsFromInput(this.amount),
       method: this.method,
+      reference: this.reference.trim(),
       chargeIds: [...this.selected()],
       paidAt: this.paidAt,
     };
@@ -246,7 +252,8 @@ export class PaymentPage {
     if (ok) {
       this.selected.set(new Set());
       this.amount = 0;
-      field?.markAsUntouched();
+     this.reference = ''; 
+     field?.markAsUntouched();
       this.open.reload();
     }
   }
@@ -709,3 +716,4 @@ export class DebtsPage {
   );
   protected total = computed(() => sumCents((this.debts.value() ?? []).map((d) => d.balanceCents)));
 }
+
