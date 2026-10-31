@@ -15,7 +15,7 @@ import {
 import { AuditService } from '../../core/services/audit.service';
 import { isISODate, nowDateTime, today } from '../../shared/dates';
 import { assertCents, multiplyCents, sumCents } from '../../shared/money';
-import { flag, optional, required } from '../../shared/validate';
+import { catalogName, flag, optional, personName, required } from '../../shared/validate';
 import { BillingService } from '../billing/billing.service';
 
 export interface OrderLineView {
@@ -89,7 +89,7 @@ export class UniformService {
     description: string | null;
   }): Promise<UniformProduct> {
     this.authz.require(draft.id ? 'uniformes.editar' : 'uniformes.crear');
-    const name = required(draft.name, 'El nombre', 150);
+    const name = catalogName(draft.name, 'El nombre', 150);
     if (
       this.db.uniformProducts.some(
         (p) => p.id !== draft.id && p.name.toLowerCase() === name.toLowerCase(),
@@ -211,9 +211,9 @@ export class UniformService {
     if (!items.length) throw new Error('Agrega al menos un artículo.');
     const lines = items.map(({ variantId, quantity }) => {
       const variant = this.db.uniformVariants.find((v) => v.id === variantId && v.active);
-      if (!variant) throw new Error('Artículo inválido o inactivo.');
+      if (!variant) throw new Error('Selecciona un artículo disponible del catálogo.');
       if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999)
-        throw new Error('Cantidad inválida.');
+        throw new Error('Ingresa una cantidad válida: un número entero de 1 a 999.');
       return { variantId, quantity, unitPriceCents: variant.priceCents };
     });
     const total = sumCents(lines.map((l) => multiplyCents(l.unitPriceCents, l.quantity)));
@@ -306,8 +306,8 @@ export class UniformService {
     if (order.status === 'CANCELADO') throw new Error('El pedido está cancelado.');
     if (order.status === 'ENTREGADO') throw new Error('El pedido ya fue entregado.');
     if (!isISODate(deliveredOn) || deliveredOn < order.requestedOn)
-      throw new Error('Fecha de entrega inválida.');
-    const who = required(receivedBy, 'Quién recibe', 150);
+      throw new Error('Ingresa una fecha de entrega válida.');
+    const who = personName(receivedBy, 'Quién recibe', 150);
     const updated = this.db.update(this.db.uniformOrders, orderId, {
       status: 'ENTREGADO',
       deliveredOn,

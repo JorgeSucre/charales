@@ -21,7 +21,7 @@ import {
   weekday,
   isCurrentAssignment,
 } from '../../shared/dates';
-import { oneOf, optional, required } from '../../shared/validate';
+import { DATE_MESSAGE, TIMES_MESSAGE, oneOf, optional, required } from '../../shared/validate';
 
 export interface SessionView extends TrainingSession {
   categoryName: string;
@@ -169,7 +169,9 @@ export class TrainingService {
   ): Promise<{ created: number; skipped: number }> {
     this.authz.require('entrenamientos.crear');
     if (!isISODate(from) || !isISODate(to) || to < from)
-      throw new Error('Rango de fechas inválido.');
+      throw new Error(
+        'Ingresa un rango de fechas válido: la fecha final no puede ser anterior a la inicial.',
+      );
     if (addDays(from, 62) < to) throw new Error('Genera como máximo dos meses a la vez.');
     let created = 0;
     let skipped = 0;
@@ -219,7 +221,7 @@ export class TrainingService {
 
   async setStatus(id: Id, status: TrainingStatus, reason = ''): Promise<void> {
     this.authz.require('entrenamientos.editar');
-    oneOf(status, TRAINING_STATUS_LABELS, 'Estado inválido.');
+    oneOf(status, TRAINING_STATUS_LABELS, 'Selecciona un estado válido.');
     const before = this.db.get(this.db.trainingSessions, id, 'Sesión');
     if (before.status === status) return this.db.respond(undefined);
     if (status === 'REALIZADO' && before.date > today())
@@ -330,8 +332,8 @@ export class TrainingService {
       this.db.get(this.db.schedules, d.scheduleId, 'Horario').categoryId !== d.categoryId
     )
       throw new Error('El horario pertenece a otra categoría.');
-    if (!isISODate(d.date)) throw new Error('Fecha inválida.');
-    if (!isTime(d.startTime) || !isTime(d.endTime)) throw new Error('Horas inválidas.');
+    if (!isISODate(d.date)) throw new Error(DATE_MESSAGE);
+    if (!isTime(d.startTime) || !isTime(d.endTime)) throw new Error(TIMES_MESSAGE);
     if (d.endTime <= d.startTime)
       throw new Error('La hora de fin debe ser posterior a la de inicio.');
   }

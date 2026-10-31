@@ -9,7 +9,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { AuthService } from '../core/auth/auth.service';
 import { ROLE_LABELS } from '../core/auth/permissions';
@@ -44,7 +44,7 @@ export function activeNavPath(url: string, paths: readonly string[]): string | n
 
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, RouterLink],
   host: { '(document:click)': 'onDocumentClick($event)' },
   template: `
     <a class="skip-link" href="#main" (click)="skipToMain($event)" [attr.inert]="drawerInert()"
@@ -78,7 +78,7 @@ export function activeNavPath(url: string, paths: readonly string[]): string | n
           }}</span>
         </button>
         <!-- Phones only: on wider screens the crest sits at the top of the side menu. -->
-        <a routerLink="/" class="brand"
+        <a [routerLink]="auth.homeUrl()" class="brand"
           ><img src="brand/CHCH23logo.webp" alt="" width="32" height="32" />Charales</a
         >
         <p class="context">
@@ -122,7 +122,7 @@ export function activeNavPath(url: string, paths: readonly string[]): string | n
         (keydown.escape)="closeMenu()"
       >
         <div class="sidenav-head">
-          <a routerLink="/" class="sidenav-brand">
+          <a [routerLink]="auth.homeUrl()" class="sidenav-brand">
             <img src="brand/CHCH23logo.webp" alt="" width="48" height="48" />
             <span class="brand-text"
               ><strong>Charales de Chapala</strong><small>Escuela Formativa</small></span
@@ -136,17 +136,6 @@ export function activeNavPath(url: string, paths: readonly string[]): string | n
           </button>
         </div>
         <div id="nav-links" class="nav-links" (click)="onNavClick($event)">
-          <a
-            routerLink="/"
-            class="nav-home"
-            data-tip="Inicio"
-            routerLinkActive="active"
-            ariaCurrentWhenActive="page"
-            [routerLinkActiveOptions]="{ exact: true }"
-            ><svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path [attr.d]="ui.home" /></svg
-            ><span class="nav-label">Inicio</span></a
-          >
           @for (section of sections(); track section.name; let i = $index) {
             <div class="nav-group" [class.current]="section.name === activeSection()">
               <button
@@ -288,8 +277,7 @@ export class Shell {
   );
   protected context = computed(() => {
     const item = NAV_ITEMS.find((i) => i.path === this.activePath());
-    if (item) return { section: item.section, page: item.label };
-    return pathOf(this.url()) === '/' ? { section: null, page: 'Inicio' } : null;
+    return item ? { section: item.section, page: item.label } : null;
   });
   protected initials = computed(() =>
     (this.auth.user()?.displayName ?? '')

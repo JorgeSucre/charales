@@ -133,7 +133,7 @@ Código: [`api/password.ts`](../api/password.ts). Responsable de la historia: Bo
 API** el método del servicio de dominio de Angular, con el usuario de la cookie, sobre MariaDB (decisión D13,
 [`MARIADB.md`](database/MARIADB.md)). Responde `{ "result": … }` con el mismo modelo que devolvía sobre `MockDb`.
 
-- **Lista blanca:** [`src/app/core/api/rpc-methods.ts`](../src/app/core/api/rpc-methods.ts), 22 servicios y 125
+- **Lista blanca:** [`src/app/core/api/rpc-methods.ts`](../src/app/core/api/rpc-methods.ts), 22 servicios y 126
   métodos: los que usan las páginas. Cada uno verifica permiso y alcance con `AuthorizationService` en su primera
   línea; los métodos internos (síncronos, `profileAccount`, `AuthService.*`) no se exponen (`404`).
 - **Unidad de trabajo** ([`api/rpc.ts`](../api/rpc.ts)): candado `GET_LOCK` por base → transacción → carga de las

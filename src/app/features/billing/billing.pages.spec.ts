@@ -8,7 +8,7 @@ import { ChargeStatus } from '../../core/models';
 import { CHARGE_TONE } from '../../shared/status-tone';
 import { BillingService, CHARGE_STATUS_LABELS } from './billing.service';
 
-/** F3.2: manual charge disclosure, payment guidance and amount validation, status tones, KPIs and captions. */
+/** F3.2: manual charge form (closed until asked for), payment guidance and amount validation, status tones, KPIs and captions. */
 describe('billing pages (F3.2)', () => {
   beforeEach(() => {
     sessionStorage.clear();
@@ -79,23 +79,26 @@ describe('billing pages (F3.2)', () => {
     return settle();
   }
 
-  it('charges: the manual charge form starts folded in a native disclosure and still creates the charge', async () => {
-    const el = await open('secretaria@example.com', '/admin/billing/charges');
-    const details = el.querySelector<HTMLDetailsElement>('details.disclosure')!;
-    expect(details.open).toBe(false);
-    const summary = details.querySelector(':scope > summary')!;
-    expect(summary.textContent).toContain('Cargo manual');
-
-    details.open = true; // what a click, Enter or Space on <summary> does natively
+  it('charges: the manual charge form starts closed, opens from its button and still creates the charge', async () => {
+    let el = await open('secretaria@example.com', '/admin/billing/charges');
+    expect(el.querySelector('#charge-form')).toBeNull();
+    const button = [...el.querySelectorAll<HTMLButtonElement>('.page-head button')].find((b) =>
+      /nuevo cargo manual/i.test(b.textContent ?? ''),
+    )!;
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    button.click();
+    el = await settle();
+    const form = el.querySelector<HTMLFormElement>('#charge-form')!;
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(form.querySelector('h2')?.textContent).toContain('Cargo manual');
+    choose(form.querySelector('select[name=player]')!, 'Lucía');
+    choose(form.querySelector('select[name=concept]')!, 'Mensualidad');
     await settle();
-    choose(details.querySelector('select[name=player]')!, 'Lucía');
-    choose(details.querySelector('select[name=concept]')!, 'Mensualidad');
-    await settle();
-    details.querySelector<HTMLButtonElement>('button[type=submit]')!.click();
-    await settle();
+    form.querySelector<HTMLButtonElement>('button[type=submit]')!.click();
+    el = await settle();
     const alert = el.querySelector('.alert.ok')!;
     expect(alert.textContent).toContain('Cargo creado.');
-    expect(details.contains(alert)).toBe(false); // the result is never hidden inside the folded form
+    expect(el.querySelector('#charge-form')).toBeNull(); // closed after saving; the result stays visible
     expectChargeTones([...el.querySelectorAll('td .tag')]);
     expect(el.querySelector('table caption')?.textContent).toContain('Cargos');
   }, 20_000);
@@ -143,10 +146,10 @@ describe('billing pages (F3.2)', () => {
     expect(amountInput(el).getAttribute('aria-describedby')).toContain('amount-error');
 
     for (const [value, message] of [
-      ['', 'Campo requerido.'],
-      ['0', 'Debe ser al menos $0.01.'],
-      ['-5', 'Debe ser al menos $0.01.'],
-      ['600.01', 'No puede superar el saldo de los cargos seleccionados ($600.00).'],
+      ['', 'Este campo es obligatorio.'],
+      ['0', 'Ingresa un importe de al menos $0.01.'],
+      ['-5', 'Ingresa un importe de al menos $0.01.'],
+      ['600.01', 'El importe no puede superar el saldo de los cargos seleccionados ($600.00).'],
     ]) {
       type(amountInput(el), value);
       await settle();

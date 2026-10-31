@@ -2,13 +2,13 @@ import { Component, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
-import { FieldError } from '../../shared/field-error';
+import { FieldA11y, FieldError } from '../../shared/field-error';
 import { Submission } from '../../shared/submission';
 
 /** HU-001/002/003: one login for every role; the landing page depends on the roles/profiles of the account. */
 @Component({
   selector: 'app-login-page',
-  imports: [ReactiveFormsModule, RouterLink, FieldError],
+  imports: [ReactiveFormsModule, RouterLink, FieldError, FieldA11y],
   template: `
     <main class="auth-box">
       <h1>⚽ Escuela de Fútbol Charales</h1>

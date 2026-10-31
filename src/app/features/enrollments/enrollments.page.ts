@@ -5,7 +5,9 @@ import { AuthService } from '../../core/auth/auth.service';
 import { EnrollmentStatus, Id } from '../../core/models';
 import { PlayerService } from '../../core/services/player.service';
 import { today } from '../../shared/dates';
-import { FieldError } from '../../shared/field-error';
+import { FieldA11y, FieldError } from '../../shared/field-error';
+import { focusFirstInvalid } from '../../shared/focus';
+import { FormPanel } from '../../shared/form-panel';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
 import { Submission } from '../../shared/submission';
@@ -25,14 +27,35 @@ import { ENROLLMENT_LABELS, EnrollmentService, EnrollmentView } from './enrollme
     FormsModule,
     RouterLink,
     FieldError,
+    FieldA11y,
     LoadState,
     MoneyPipe,
     SubmissionAlert,
   ],
   template: `
-    <h1>Inscripción anual</h1>
-    @if (auth.can('inscripciones.crear')) {
-      <form [formGroup]="form" (ngSubmit)="submit()" novalidate class="grid-form">
+    <div class="page-head">
+      <h1>Inscripción anual</h1>
+      @if (auth.can('inscripciones.crear')) {
+        <button
+          type="button"
+          (click)="create()"
+          [attr.aria-expanded]="panel.open()"
+          aria-controls="enrollment-form"
+        >
+          Nueva inscripción
+        </button>
+      }
+    </div>
+    <app-submission-alert [submission]="submission" />
+    @if (panel.open()) {
+      <form
+        id="enrollment-form"
+        [formGroup]="form"
+        (ngSubmit)="submit()"
+        (keydown.escape)="cancel()"
+        novalidate
+        class="grid-form"
+      >
         <h2>Nueva inscripción</h2>
         <label
           >Jugador
@@ -54,12 +77,14 @@ import { ENROLLMENT_LABELS, EnrollmentService, EnrollmentView } from './enrollme
         </label>
         <div class="two-col">
           <label>Fecha <input type="date" formControlName="enrolledOn" /></label>
-          <label
-            >Monto (MXN)
-            <input type="number" min="0" step="0.01" inputmode="decimal" formControlName="amount"
-          /></label>
+          <div>
+            <label
+              >Monto (MXN)
+              <input type="number" min="0" step="0.01" inputmode="decimal" formControlName="amount"
+            /></label>
+            <app-field-error [control]="form.controls.amount" />
+          </div>
         </div>
-        <app-field-error [control]="form.controls.amount" />
         <label
           >Estatus inicial
           <select formControlName="status">
@@ -79,8 +104,10 @@ import { ENROLLMENT_LABELS, EnrollmentService, EnrollmentView } from './enrollme
         @if (form.controls.conceptId.value) {
           <label>Vence <input type="date" formControlName="dueDate" /></label>
         }
-        <app-submission-alert [submission]="submission" />
-        <button type="submit" [disabled]="submission.busy()">Inscribir</button>
+        <div class="actions">
+          <button type="submit" [disabled]="submission.busy()">Inscribir</button>
+          <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
+        </div>
       </form>
     }
     <div class="filters">
@@ -216,6 +243,8 @@ export class EnrollmentsPage {
     dueDate: [today()],
   });
 
+  protected panel = new FormPanel('enrollment-form', () => this.form.dirty);
+
   constructor() {
     // Default to the current season once seasons load.
     effect(() => {
@@ -225,8 +254,31 @@ export class EnrollmentsPage {
     });
   }
 
+  /** Opens an empty form. */
+  create(): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.submission.result.set(null);
+    this.panel.show();
+  }
+
+  /** Closes the form without saving (asks first if it has unsaved changes). */
+  cancel(): void {
+    if (this.panel.close()) this.reset();
+  }
+
+  /** Back to the defaults: today, the current season, no player. */
+  private reset(): void {
+    this.form.reset();
+    this.form.controls.seasonId.setValue(this.openSeasons().find((s) => s.isCurrent)?.id ?? null);
+  }
+
   async submit(): Promise<void> {
-    if (this.form.invalid) return this.form.markAllAsTouched();
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      setTimeout(() => focusFirstInvalid(document.getElementById('enrollment-form')!));
+      return;
+    }
     const v = this.form.getRawValue();
     const draft = {
       playerId: v.playerId!,
@@ -238,8 +290,8 @@ export class EnrollmentsPage {
       dueDate: v.conceptId ? v.dueDate : null,
     };
     if (await this.submission.run(() => this.service.enroll(draft), 'Jugador inscrito.')) {
-      this.form.patchValue({ playerId: null });
-      this.form.markAsUntouched();
+      this.panel.done();
+      this.reset();
       this.enrollments.reload();
     }
   }

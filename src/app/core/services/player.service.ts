@@ -21,7 +21,9 @@ import {
   oneOf,
   optional,
   optionalEmail,
+  optionalPersonName,
   optionalPhone,
+  personName,
   required,
   sameName,
 } from '../../shared/validate';
@@ -200,7 +202,7 @@ export class PlayerService {
   /** HU-008: validates, rejects evident duplicates (same name + birth date) and generates the identifier. */
   async create(draft: PlayerDraft, status: PlayerStatus = 'ACTIVO'): Promise<Player> {
     this.authz.require('jugadores.crear');
-    oneOf(status, STATUS_LABELS, 'Estatus inválido.');
+    oneOf(status, STATUS_LABELS, 'Selecciona un estatus válido.');
     const data = this.validate(draft);
     const duplicate = this.db.players.find(
       (p) => p.birthDate === data.birthDate && sameName(fullName(p), fullName(data)),
@@ -269,7 +271,7 @@ export class PlayerService {
     // `status` comes from the browser: only jugadores.estatus values, not just what the select offers. A string first:
     // Object.hasOwn would turn ['ACTIVO'] into 'ACTIVO'.
     if (typeof status !== 'string' || !Object.hasOwn(STATUS_LABELS, status))
-      throw new Error('Estatus inválido.');
+      throw new Error('Selecciona un estatus válido.');
     const before = this.db.get(this.db.players, id, 'Jugador');
     if (before.status === status) throw new Error('El jugador ya tiene ese estatus.');
     const motive = required(reason, 'El motivo');
@@ -441,14 +443,14 @@ export class PlayerService {
   }
 
   private validate(draft: PlayerDraft): PlayerDraft {
-    if (!isISODate(draft.birthDate)) throw new Error('Fecha de nacimiento inválida.');
+    if (!isISODate(draft.birthDate)) throw new Error('Ingresa una fecha de nacimiento válida.');
     if (draft.birthDate > today()) throw new Error('La fecha de nacimiento no puede ser futura.');
     if (!(['F', 'M', 'OTRO', 'NO_ESPECIFICADO'] as Sex[]).includes(draft.sex))
-      throw new Error('Sexo inválido.');
+      throw new Error('Selecciona un sexo válido.');
     return {
-      firstName: required(draft.firstName, 'El nombre', 100),
-      lastName1: required(draft.lastName1, 'El apellido paterno', 100),
-      lastName2: optional(draft.lastName2, 'El apellido materno', 100),
+      firstName: personName(draft.firstName, 'El nombre'),
+      lastName1: personName(draft.lastName1, 'El apellido paterno'),
+      lastName2: optionalPersonName(draft.lastName2, 'El apellido materno'),
       birthDate: draft.birthDate,
       sex: draft.sex,
       phone: optionalPhone(draft.phone),

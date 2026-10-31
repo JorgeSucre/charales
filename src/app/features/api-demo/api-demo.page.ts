@@ -4,7 +4,7 @@ import { CharalesApi } from '../../core/api/charales-api.service';
 import { AuthService } from '../../core/auth/auth.service';
 import { fullName } from '../../core/models';
 import { SEX_LABELS, STATUS_LABELS } from '../../core/services/player.service';
-import { FieldError } from '../../shared/field-error';
+import { FieldA11y, FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
 import { Submission } from '../../shared/submission';
 import { SubmissionAlert } from '../../shared/ui';
@@ -16,7 +16,7 @@ import { SubmissionAlert } from '../../shared/ui';
  */
 @Component({
   selector: 'app-api-demo-page',
-  imports: [ReactiveFormsModule, FieldError, LoadState, SubmissionAlert],
+  imports: [ReactiveFormsModule, FieldError, FieldA11y, LoadState, SubmissionAlert],
   template: `
     <h1>Datos desde la API</h1>
     <p class="alert info">

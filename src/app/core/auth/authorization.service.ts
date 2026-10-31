@@ -7,7 +7,7 @@ import { AuthUser, SessionStore, grants } from './session.store';
 
 /** Thrown when the session may not perform an operation. Same message whatever the reason (nothing to enumerate). */
 export class ForbiddenError extends Error {
-  constructor(message = 'No tienes permiso para esta operación.') {
+  constructor(message = 'No tienes permiso para realizar esta acción.') {
     super(message);
     this.name = 'ForbiddenError';
   }

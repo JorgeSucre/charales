@@ -1,10 +1,12 @@
 # Pruebas
 
-Estado al 2026-10-15 (auditoría integral, rama `jorgesucre/api-express`): **156/156** pruebas Angular, **125/125** de
-la API sobre MariaDB (autenticación, puente de dominio y una suite por fase con los criterios de cada HU), **13/13** E2E en Chrome
-headless, colección Postman 37 requests / 42 aserciones, MariaDB 42/42 checks y respaldo/restauración idéntico;
-typecheck, build y formato sin errores. Evidencia:
-[`database/evidence/tests-2026-10-15.txt`](database/evidence/tests-2026-10-15.txt). No se ha medido cobertura
+Estado al 2026-10-29 (cierre de las 49 HU de Administrador/Secretaría, rama `jorgesucre/cierre-borrayo` sobre `main`
+`9107042`): **241/241** pruebas Angular, **192/192** de la API sobre MariaDB (autenticación, puente de dominio, una
+suite por fase con los criterios de cada HU y `hu-criterios.test.ts` con los criterios que antes sólo tenían una
+aserción débil), **18/18** E2E en Chrome headless, colección Postman 37 requests / 42 aserciones, MariaDB 42/42 checks
+y respaldo/restauración idéntico (40 tablas); typecheck, build y formato sin errores. Evidencia:
+[`database/evidence/tests-2026-10-29.txt`](database/evidence/tests-2026-10-29.txt) (la anterior,
+[`tests-2026-10-15.txt`](database/evidence/tests-2026-10-15.txt), queda como historial). No se ha medido cobertura
 porcentual.
 
 ## Cómo correrlas

@@ -138,7 +138,7 @@ describe('domain rules by HU', () => {
       const history = db().statusHistory.length;
       for (const bad of ['SUSPENDIDO', 'toString'])
         await expect(players.changeStatus(3, bad as PlayerStatus, 'x')).rejects.toThrow(
-          'Estatus inválido',
+          'Selecciona un estatus válido.',
         );
       expect((await players.get(3)).status).toBe('ACTIVO');
       expect(db().statusHistory).toHaveLength(history);
@@ -198,6 +198,38 @@ describe('domain rules by HU', () => {
       });
       await expect(tutors.linkAccount(2, 'ana.portal@example.com')).rejects.toThrow('otro tutor');
       expect((await tutors.linkAccount(2, 'coach@example.com')).created).toBe(false); // reuses the coach's login
+    });
+
+    it('HU-011: setPrimary swaps the primary contact atomically; it stays optional and needs a linked tutor', async () => {
+      await login('secretaria');
+      const tutors = get(TutorService);
+      const primaryOf = (playerId: number) =>
+        db()
+          .tutorPlayers.filter((tp) => tp.playerId === playerId && tp.isPrimary)
+          .map((tp) => tp.tutorId);
+      const ana = await tutors.save({
+        firstName: 'Ana',
+        lastName1: 'López',
+        lastName2: null,
+        phone: '+52 (55) 0000-0000',
+        email: null,
+        address: null,
+        links: [{ playerId: 1, relationship: 'Tía', isPrimary: false }],
+      });
+      expect(ana.phone).toBe('+525500000000');
+      await tutors.setPrimary(1, ana.id);
+      expect(primaryOf(1)).toEqual([ana.id]); // the afterEach integrity check: still one primary at most
+      expect(db().audit.at(-1)).toMatchObject({ entity: 'tutor_jugador', entityId: 1 });
+      await expect(tutors.setPrimary(1, 3)).rejects.toThrow('no es tutor de');
+      // Unsetting it through the tutor form is allowed (optional), and the player just has no primary.
+      await tutors.save({
+        ...ana,
+        links: [{ playerId: 1, relationship: 'Tía', isPrimary: false }],
+      });
+      expect(primaryOf(1)).toEqual([]);
+      get(AuthService).logout();
+      await login('coach');
+      await expect(tutors.setPrimary(1, 1)).rejects.toThrow('No tienes permiso');
     });
 
     it('HU-014: partial search + combinable filters + pagination', async () => {
@@ -269,7 +301,7 @@ describe('domain rules by HU', () => {
           startTime: '17:00',
           endTime: '18:00',
         }),
-      ).rejects.toThrow('Día');
+      ).rejects.toThrow('día de la semana');
       await expect(
         schedules.save({
           categoryId: 3,
@@ -849,7 +881,7 @@ describe('domain rules by HU', () => {
       expect(diego.attendance.summary).toMatchObject({ total: 1, present: 1 });
       await expect(
         portal.updateProfile({ phone: '12', email: null, address: null }),
-      ).rejects.toThrow('Teléfono');
+      ).rejects.toThrow('número de teléfono válido');
       const t = await portal.updateProfile({
         phone: '5599998888',
         email: 'teresa@example.com',
@@ -869,11 +901,11 @@ describe('domain rules by HU', () => {
   });
 
   describe('K · reports', () => {
-    it('HU-065/066/067/068: KPIs declare their source; players by category; income excludes cancelled; agenda merges events', async () => {
+    it('HU-065/066/067/068: KPIs explain what they count; players by category; income excludes cancelled; agenda merges events', async () => {
       await login('admin');
       const reports = get(ReportService);
       const dash = await reports.dashboard('2026-09-01', '2026-09-30');
-      expect(dash.kpis.every((k) => k.source && k.link)).toBe(true);
+      expect(dash.kpis.every((k) => k.hint && k.link)).toBe(true);
       expect(dash.kpis.find((k) => k.label === 'Jugadores activos')?.value).toBe(5);
       expect(dash.kpis.find((k) => k.label.startsWith('Ingresos'))?.value).toBe(90000);
       const groups = await reports.playersByCategory({ status: 'ACTIVO' });

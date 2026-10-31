@@ -43,6 +43,7 @@ import {
   Venue,
 } from '../models';
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_CATALOG, splitPermission } from '../auth/permissions';
+import { notFoundMessage } from '../../shared/validate';
 
 /** usuarios row as stored; password_hash never leaves the "server" (services strip it). */
 export type UserRow = User & { passwordHash: string };
@@ -1265,7 +1266,7 @@ export class MockDb {
   /** UPDATE … WHERE id = ?; returns the new row. */
   update<T extends { id: Id }>(table: T[], id: Id, patch: Partial<T>): T {
     const i = table.findIndex((r) => r.id === id);
-    if (i < 0) throw new Error('Registro no encontrado.');
+    if (i < 0) throw new Error(notFoundMessage('Registro'));
     table[i] = { ...table[i], ...patch, id };
     return table[i];
   }
@@ -1273,7 +1274,7 @@ export class MockDb {
   /** SELECT … WHERE id = ? that fails like a missing FK target. */
   get<T extends { id: Id }>(table: T[], id: Id, what = 'Registro'): T {
     const row = table.find((r) => r.id === id);
-    if (!row) throw new Error(`${what} no encontrado.`);
+    if (!row) throw new Error(notFoundMessage(what));
     return row;
   }
 

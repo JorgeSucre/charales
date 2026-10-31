@@ -61,7 +61,7 @@ test('HU-008: register a player — data, age, evident duplicates, internal iden
   await t.refused(
     () => t.call(secretaria, 'PlayerService', 'create', player('')),
     400,
-    /^El nombre es obligatorio\.$/,
+    /^Falta el nombre\. Es un dato obligatorio\.$/,
   );
 });
 
@@ -94,7 +94,7 @@ test('HU-009: edit a player — authorized fields, same id, modification date, r
   await t.refused(
     () => t.call(secretaria, 'PlayerService', 'update', 3, { ...player('Mateo'), birthDate: '' }),
     400,
-    /^Fecha de nacimiento inválida\.$/,
+    /^Ingresa una fecha de nacimiento válida\.$/,
   );
 });
 
@@ -144,7 +144,7 @@ test('HU-010: status change — unknown status (400) or no permission (403) writ
     await t.refused(
       () => t.call(secretaria, 'PlayerService', 'changeStatus', 5, bad, 'Motivo'),
       400,
-      /estatus inválido/i,
+      /^Selecciona un estatus válido\.$/,
     );
   assert.deepEqual(await snapshot(5), before, 'unknown status: nothing written');
 
@@ -154,7 +154,7 @@ test('HU-010: status change — unknown status (400) or no permission (403) writ
   await t.refused(
     () => t.call(tutor, 'PlayerService', 'changeStatus', 1, 'BAJA_TEMPORAL', 'x'),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
   assert.deepEqual(await snapshot(1), child, 'forbidden: nothing written');
 
@@ -257,6 +257,130 @@ test('HU-011: tutors — N:M, one primary contact per player, contact validation
   );
 });
 
+test('HU-008/011/022: contact validation through the API — phone formats, optional e-mail, R11', async () => {
+  const tutor = (phone: unknown, email: unknown, firstName = 'Contacto') => ({
+    firstName,
+    lastName1: 'Prueba',
+    lastName2: null,
+    phone,
+    email,
+    address: null,
+    links: [{ playerId: 2, relationship: 'Tía', isPrimary: false }],
+  });
+  // International phone with separators: accepted and stored normalized; the optional e-mail may stay empty.
+  const intl = await t.ok<{ id: number }>(
+    t.call(secretaria, 'TutorService', 'save', tutor('+1 (555) 123-4567', '   ', 'Intl')),
+  );
+  const [row] = await t.db.query('SELECT telefono, email FROM tutores WHERE id = ?', [intl.id]);
+  assert.deepEqual({ ...row }, { telefono: '+15551234567', email: null });
+  const coach = await t.ok<{ id: number }>(
+    t.call(secretaria, 'CoachService', 'save', {
+      firstName: 'Ana',
+      lastName1: 'Puntos',
+      lastName2: null,
+      phone: '33.1234.5678',
+      email: null,
+    }),
+  );
+  const [c] = await t.db.query('SELECT telefono FROM entrenadores WHERE id = ?', [coach.id]);
+  assert.equal(c.telefono, '3312345678');
+  const p = await t.ok<{ id: number }>(
+    t.call(
+      secretaria,
+      'PlayerService',
+      'create',
+      player('Paréntesis', { phone: '(33) 1234-5678' }),
+    ),
+  );
+  const [pr] = await t.db.query('SELECT telefono FROM jugadores WHERE id = ?', [p.id]);
+  assert.equal(pr.telefono, '3312345678');
+  // Malformed values sent straight to the API: refused with the message, nothing written.
+  const tutors = await t.count('SELECT COUNT(*) AS n FROM tutores');
+  for (const phone of ['123', '+1234567890123456', '33+1234-5678'])
+    await t.refused(
+      () => t.call(secretaria, 'TutorService', 'save', tutor(phone, null)),
+      400,
+      /^Ingresa un número de teléfono válido: de 10 a 15 dígitos, con «\+» opcional al inicio\.$/,
+    );
+  await t.refused(
+    () => t.call(secretaria, 'TutorService', 'save', tutor(null, 'ana@example')),
+    400,
+    /^Ingresa un correo electrónico válido, por ejemplo nombre@dominio\.com\.$/,
+  );
+  // R11 (docs/DOMAIN_RULES.md): at least one phone or e-mail.
+  await t.refused(
+    () => t.call(secretaria, 'TutorService', 'save', tutor('  ', '')),
+    400,
+    /^Captura al menos un teléfono o un correo electrónico de contacto\.$/,
+  );
+  assert.equal(await t.count('SELECT COUNT(*) AS n FROM tutores'), tutors);
+});
+
+test('HU-011: setPrimary replaces the primary contact in one operation — linked tutors only, audited, by role', async () => {
+  const primaryOf = async (playerId: number) =>
+    (
+      await t.db.query(
+        'SELECT tutor_id FROM tutor_jugador WHERE jugador_id = ? AND es_contacto_principal',
+        [playerId],
+      )
+    ).map((r: { tutor_id: number }) => r.tutor_id);
+  assert.deepEqual(await primaryOf(4), [4], 'seed: tutor 4 is the primary contact of player 4');
+  const second = await t.ok<{ id: number }>(
+    t.call(secretaria, 'TutorService', 'save', {
+      firstName: 'Lucía',
+      lastName1: 'Segunda',
+      lastName2: null,
+      phone: '3311110000',
+      email: null,
+      address: null,
+      links: [{ playerId: 4, relationship: 'Madre', isPrimary: false }],
+    }),
+  );
+  const audits = () =>
+    t.count(
+      "SELECT COUNT(*) AS n FROM auditoria WHERE entidad = 'tutor_jugador' AND entidad_id = 4",
+    );
+  const before = await audits();
+  // One call swaps it: the old primary is unset and the new one set in the same transaction (one primary at most).
+  await t.ok(t.call(secretaria, 'TutorService', 'setPrimary', 4, second.id));
+  assert.deepEqual(await primaryOf(4), [second.id]);
+  assert.equal(await audits(), before + 1, 'the change is audited');
+  const [{ antes, despues }] = await t.db.query(
+    "SELECT datos_anteriores AS antes, datos_nuevos AS despues FROM auditoria WHERE entidad = 'tutor_jugador' AND entidad_id = 4 ORDER BY id DESC LIMIT 1",
+  );
+  assert.deepEqual([antes, despues], [{ primaryTutorId: 4 }, { primaryTutorId: second.id }]);
+  // Both links survive (only the flag moved): the former primary is still a tutor of the player.
+  assert.equal(await t.count('SELECT COUNT(*) AS n FROM tutor_jugador WHERE jugador_id = 4'), 2);
+  // Repeating it changes nothing and writes no audit row.
+  await t.ok(t.call(secretaria, 'TutorService', 'setPrimary', 4, second.id));
+  assert.equal(await audits(), before + 1);
+  // A tutor not linked to the player, or ids that don't exist: refused, nothing changes.
+  await t.refused(
+    () => t.call(secretaria, 'TutorService', 'setPrimary', 4, 1),
+    400,
+    /^.+ no es tutor de .+\.$/,
+  );
+  await t.refused(
+    () => t.call(secretaria, 'TutorService', 'setPrimary', 999999, second.id),
+    400,
+    /^Jugador inexistente: actualiza la página e inténtalo de nuevo\.$/,
+  );
+  await t.refused(
+    () => t.call(secretaria, 'TutorService', 'setPrimary', 4, 999999),
+    400,
+    /^Tutor inexistente: actualiza la página e inténtalo de nuevo\.$/,
+  );
+  // Without tutores.editar (coach, tutor) the server refuses it, whatever the UI shows.
+  for (const email of ['coach@example.com', 'tutor@example.com']) {
+    const cookie = await t.login(email); // outside refused(): a login writes its own audit row
+    await t.refused(() => t.call(cookie, 'TutorService', 'setPrimary', 4, 4), 403);
+  }
+  assert.deepEqual(await primaryOf(4), [second.id]);
+  // Administrador may do it too; switching back works the same way.
+  await t.ok(t.call(admin, 'TutorService', 'setPrimary', 4, 4));
+  assert.deepEqual(await primaryOf(4), [4]);
+});
+
 test('HU-012: portal account for a tutor — only registered tutors, no duplicate, initial access, own children only', async () => {
   await t.ok(t.call(secretaria, 'TutorService', 'linkAccount', 2, 'jorge.tutor@example.com'));
   const [link] = await t.db.query(
@@ -282,7 +406,7 @@ test('HU-012: portal account for a tutor — only registered tutors, no duplicat
   await t.refused(
     () => t.call(secretaria, 'TutorService', 'linkAccount', 9999, 'x@example.com'),
     400,
-    /no encontrado/i,
+    /inexistente/i,
   );
   await t.refused(
     () => t.call(secretaria, 'TutorService', 'linkAccount', 2, 'otro@example.com'),
@@ -668,7 +792,7 @@ test('HU-024/025/027: coach views — own categories, players, weekly schedule, 
   await t.refused(
     () => t.call(coach, 'PlayerService', 'update', 1, player('X')),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
   await t.refused(
     () =>
@@ -680,7 +804,7 @@ test('HU-024/025/027: coach views — own categories, players, weekly schedule, 
         maxCapacity: null,
       }),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
 });
 

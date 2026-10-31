@@ -10,7 +10,7 @@ import type { Pool } from 'mariadb';
 import { createApp } from './server.ts';
 import { grantsOf } from './demo.ts';
 import { applyChanges, cachedTables, columns, domain, loadTables, unitOfWork } from './rpc.ts';
-import { TEST_NOW, TYPE_ERROR, openTestDb, type TestDb } from './test-db.ts';
+import { TEST_NOW, TYPE_ERROR, TYPE_ERROR_MESSAGE, openTestDb, type TestDb } from './test-db.ts';
 
 let t: TestDb;
 let db: Pool;
@@ -76,23 +76,23 @@ test('rpc: 401 without session, 404 outside the allowlist, 400 malformed', async
   // Arguments the service can't use (missing list): 400, nothing written.
   const missing = await call(admin, 'AttendanceService', 'record', 1);
   assert.equal(missing.status, 400);
-  assert.deepEqual(await missing.json(), { error: 'Datos de la solicitud inválidos.' });
+  assert.deepEqual(await missing.json(), { error: TYPE_ERROR_MESSAGE });
 });
 
 test('T3 harness: refused() never takes a TypeError for a rejection, needs a message for a 400, and catches writes', async () => {
   const admin = await login('admin@example.com');
   // AttendanceService.record without its list: the service throws a TypeError → the generic 400 of api/rpc.ts.
   const typeError = () => call(admin, 'AttendanceService', 'record', 1);
-  await assert.rejects(t.refused(typeError, 400, /^Estatus inválido\.$/), /TypeError/);
+  await assert.rejects(t.refused(typeError, 400, /^Selecciona un estatus válido\.$/), /TypeError/);
   await assert.rejects(
-    t.refused(typeError, 400, /inválid/),
+    t.refused(typeError, 400, /datos/),
     /TypeError/,
     'a loose pattern is not enough',
   );
   await t.refused(typeError, 400, TYPE_ERROR); // only an explicit expectation accepts it
   // A business rejection: its own message is checked; a 400 without one doesn't pass.
   const unnamed = () => call(admin, 'PlayerService', 'create', newPlayer(''));
-  await t.refused(unnamed, 400, /^El nombre es obligatorio\.$/);
+  await t.refused(unnamed, 400, /^Falta el nombre\. Es un dato obligatorio\.$/);
   // (The types already refuse `refused(send, 400)`; this checks the runtime guard behind them.)
   const untyped = t.refused as (send: () => Promise<Response>, status: number) => Promise<void>;
   await assert.rejects(untyped(unnamed, 400), /message/);
@@ -324,8 +324,9 @@ test('concurrency: parallel writes and logins never collide (ids, audit rows)', 
   const admin = await login('admin@example.com');
   const auditBefore = await count('SELECT COUNT(*) AS n FROM auditoria');
   const results = await Promise.all([
-    ...Array.from({ length: 8 }, (_, i) =>
-      call(admin, 'PlayerService', 'create', newPlayer(`Paralelo${i}`)),
+    ...Array.from(
+      { length: 8 },
+      (_, i) => call(admin, 'PlayerService', 'create', newPlayer(`Paralelo ${'ABCDEFGH'[i]}`)), // R21: no digits
     ),
     ...Array.from({ length: 4 }, () =>
       fetch(`${base}/auth/login`, {

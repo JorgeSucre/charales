@@ -18,9 +18,9 @@ const SCHOOL_TZ = 'America/Mexico_City';
 process.env.TZ = SCHOOL_TZ;
 
 const INVALID = 'Correo o contraseña incorrectos.';
-export const NO_SESSION = 'Sesión no iniciada o expirada.';
+export const NO_SESSION = 'Tu sesión no está iniciada o ya expiró. Inicia sesión de nuevo.';
 const NO_ROLE = 'Tu cuenta no tiene un rol o perfil activo. Contacta a la escuela.';
-const FORBIDDEN = 'No tienes permiso para esta operación.';
+const FORBIDDEN = 'No tienes permiso para realizar esta acción.';
 
 // ---------------------------------------------------------------- passwords (argon2id, PHC string)
 

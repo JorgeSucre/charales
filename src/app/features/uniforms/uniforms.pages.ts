@@ -3,7 +3,10 @@ import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angu
 import { AuthService } from '../../core/auth/auth.service';
 import { Id, UniformOrderStatus } from '../../core/models';
 import { PlayerService } from '../../core/services/player.service';
-import { FieldError } from '../../shared/field-error';
+import { catalogNameValidator } from '../../shared/validate';
+import { FieldA11y, FieldError } from '../../shared/field-error';
+import { FormPanel } from '../../shared/form-panel';
+import { focusFirstInvalid } from '../../shared/focus';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
 import { Submission } from '../../shared/submission';
@@ -14,50 +17,88 @@ import { ORDER_STATUS_LABELS, OrderView, UniformService, VariantView } from './u
 /** HU-052: products and their sizes/prices, editable; used items are deactivated, never deleted. */
 @Component({
   selector: 'app-uniform-catalog-page',
-  imports: [ReactiveFormsModule, FieldError, LoadState, MoneyPipe, SubmissionAlert],
+  imports: [ReactiveFormsModule, FieldError, FieldA11y, LoadState, MoneyPipe, SubmissionAlert],
   template: `
-    <h1>Catálogo de uniformes</h1>
-    @if (auth.can('uniformes.crear')) {
-      <div class="two-col">
-        <form [formGroup]="productForm" (ngSubmit)="addProduct()" novalidate class="grid-form">
-          <h2>Nuevo producto</h2>
-          <label>Nombre <input formControlName="name" /></label>
-          <app-field-error [control]="productForm.controls.name" />
-          <label>Descripción <input formControlName="description" /></label>
-          <button type="submit" [disabled]="submission.busy()">Agregar producto</button>
-        </form>
-        <form [formGroup]="variantForm" (ngSubmit)="saveVariant()" novalidate class="grid-form">
-          <h2>{{ editingVariant() ? 'Editar talla' : 'Nueva talla' }}</h2>
-          <label
-            >Producto
-            <select formControlName="productId">
-              <option [ngValue]="null" disabled>Selecciona…</option>
-              @for (p of products.value() ?? []; track p.id) {
-                <option [ngValue]="p.id">{{ p.name }}</option>
-              }
-            </select>
-          </label>
-          <app-field-error [control]="variantForm.controls.productId" />
-          <label>Talla <input formControlName="size" placeholder="CH, M, G, 10…" /></label>
-          <app-field-error [control]="variantForm.controls.size" />
-          <label
-            >Precio (MXN)
-            <input type="number" min="0" step="0.01" inputmode="decimal" formControlName="price"
-          /></label>
-          <app-field-error [control]="variantForm.controls.price" />
-          <p class="muted">
-            Cambiar el precio no altera pedidos existentes: cada pedido guarda su precio.
-          </p>
-          <div class="actions">
-            <button type="submit" [disabled]="submission.busy()">Guardar talla</button>
-            @if (editingVariant()) {
-              <button type="button" class="secondary" (click)="resetVariant()">Cancelar</button>
-            }
-          </div>
-        </form>
-      </div>
-    }
+    <div class="page-head">
+      <h1>Catálogo de uniformes</h1>
+      @if (auth.can('uniformes.crear')) {
+        <div class="actions">
+          <button
+            type="button"
+            class="secondary"
+            (click)="openProduct()"
+            [attr.aria-expanded]="productPanel.open()"
+            aria-controls="product-form"
+          >
+            Nuevo producto
+          </button>
+          <button
+            type="button"
+            (click)="openVariant()"
+            [attr.aria-expanded]="variantPanel.open() && !editingVariant()"
+            aria-controls="variant-form"
+          >
+            Nueva talla
+          </button>
+        </div>
+      }
+    </div>
     <app-submission-alert [submission]="submission" />
+    @if (productPanel.open()) {
+      <form
+        id="product-form"
+        [formGroup]="productForm"
+        (ngSubmit)="addProduct()"
+        (keydown.escape)="cancelProduct()"
+        novalidate
+        class="grid-form"
+      >
+        <h2>Nuevo producto</h2>
+        <label>Nombre <input formControlName="name" /></label>
+        <app-field-error [control]="productForm.controls.name" />
+        <label>Descripción <input formControlName="description" /></label>
+        <div class="actions">
+          <button type="submit" [disabled]="submission.busy()">Agregar producto</button>
+          <button type="button" class="secondary" (click)="cancelProduct()">Cancelar</button>
+        </div>
+      </form>
+    }
+    @if (variantPanel.open()) {
+      <form
+        id="variant-form"
+        [formGroup]="variantForm"
+        (ngSubmit)="saveVariant()"
+        (keydown.escape)="cancelVariant()"
+        novalidate
+        class="grid-form"
+      >
+        <h2>{{ editingVariant() ? 'Editar talla' : 'Nueva talla' }}</h2>
+        <label
+          >Producto
+          <select formControlName="productId">
+            <option [ngValue]="null" disabled>Selecciona…</option>
+            @for (p of products.value() ?? []; track p.id) {
+              <option [ngValue]="p.id">{{ p.name }}</option>
+            }
+          </select>
+        </label>
+        <app-field-error [control]="variantForm.controls.productId" />
+        <label>Talla <input formControlName="size" placeholder="CH, M, G, 10…" /></label>
+        <app-field-error [control]="variantForm.controls.size" />
+        <label
+          >Precio (MXN)
+          <input type="number" min="0" step="0.01" inputmode="decimal" formControlName="price"
+        /></label>
+        <app-field-error [control]="variantForm.controls.price" />
+        <p class="muted">
+          Cambiar el precio no altera pedidos existentes: cada pedido guarda su precio.
+        </p>
+        <div class="actions">
+          <button type="submit" [disabled]="submission.busy()">Guardar talla</button>
+          <button type="button" class="secondary" (click)="cancelVariant()">Cancelar</button>
+        </div>
+      </form>
+    }
     <app-load-state [res]="variants"
       ><ng-template>
         <div class="table-wrap">
@@ -122,15 +163,50 @@ export class UniformCatalogPage {
   protected variants = resource({ loader: () => this.service.variants() });
   protected submission = new Submission();
   protected editingVariant = signal<Id | null>(null);
-  protected productForm = this.fb.group({ name: ['', Validators.required], description: [''] });
+  protected productForm = this.fb.group({
+    name: ['', [Validators.required, catalogNameValidator]],
+    description: [''],
+  });
   protected variantForm = this.fb.group({
     productId: [null as Id | null, Validators.required],
     size: ['', Validators.required],
     price: [0, [Validators.required, Validators.min(0)]],
   });
 
+  protected productPanel = new FormPanel('product-form', () => this.productForm.dirty);
+  protected variantPanel = new FormPanel('variant-form', () => this.variantForm.dirty);
+
+  /** One form at a time: opening one closes the other (asking first if it has unsaved changes). */
+  private closeForms(): boolean {
+    if (!this.productPanel.close() || !this.variantPanel.close()) return false;
+    this.productForm.reset();
+    this.resetVariant();
+    this.submission.result.set(null);
+    return true;
+  }
+
+  openProduct(): void {
+    if (this.closeForms()) this.productPanel.show();
+  }
+
+  openVariant(): void {
+    if (this.closeForms()) this.variantPanel.show();
+  }
+
+  cancelProduct(): void {
+    if (this.productPanel.close()) this.productForm.reset();
+  }
+
+  cancelVariant(): void {
+    if (this.variantPanel.close()) this.resetVariant();
+  }
+
   async addProduct(): Promise<void> {
-    if (this.productForm.invalid) return this.productForm.markAllAsTouched();
+    if (this.productForm.invalid) {
+      this.productForm.markAllAsTouched();
+      setTimeout(() => focusFirstInvalid(document.getElementById('product-form')!));
+      return;
+    }
     const { name, description } = this.productForm.getRawValue();
     if (
       await this.submission.run(
@@ -138,23 +214,31 @@ export class UniformCatalogPage {
         'Producto agregado.',
       )
     ) {
+      this.productPanel.done();
       this.productForm.reset();
       this.products.reload();
     }
   }
 
   editVariant(v: VariantView): void {
+    if (!this.closeForms()) return;
     this.editingVariant.set(v.id);
     this.variantForm.setValue({ productId: v.productId, size: v.size, price: v.priceCents / 100 });
+    this.variantForm.markAsPristine();
+    this.variantPanel.show();
   }
 
-  resetVariant(): void {
+  private resetVariant(): void {
     this.editingVariant.set(null);
     this.variantForm.reset();
   }
 
   async saveVariant(): Promise<void> {
-    if (this.variantForm.invalid) return this.variantForm.markAllAsTouched();
+    if (this.variantForm.invalid) {
+      this.variantForm.markAllAsTouched();
+      setTimeout(() => focusFirstInvalid(document.getElementById('variant-form')!));
+      return;
+    }
     const { productId, size, price } = this.variantForm.getRawValue();
     const draft = {
       id: this.editingVariant() ?? undefined,
@@ -163,6 +247,7 @@ export class UniformCatalogPage {
       priceCents: centsFromInput(price),
     };
     if (await this.submission.run(() => this.service.saveVariant(draft), 'Talla guardada.')) {
+      this.variantPanel.done();
       this.resetVariant();
       this.variants.reload();
     }
@@ -188,11 +273,39 @@ export class UniformCatalogPage {
 /** HU-053 (order with price at the time), HU-054 (linked charge, PAGADO from its balance), HU-055 (delivery), cancel. */
 @Component({
   selector: 'app-uniform-orders-page',
-  imports: [ReactiveFormsModule, FormsModule, FieldError, LoadState, MoneyPipe, SubmissionAlert],
+  imports: [
+    ReactiveFormsModule,
+    FormsModule,
+    FieldError,
+    FieldA11y,
+    LoadState,
+    MoneyPipe,
+    SubmissionAlert,
+  ],
   template: `
-    <h1>Pedidos de uniforme</h1>
-    @if (auth.can('uniformes.crear')) {
-      <form [formGroup]="form" (ngSubmit)="addItem()" novalidate class="grid-form">
+    <div class="page-head">
+      <h1>Pedidos de uniforme</h1>
+      @if (auth.can('uniformes.crear')) {
+        <button
+          type="button"
+          (click)="open()"
+          [attr.aria-expanded]="panel.open()"
+          aria-controls="order-form"
+        >
+          Nuevo pedido
+        </button>
+      }
+    </div>
+    <app-submission-alert [submission]="submission" />
+    @if (panel.open()) {
+      <form
+        id="order-form"
+        [formGroup]="form"
+        (ngSubmit)="addItem()"
+        (keydown.escape)="closeForm()"
+        novalidate
+        class="grid-form"
+      >
         <h2>Nuevo pedido</h2>
         <label
           >Jugador
@@ -205,20 +318,22 @@ export class UniformCatalogPage {
         </label>
         <app-field-error [control]="form.controls.playerId" />
         <div class="two-col">
-          <label
-            >Producto y talla
-            <select formControlName="variantId">
-              <option [ngValue]="null" disabled>Selecciona…</option>
-              @for (v of variants.value() ?? []; track v.id) {
-                <option [ngValue]="v.id">
-                  {{ v.productName }} {{ v.size }} · {{ v.priceCents | money }}
-                </option>
-              }
-            </select>
-          </label>
+          <div>
+            <label
+              >Producto y talla
+              <select formControlName="variantId">
+                <option [ngValue]="null" disabled>Selecciona…</option>
+                @for (v of variants.value() ?? []; track v.id) {
+                  <option [ngValue]="v.id">
+                    {{ v.productName }} {{ v.size }} · {{ v.priceCents | money }}
+                  </option>
+                }
+              </select>
+            </label>
+            <app-field-error [control]="form.controls.variantId" />
+          </div>
           <label>Cantidad <input type="number" min="1" formControlName="quantity" /></label>
         </div>
-        <app-field-error [control]="form.controls.variantId" />
         <button type="submit" class="secondary">Agregar artículo</button>
         @if (items().length) {
           <ul>
@@ -242,13 +357,17 @@ export class UniformCatalogPage {
               }
             </select>
           </label>
-          <button type="button" (click)="createOrder()" [disabled]="submission.busy()">
-            Crear pedido y cargo
-          </button>
         }
+        <div class="actions">
+          @if (items().length) {
+            <button type="button" (click)="createOrder()" [disabled]="submission.busy()">
+              Crear pedido y cargo
+            </button>
+          }
+          <button type="button" class="secondary" (click)="closeForm()">Cancelar</button>
+        </div>
       </form>
     }
-    <app-submission-alert [submission]="submission" />
     <div class="filters">
       <label
         >Estado
@@ -370,6 +489,28 @@ export class UniformOrdersPage {
     });
   }
 
+  protected panel = new FormPanel('order-form', () => this.form.dirty || this.items().length > 0);
+
+  open(): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.submission.result.set(null);
+    this.panel.show();
+  }
+
+  /** Closes the form without creating the order (asks first if it has unsaved changes). */
+  closeForm(): void {
+    if (this.panel.close()) this.reset();
+  }
+
+  /** Empty order; the charge concept keeps its default. */
+  private reset(): void {
+    this.items.set([]);
+    this.form.patchValue({ playerId: null, variantId: null, quantity: 1 });
+    this.form.markAsPristine();
+    this.form.markAsUntouched();
+  }
+
   labelOf(variantId: Id): string {
     const v = this.variants.value()?.find((x) => x.id === variantId);
     return v ? `${v.productName} ${v.size}` : '—';
@@ -398,9 +539,8 @@ export class UniformOrdersPage {
           : 'Pedido creado (total $0, sin cargo).',
     );
     if (ok) {
-      this.items.set([]);
-      this.form.patchValue({ playerId: null });
-      this.form.markAsUntouched();
+      this.panel.done();
+      this.reset();
       this.orders.reload();
     }
   }

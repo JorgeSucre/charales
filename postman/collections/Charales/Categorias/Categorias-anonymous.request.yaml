@@ -9,5 +9,5 @@ scripts:
     code: |-
       pm.test('401 sin sesión', () => {
         pm.response.to.have.status(401);
-        pm.expect(pm.response.json().error).to.eql('Sesión no iniciada o expirada.');
+        pm.expect(pm.response.json().error).to.eql('Tu sesión no está iniciada o ya expiró. Inicia sesión de nuevo.');
       });

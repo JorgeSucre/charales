@@ -51,7 +51,7 @@ test('HU-028: program a session — category, date, time, venue, coach; from sch
   await t.refused(
     () => t.call(secretaria, 'TrainingService', 'program', session({ date: '2026-02-30' })),
     400,
-    /^Fecha inválida\.$/,
+    /^Ingresa una fecha válida\.$/,
   );
   await t.refused(
     () => t.call(secretaria, 'TrainingService', 'program', session({ endTime: '16:00' })),
@@ -191,7 +191,7 @@ test('HU-032: attendance report — filters, percentage, justified apart', async
   await t.refused(
     () => t.call(tutor, 'AttendanceService', 'report', {}),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
 });
 
@@ -347,7 +347,7 @@ test('HU-037: matches — registered category, opponent/date/time/venue, statuse
         notes: null,
       }),
     400,
-    /^Participación no encontrado\.$/,
+    /^Participación inexistente: actualiza la página e inténtalo de nuevo\.$/,
   );
   // HU-037.1 «categoría inscrita»: a participation that exists but is not INSCRITA (here PENDIENTE) is refused too.
   const [free] = await t.db.query(
@@ -389,7 +389,7 @@ test('HU-037: matches — registered category, opponent/date/time/venue, statuse
         reason: '',
       }),
     400,
-    /^El motivo es obligatorio\.$/,
+    /^Falta el motivo\. Es un dato obligatorio\.$/,
   );
   await t.ok(
     t.call(secretaria, 'MatchService', 'reschedule', m.id, {
@@ -489,7 +489,7 @@ test('HU-038/041: coach calendar and results — only assigned categories, filte
   await t.refused(
     () => t.call(coach, 'MatchService', 'list', {}),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
 });
 
@@ -513,6 +513,6 @@ test('HU-039/042: family matches and results — only through the child roster, 
         notes: null,
       }),
     403,
-    /^No tienes permiso para esta operación\.$/,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
 });

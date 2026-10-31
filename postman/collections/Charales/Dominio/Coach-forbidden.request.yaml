@@ -16,5 +16,5 @@ scripts:
     code: |-
       pm.test('403: la autorización corre en el servidor (D12)', () => {
         pm.response.to.have.status(403);
-        pm.expect(pm.response.json().error).to.eql('No tienes permiso para esta operación.');
+        pm.expect(pm.response.json().error).to.eql('No tienes permiso para realizar esta acción.');
       });

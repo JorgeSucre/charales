@@ -5,7 +5,16 @@ import { Id, Tutor, fullName } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
 import { nowDateTime } from '../../shared/dates';
 import { matches } from '../../shared/page';
-import { flag, optional, optionalEmail, optionalPhone, required } from '../../shared/validate';
+import {
+  CONTACT_REQUIRED_MESSAGE,
+  flag,
+  optional,
+  optionalEmail,
+  optionalPersonName,
+  optionalPhone,
+  personName,
+  required,
+} from '../../shared/validate';
 import { UserService } from '../users/user.service';
 
 export interface TutorLinkDraft {
@@ -63,15 +72,14 @@ export class TutorService {
   async save(draft: TutorDraft & { id?: Id }): Promise<TutorView> {
     this.authz.require(draft.id ? 'tutores.editar' : 'tutores.crear');
     const data = {
-      firstName: required(draft.firstName, 'El nombre', 100),
-      lastName1: required(draft.lastName1, 'El apellido paterno', 100),
-      lastName2: optional(draft.lastName2, 'El apellido materno', 100),
+      firstName: personName(draft.firstName, 'El nombre'),
+      lastName1: personName(draft.lastName1, 'El apellido paterno'),
+      lastName2: optionalPersonName(draft.lastName2, 'El apellido materno'),
       phone: optionalPhone(draft.phone),
       email: optionalEmail(draft.email),
       address: optional(draft.address, 'La dirección'),
     };
-    if (!data.phone && !data.email)
-      throw new Error('Captura al menos un teléfono o correo de contacto.');
+    if (!data.phone && !data.email) throw new Error(CONTACT_REQUIRED_MESSAGE);
     if (!draft.links.length) throw new Error('Selecciona al menos un jugador.');
     const ids = draft.links.map((l) => l.playerId);
     if (new Set(ids).size !== ids.length) throw new Error('Un jugador aparece dos veces.');
@@ -156,6 +164,42 @@ export class TutorService {
   }
 
   /**
+   * HU-011: make `tutorId` the primary contact of `playerId` in one transaction, replacing the current one if any
+   * (otherwise it takes two tutor edits). The tutor must already be linked to the player. The primary contact stays
+   * optional: this never removes it, and it is not the legal guardian nor the only payer.
+   */
+  async setPrimary(playerId: Id, tutorId: Id): Promise<void> {
+    this.authz.require('tutores.editar');
+    const player = this.db.get(this.db.players, playerId, 'Jugador');
+    const tutor = this.db.get(this.db.tutors, tutorId, 'Tutor');
+    const link = this.db.tutorPlayers.find(
+      (tp) => tp.playerId === playerId && tp.tutorId === tutorId,
+    );
+    if (!link) throw new Error(`${fullName(tutor)} no es tutor de ${fullName(player)}.`);
+    if (link.isPrimary) return this.db.respond(undefined);
+    const previous = this.db.tutorPlayers.find((tp) => tp.playerId === playerId && tp.isPrimary);
+    this.db.transaction(() => {
+      this.db.tutorPlayers = this.db.tutorPlayers.map((tp) =>
+        tp === link
+          ? { ...tp, isPrimary: true }
+          : tp === previous
+            ? { ...tp, isPrimary: false }
+            : tp,
+      );
+      this.audit.log(
+        'EDITAR',
+        'tutores',
+        'tutor_jugador',
+        playerId,
+        `Contacto principal de ${fullName(player)}: ${fullName(tutor)}`,
+        { primaryTutorId: previous?.tutorId ?? null },
+        { primaryTutorId: tutorId },
+      );
+    });
+    await this.db.respond(undefined);
+  }
+
+  /**
    * HU-012: enable the family portal. Only registered tutors; one account per tutor and one tutor per account;
    * the account is reused if the e-mail already logs in (e.g. a coach), otherwise created and invited by e-mail.
    */
@@ -206,8 +250,7 @@ export class TutorService {
       email: optionalEmail(draft.email),
       address: optional(draft.address, 'La dirección'),
     };
-    if (!data.phone && !data.email)
-      throw new Error('Deja al menos un teléfono o correo de contacto.');
+    if (!data.phone && !data.email) throw new Error(CONTACT_REQUIRED_MESSAGE);
     const tutor = this.db.update(this.db.tutors, tutorId, { ...data, updatedAt: nowDateTime() });
     this.audit.log(
       'EDITAR',

@@ -1,4 +1,5 @@
 import { Cents } from '../core/models';
+import { MONEY_MESSAGE } from './validate';
 
 /**
  * Money helpers. MariaDB stores DECIMAL(12,2); the API serializes it as a decimal string ("1234.50");
@@ -11,9 +12,9 @@ const DECIMAL = /^(-)?(\d+)(?:\.(\d{1,2}))?$/;
 export function parseMoney(value: string | number): Cents {
   const text = typeof value === 'number' ? String(value) : value.trim().replace(/,/g, '');
   const m = DECIMAL.exec(text);
-  if (!m) throw new Error(`Importe inválido: ${value}`);
+  if (!m) throw new Error(MONEY_MESSAGE);
   const cents = Number(m[2]) * 100 + Number((m[3] ?? '').padEnd(2, '0'));
-  if (!Number.isSafeInteger(cents)) throw new Error(`Importe inválido: ${value}`);
+  if (!Number.isSafeInteger(cents)) throw new Error(MONEY_MESSAGE);
   return m[1] ? -cents : cents;
 }
 
