@@ -118,6 +118,90 @@ describe('billing pages (F3.2)', () => {
     expectChargeTones([...el.querySelectorAll('label.check .tag')]);
   }, 20_000);
 
+  /** Lucía's overdue charge selected, $100, the given form of payment; confirm() accepted, registerPayment spied. */
+  async function payWith(
+    method: string,
+  ): Promise<{ el: HTMLElement; register: ReturnType<typeof vi.spyOn> }> {
+    const el = await paymentForLucia();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const register = vi.spyOn(TestBed.inject(BillingService), 'registerPayment');
+    choose(el.querySelector('select[name=method]')!, method);
+    type(amountInput(el), '100');
+    return { el: await settle(), register };
+  }
+  const referenceInput = (el: HTMLElement) =>
+    el.querySelector<HTMLInputElement>('input[name=reference]');
+
+  it('HU-045: cash shows no reference field and registers without one', async () => {
+    const alertSpy = vi.spyOn(window, 'alert');
+    const { el, register } = await payWith('Efectivo');
+    expect(referenceInput(el)).toBeNull();
+    submitButton(el).click();
+    await settle();
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(register).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'EFECTIVO', reference: null }),
+    );
+  }, 20_000);
+
+  for (const method of ['Transferencia', 'Tarjeta'])
+    it(`HU-045: ${method.toLowerCase()} — an empty or blank reference is refused next to its field, no alert, no call`, async () => {
+      const alertSpy = vi.spyOn(window, 'alert');
+      let { el, register } = await payWith(method);
+      const input = referenceInput(el)!;
+      expect(input).not.toBeNull();
+      for (const value of ['', '   ']) {
+        type(input, value);
+        submitButton(el).click();
+        el = await settle();
+        expect(register).not.toHaveBeenCalled();
+        expect(input.getAttribute('aria-invalid')).toBe('true');
+        expect(input.getAttribute('aria-describedby')).toBe('reference-error');
+        expect(el.querySelector('#reference-error')!.textContent).toContain(
+          'Falta la referencia del comprobante. Es un dato obligatorio para transferencia o tarjeta.',
+        );
+        expect(document.activeElement).toBe(input);
+      }
+      expect(alertSpy).not.toHaveBeenCalled();
+    }, 20_000);
+
+  it('HU-045: a transfer reference is sent trimmed and shown in the summary', async () => {
+    let { el, register } = await payWith('Transferencia');
+    type(referenceInput(el)!, '  SPEI-1  ');
+    el = await settle();
+    expect(el.querySelector('dl.summary')!.textContent).toContain('SPEI-1');
+    submitButton(el).click();
+    await settle();
+    expect(register).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'TRANSFERENCIA', reference: 'SPEI-1' }),
+    );
+  }, 20_000);
+
+  it('HU-045: any non-blank card reference is accepted (digits only, no letters)', async () => {
+    let { el, register } = await payWith('Tarjeta');
+    type(referenceInput(el)!, '004242');
+    el = await settle();
+    submitButton(el).click();
+    await settle();
+    expect(referenceInput(el)?.getAttribute('aria-invalid') ?? null).toBeNull();
+    expect(register).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'TARJETA', reference: '004242' }),
+    );
+  }, 20_000);
+
+  it('HU-045: switching back to cash hides the field and never sends the old reference', async () => {
+    let { el, register } = await payWith('Tarjeta');
+    type(referenceInput(el)!, 'VISA-0042');
+    choose(el.querySelector('select[name=method]')!, 'Efectivo');
+    el = await settle();
+    expect(referenceInput(el)).toBeNull();
+    submitButton(el).click();
+    await settle();
+    expect(register).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'EFECTIVO', reference: null }),
+    );
+  }, 20_000);
+
   it('payment: the summary lists the selected charges, amount, method and payer before confirming', async () => {
     const el = await paymentForLucia();
     expect(el.querySelector('#pay-hint')).toBeNull();

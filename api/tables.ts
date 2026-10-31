@@ -467,6 +467,7 @@ export const TABLES: TableMap[] = [
       fecha_pago: 'paidAt',
       importe: 'amountCents',
       forma_pago: 'method',
+      referencia: 'reference',
       estado: 'status',
       motivo_cancelacion: 'cancellationReason',
       registrado_por: 'recordedBy',

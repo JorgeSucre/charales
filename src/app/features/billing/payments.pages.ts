@@ -24,7 +24,13 @@ import { MoneyPipe } from '../../shared/money.pipe';
 import { CHARGE_TONE, PAYMENT_TONE } from '../../shared/status-tone';
 import { Submission } from '../../shared/submission';
 import { Paginator, SubmissionAlert, centsFromInput, idOrNull } from '../../shared/ui';
-import { BillingService, CHARGE_STATUS_LABELS, METHOD_LABELS } from './billing.service';
+import {
+  BillingService,
+  CHARGE_STATUS_LABELS,
+  METHODS_WITH_REFERENCE,
+  METHOD_LABELS,
+  REFERENCE_REQUIRED_MESSAGE,
+} from './billing.service';
 
 /** HU-045: payment capture — player, payer (one of their tutors), charges, amount (total or partial), method → folio. */
 @Component({
@@ -104,6 +110,30 @@ import { BillingService, CHARGE_STATUS_LABELS, METHOD_LABELS } from './billing.s
               }
             </select>
           </label>
+          @if (needsReference()) {
+            <!-- HU-045: only for transfer and card; blank or spaces only is refused here and by the API. -->
+            <div>
+              <label
+                >Referencia o número de comprobante
+                <input
+                  name="reference"
+                  required
+                  pattern=".*\\S.*"
+                  maxlength="100"
+                  autocomplete="off"
+                  aria-describedby="reference-error"
+                  [attr.aria-invalid]="
+                    referenceModel.touched && referenceModel.invalid ? 'true' : null
+                  "
+                  [(ngModel)]="reference"
+                  #referenceModel="ngModel"
+                />
+              </label>
+              <small id="reference-error" class="field-error" role="alert">{{
+                referenceModel.touched && referenceModel.invalid ? referenceRequired : ''
+              }}</small>
+            </div>
+          }
         </div>
         <button type="button" class="link" (click)="amount = due() / 100">
           Pagar el total seleccionado
@@ -122,6 +152,12 @@ import { BillingService, CHARGE_STATUS_LABELS, METHOD_LABELS } from './billing.s
               <dt>Forma de pago</dt>
               <dd>{{ methodLabels[method] }}</dd>
             </div>
+            @if (needsReference()) {
+              <div>
+                <dt>Referencia</dt>
+                <dd>{{ reference.trim() || '—' }}</dd>
+              </div>
+            }
             <div>
               <dt>Quién paga</dt>
               <dd>{{ payerName() }}</dd>
@@ -159,9 +195,12 @@ export class PaymentPage {
   protected chargeTone = CHARGE_TONE;
   protected methodLabels = METHOD_LABELS;
   protected methods = Object.entries(METHOD_LABELS) as [PaymentMethod, string][];
-  protected reference: string = '';
+  /** HU-045: kept while the form is open, but only sent with a transfer or card (never with cash). */
+  protected reference = '';
+  protected referenceRequired = REFERENCE_REQUIRED_MESSAGE;
   private formEl = viewChild.required<ElementRef<HTMLFormElement>>('formEl');
   private amountModel = viewChild<NgModel>('amountModel');
+  private referenceModel = viewChild<NgModel>('referenceModel');
   private money = new MoneyPipe();
   protected players = resource({ loader: () => this.playerService.options() });
   protected playerId = signal<Id | null>(
@@ -203,6 +242,10 @@ export class PaymentPage {
     this.amountModel()?.control.markAsUntouched();
   }
 
+  needsReference(): boolean {
+    return METHODS_WITH_REFERENCE.includes(this.method);
+  }
+
   payerName(): string {
     return this.payers.value()?.find((t) => t.id === this.tutorId)?.name ?? 'No especificado';
   }
@@ -224,14 +267,13 @@ export class PaymentPage {
 
   async submit(): Promise<void> {
     const field = this.amountModel()?.control;
-    if (field?.invalid) {
-      field.markAsTouched();
+    // The reference field exists only for transfer and card (HU-045); an invalid form never reaches the service.
+    const reference = this.needsReference() ? this.referenceModel()?.control : undefined;
+    if (field?.invalid || reference?.invalid) {
+      field?.markAsTouched();
+      reference?.markAsTouched();
       focusFirstInvalid(this.formEl().nativeElement);
       return;
-    }
-    if ((this.method === 'TRANSFERENCIA' || this.method === 'TARJETA') && !this.reference.trim()) {
-    alert('Por favor ingresa el número de referencia o comprobante.');
-    return;
     }
     if (!confirm(`¿Registrar el pago por $${this.amount}?`)) return;
     const draft = {
@@ -239,7 +281,7 @@ export class PaymentPage {
       tutorId: this.tutorId,
       amountCents: centsFromInput(this.amount),
       method: this.method,
-      reference: this.reference.trim(),
+      reference: this.needsReference() ? this.reference.trim() : null,
       chargeIds: [...this.selected()],
       paidAt: this.paidAt,
     };
@@ -253,8 +295,9 @@ export class PaymentPage {
     if (ok) {
       this.selected.set(new Set());
       this.amount = 0;
-     this.reference = ''; 
-     field?.markAsUntouched();
+      this.reference = '';
+      field?.markAsUntouched();
+      reference?.markAsUntouched();
       this.open.reload();
     }
   }
@@ -390,6 +433,10 @@ export class ReceiptsPage {
               <dd>{{ r.tutorName ?? '—' }}</dd>
               <dt>Forma de pago</dt>
               <dd>{{ methods[r.payment.method] }}</dd>
+              @if (r.payment.reference) {
+                <dt>Referencia</dt>
+                <dd>{{ r.payment.reference }}</dd>
+              }
             </dl>
             <table>
               <thead>
@@ -717,4 +764,3 @@ export class DebtsPage {
   );
   protected total = computed(() => sumCents((this.debts.value() ?? []).map((d) => d.balanceCents)));
 }
-

@@ -42,6 +42,11 @@ export const METHOD_LABELS: Record<PaymentMethod, string> = {
   OTRO: 'Otro',
 };
 
+/** HU-045: forms of payment that need the reference or receipt number of the transaction. */
+export const METHODS_WITH_REFERENCE: readonly PaymentMethod[] = ['TRANSFERENCIA', 'TARJETA'];
+export const REFERENCE_REQUIRED_MESSAGE =
+  'Falta la referencia del comprobante. Es un dato obligatorio para transferencia o tarjeta.';
+
 export const CHARGE_STATUS_LABELS: Record<ChargeStatus, string> = {
   PENDIENTE: 'Pendiente',
   PARCIAL: 'Parcial',
@@ -407,6 +412,10 @@ export class BillingService {
     this.authz.require('pagos.crear');
     const player = this.db.get(this.db.players, draft.playerId, 'Jugador');
     oneOf(draft.method, METHOD_LABELS, 'Selecciona una forma de pago válida.');
+    // HU-045: trimmed; blank = none. Checked here, so a direct API call can't skip it.
+    const reference = optional(draft.reference, 'La referencia del comprobante', 100);
+    if (METHODS_WITH_REFERENCE.includes(draft.method) && !reference)
+      throw new Error(REFERENCE_REQUIRED_MESSAGE);
     this.assertAmount(draft.amountCents, false);
     if (
       draft.tutorId !== null &&
@@ -440,6 +449,7 @@ export class BillingService {
         paidAt,
         amountCents: draft.amountCents,
         method: draft.method,
+        reference,
         status: 'APLICADO',
         cancellationReason: null,
         recordedBy: this.audit.currentUserId(),

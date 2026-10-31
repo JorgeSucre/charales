@@ -52,6 +52,11 @@ export interface Payment {
   paidAt: DateTime;
   amountCents: Cents;
   method: PaymentMethod;
+  /**
+   * HU-045: reference or receipt number of the transfer/card (pagos.referencia, migration 004). Required for
+   * TRANSFERENCIA and TARJETA since 2026-10-29; null for cash and for every payment recorded before that.
+   */
+  reference: string | null;
   status: PaymentStatus;
   cancellationReason: string | null;
   recordedBy: Id | null;
@@ -87,6 +92,8 @@ export interface PaymentDraft {
   tutorId: Id | null;
   amountCents: Cents;
   method: PaymentMethod;
+  /** HU-045: required (non-blank once trimmed) for TRANSFERENCIA and TARJETA; optional otherwise. */
+  reference?: string | null;
   /** Charges to pay, oldest due first. Omitted = all of the player's open charges. */
   chargeIds?: Id[];
   /**
