@@ -597,6 +597,74 @@ test('HU-045 through the UI: a partial payment of $100 to an overdue charge is s
   }
 });
 
+test('HU-045 through the UI: a transfer needs its reference — refused next to the field, then stored in MariaDB and shown on the receipt', async () => {
+  const shared = page;
+  page = await openBrowser();
+  try {
+    await transferReferenceFlow();
+  } finally {
+    await page.close();
+    page = shared;
+  }
+});
+
+async function transferReferenceFlow(): Promise<void> {
+  await login('secretaria@example.com');
+  await page.goto(`${app}/admin/billing/payments/new`);
+  await page.until(`document.querySelector('select[name=player] option:nth-child(2)')`);
+  await page.eval(`(() => {
+    const s = document.querySelector('select[name=player]');
+    s.selectedIndex = [...s.options].findIndex((o) => o.text.includes('Lucía Hernández'));
+    s.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  const overdue = `[...document.querySelectorAll('label.check')].find((l) => l.textContent.includes('Mensualidad') && l.textContent.includes('Vencido'))`;
+  await page.until(overdue);
+  const before = await t.count('SELECT COUNT(*) AS n FROM pagos WHERE jugador_id = 2');
+  page.dialogs(true);
+  await page.eval(`(() => {
+    ${overdue}.querySelector('input').click();
+    const a = document.querySelector('input[name=amount]'); a.value = '50'; a.dispatchEvent(new Event('input', { bubbles: true }));
+    const m = document.querySelector('select[name=method]'); m.value = 'TRANSFERENCIA'; m.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await page.until(`document.querySelector('input[name=reference]')`);
+  // blank reference: refused next to its field, no confirmation asked, nothing written
+  await page.eval(`(() => {
+    const r = document.querySelector('input[name=reference]'); r.value = '   '; r.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('form button[type=submit]').click();
+  })()`);
+  await page.until(
+    `document.querySelector('#reference-error')?.textContent.includes('Falta la referencia del comprobante')`,
+  );
+  assert.equal(
+    await page.eval<string | null>(
+      `document.querySelector('input[name=reference]').getAttribute('aria-invalid')`,
+    ),
+    'true',
+  );
+  assert.deepEqual(page.dialogs(true), [], 'no confirm() before the form is valid');
+  assert.equal(await t.count('SELECT COUNT(*) AS n FROM pagos WHERE jugador_id = 2'), before);
+  // with a reference: stored trimmed
+  await page.eval(`(() => {
+    const r = document.querySelector('input[name=reference]'); r.value = '  SPEI-E2E-1  '; r.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('form button[type=submit]').click();
+  })()`);
+  await page.until(`document.querySelector('.alert.ok')?.textContent.includes('folio')`, 8000);
+  const folio = (await page.eval<string>(`document.querySelector('.alert.ok').textContent`)).match(
+    /folio (\S+)\./,
+  )![1]!;
+  const [paid] = await t.db.query(
+    'SELECT id, forma_pago, referencia, importe FROM pagos WHERE folio = ?',
+    [folio],
+  );
+  assert.deepEqual(
+    { method: paid.forma_pago, reference: paid.referencia, amount: Number(paid.importe) },
+    { method: 'TRANSFERENCIA', reference: 'SPEI-E2E-1', amount: 50 },
+  );
+  await page.goto(`${app}/admin/billing/receipts/${paid.id}`);
+  await page.until(`document.querySelector('main dl')?.textContent.includes('SPEI-E2E-1')`);
+  assert.deepEqual(page.errors(), []);
+}
+
 async function partialPaymentFlow(): Promise<void> {
   await login('secretaria@example.com');
   await page.goto(`${app}/admin/billing/payments/new`);

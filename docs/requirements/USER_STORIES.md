@@ -93,6 +93,15 @@
 | HU-075 | EP12 Calidad y requisitos no funcionales | Rendimiento            | Todos                      | Como usuario quiero que las consultas habituales respondan con rapidez para trabajar sin esperas excesivas.                                            | 1) Listados comunes paginados. 2) Índices en claves de búsqueda. 3) Consultas sin N+1 evidente. 4) Tiempo objetivo documentado y probado con datos de prueba.                                                        | Should    | 5   | Modelo de datos y listados             | Índices según consultas                                         | Paginación; indicadores de carga                              | RNF rendimiento; prueba básica                                          | Versión 1 | Sprint 8        | Pendiente |                            |
 | HU-076 | EP12 Calidad y requisitos no funcionales | Respaldo               | Administrador              | Como administrador quiero contar con un procedimiento de respaldo y restauración de la base de datos para reducir el riesgo de pérdida de información. | 1) Procedimiento documentado. 2) Genera respaldo recuperable. 3) Se realiza prueba de restauración en ambiente de prueba. 4) Define periodicidad sugerida.                                                           | Should    | 5   | Base de datos estable                  | Todas                                                           | No requiere UI en MVP; opcional panel futuro                  | Plan de contingencia y evidencia de restauración                        | Versión 1 | Sprint 8        | Pendiente | Jorge Luis Borrayo De Anda |
 
+### Cambios propuestos pendientes de ratificación
+
+No forman parte todavía del backlog oficial: la tabla de arriba no se modifica hasta que el equipo los apruebe y los
+lleve al Excel. Mientras tanto, el código ya los implementa y se rastrean en [`TRACEABILITY.md`](../TRACEABILITY.md).
+
+| HU     | Cambio propuesto (2026-10-29, PR #21)                                                                                                                                                                                                                                                                                                  | Estado                    |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| HU-045 | Nuevo criterio 5) **Referencia del comprobante**: con forma de pago `TRANSFERENCIA` o `TARJETA` se exige el número de referencia o comprobante (se recorta; vacío o sólo espacios no es válido). Con `EFECTIVO` u `OTRO` es opcional. Se guarda con el pago (`pagos.referencia`) y aparece en el recibo. Los criterios 1–4 no cambian. | Pendiente de ratificación |
+
 ## Resumen
 
 Resumen del Product Backlog – Escuela de Fútbol Infantil

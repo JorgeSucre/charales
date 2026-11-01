@@ -52,6 +52,7 @@ const payment = (
   paidAt,
   amountCents: cents,
   method: 'EFECTIVO',
+  reference: null,
   status,
   cancellationReason: status === 'CANCELADO' ? 'x' : null,
   recordedBy: null,

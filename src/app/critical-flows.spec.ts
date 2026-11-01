@@ -143,6 +143,7 @@ describe('critical flows (HU-074)', () => {
       tutorId: 2,
       amountCents: 50000,
       method: 'TRANSFERENCIA',
+      reference: 'SPEI-CF4', // HU-045: a transfer carries its reference
     });
     expect(get(MockDb).charges.find((c) => c.id === 3)?.status).toBe('PAGADO');
     await billing.cancelPayment(full.id, 'Transferencia rechazada');

@@ -41,6 +41,7 @@ test('db:setup creates and prepares a new database; a second run changes nothing
     '001_token_finalidad.sql',
     '002_cargos_vencidos.sql',
     '003_version_datos.sql',
+    '004_pago_referencia.sql',
   ]);
   assert.deepEqual(first.counts, { usuarios: 0, jugadores: 0, rol_permiso: 106 });
   const second = await setupDatabase(env(FRESH));

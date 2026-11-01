@@ -201,11 +201,12 @@ El esquema base es `docs/escuela_futbol_mariadb.sql`; los cambios posteriores so
 [`db/mariadb/migrations/`](../../db/mariadb/migrations), aplicadas en orden con `npm run db:mariadb:migrate`
 (`migrate.sh [base]`). Las pruebas (`test-backup-restore.sh`, `api/*.test.ts`) las aplican después del esquema.
 
-| Migración                 | Qué cambia                                                                                                                                                                             |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `001_token_finalidad.sql` | `tokens_recuperacion.finalidad ENUM('RECUPERACION','INVITACION')` (D3e): la recuperación sólo revoca tokens de recuperación; las invitaciones (HU-004/012/022) duran 24 h (D3c).       |
-| `002_cargos_vencidos.sql` | Procedimiento `marcar_cargos_vencidos()` y `EVENT ev_cargos_vencidos` diario (D5): PENDIENTE/PARCIAL con vencimiento pasado → VENCIDO. Requiere `event_scheduler = ON` en el servidor. |
-| `003_version_datos.sql`   | Tabla `version_datos` (una fila) que invalida la caché de la API (D13, HU-075); `marcar_cargos_vencidos()` la incrementa cuando cambia algo.                                           |
+| Migración                 | Qué cambia                                                                                                                                                                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `001_token_finalidad.sql` | `tokens_recuperacion.finalidad ENUM('RECUPERACION','INVITACION')` (D3e): la recuperación sólo revoca tokens de recuperación; las invitaciones (HU-004/012/022) duran 24 h (D3c).                                                                  |
+| `002_cargos_vencidos.sql` | Procedimiento `marcar_cargos_vencidos()` y `EVENT ev_cargos_vencidos` diario (D5): PENDIENTE/PARCIAL con vencimiento pasado → VENCIDO. Requiere `event_scheduler = ON` en el servidor.                                                            |
+| `003_version_datos.sql`   | Tabla `version_datos` (una fila) que invalida la caché de la API (D13, HU-075); `marcar_cargos_vencidos()` la incrementa cuando cambia algo.                                                                                                      |
+| `004_pago_referencia.sql` | `pagos.referencia VARCHAR(100) NULL` (HU-045, criterio 5 pendiente de ratificación): referencia del comprobante, obligatoria en la API para transferencia y tarjeta. `NULL` en los pagos anteriores; sin `CHECK`, para no invalidar el historial. |
 
 **Cómo se aplican:** no hay tabla de historial; `migrate.sh` ejecuta siempre la secuencia completa, en orden, y cada
 archivo es idempotente (`IF NOT EXISTS`, `INSERT IGNORE`, `DROP PROCEDURE IF EXISTS`). Por eso una base nueva y una
