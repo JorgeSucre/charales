@@ -450,9 +450,10 @@ test('Tablero: six indicators in full rows (3 × 2 desktop, 2 × 3 tablet/phone)
       await page.eval<number>(`document.querySelectorAll('.cards.quick .card').length`),
       7,
     );
+    // The period runs from the 1st of the month to today (real clock): on the 1st it is one day, «el 1 de … de …».
     assert.match(
       await page.eval<string>(`document.querySelector('.kpis.six').innerText`),
-      /del \d+ (de \w+ )?al \d+ de \w+ de \d{4}/,
+      /(del \d+ (de \w+ )?al|el) \d+ de \w+ de \d{4}/,
     );
     // Display-only probe (no data changes): the widest amount the school could plausibly reach still fits.
     const clipped = await page.eval<number>(`(() => {
