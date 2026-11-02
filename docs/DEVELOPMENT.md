@@ -207,8 +207,8 @@ la primera entrada, en «Resumen».
 | Próximos partidos                                                                                                                                                | `dashboard().upcoming`                                                                                                                                                                   | No                                                                                                                                    |
 | Accesos rápidos                                                                                                                                                  | `QUICK_TASKS` (`layout/nav.ts`)                                                                                                                                                          | —                                                                                                                                     |
 
-- **Ocupación:** cuenta las inscripciones vigentes, igual que la página de Categorías. Que un jugador en baja temporal
-  conserve su cupo es una decisión pendiente de HU-021; el Tablero no la resuelve.
+- **Ocupación:** cuenta las inscripciones vigentes, igual que la página de Categorías. Un jugador en baja temporal
+  conserva su cupo y cuenta en la ocupación (HU-021, decisión DP-02 del 2026-11-02, R23 de `DOMAIN_RULES.md`).
 - **Accesos rápidos:** son siete tareas frecuentes, no un segundo menú. Cada una exige todos sus permisos (el de la
   página y el de la acción). Las que abren un formulario llevan `?nuevo=1`, y la página lo abre al llegar.
 - **Clics:** cada estado de jugador o de cargo enlaza a su lista ya filtrada (`/admin/players?status=…`,
