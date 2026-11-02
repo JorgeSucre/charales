@@ -1,5 +1,5 @@
 /**
- * HU-045 · reference of a transfer or card payment (rule added 2026-10-29, pending ratification): required for
+ * HU-045 · reference of a transfer or card payment (rule added 2026-10-29, ratified 2026-11-02): required for
  * TRANSFERENCIA and TARJETA, optional otherwise; trimmed; stored in pagos.referencia (migration 004) and returned with
  * the payment. Checked on the API, so skipping Angular does not skip it; a refusal writes nothing.
  * Seed (api/demo.ts): charge 3 is Mateo's (player 3) $1,200 monthly fee, overdue.
