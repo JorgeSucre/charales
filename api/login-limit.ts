@@ -156,12 +156,13 @@ export async function reserveLogin(
  * that succeeds also clears the account's counter for that address (the owner is in), while the address only gets its
  * one attempt back, so logging into one's own account can't reset an address that is guessing others. A right password
  * on a disabled account is not a guess either: both get their attempt back, nothing is cleared.
+ * `not-verified` (S-02: no Argon2id turn, the password was never checked) gives the attempt back the same way.
  * A failure here only leaves the counters one higher (the safe side), so it is logged and the login goes on.
  */
 export async function settleLogin(
   db: Pool,
   reservation: Reservation,
-  outcome: 'failed' | 'success' | 'right-password',
+  outcome: 'failed' | 'success' | 'right-password' | 'not-verified',
 ): Promise<void> {
   if (outcome === 'failed') return;
   try {

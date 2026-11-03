@@ -103,6 +103,49 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
     - **Memoria de rechazos:** un rechazo recordado puede durar hasta 10 s más que la ventana.
     - **Seudónimos, no anónimos:** los hashes se revierten con un diccionario de correos o enumerando las IPv4.
 
+- **Argon2id (S-02, `api/argon2-guard.ts`, migración 006).** Cada operación de Argon2id usa unos **19 MiB**
+  (m=19456 KiB, t=2, p=1) y un hilo del pool de libuv durante decenas de milisegundos. Para que muchas operaciones a la
+  vez no agoten la memoria ni la CPU, cada verificación o cálculo de hash ocupa un **turno** compartido por todas las
+  instancias:
+
+  | Ruta                                | Argon2id                                   | Qué se comprueba antes, sin Argon2id                                                                         |
+  | ----------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+  | `POST /auth/login`                  | 1 verificación                             | Cuerpo y longitudes; límite de intentos de S-01 (un rechazo nunca toma turno)                                |
+  | `POST /auth/password`               | verificación + hash nuevo, en **un** turno | Sesión; contraseña nueva distinta y con política válida; límite C1; longitudes                               |
+  | `POST /auth/password-reset/confirm` | 1 hash                                     | Política; **token existente, vigente y sin usar**; después, la transacción vuelve a comprobarlo bajo bloqueo |
+  | `POST /auth/password-reset/request` | ninguno                                    | —                                                                                                            |
+  - **Capacidad:** `ARGON2_MAX_CONCURRENT` turnos en total, por defecto **3** (unos 57 MiB de Argon2id). Se cuentan
+    para todo el despliegue, no por instancia: una instancia nueva no suma capacidad. Node ejecuta Argon2id en el pool
+    de libuv (4 hilos por defecto, compartidos con archivos y DNS), así que en una sola instancia más de 4 no aporta
+    nada, y 3 deja un hilo libre. Para subirlo, la memoria del servidor debe cubrir
+    `ARGON2_MAX_CONCURRENT × 19 MiB` más el resto: instancias × memoria base de Node (unos 100–150 MiB cada una), el
+    buffer pool de MariaDB, buffers del sistema y margen. Con más turnos por instancia también hay que subir
+    `UV_THREADPOOL_SIZE`.
+  - **Coordinación:** tomar un turno es una transacción que bloquea la fila única de `turnos_argon2_guarda`, libera los
+    turnos vencidos, cuenta los vivos y agrega el suyo sólo si queda espacio. Es atómico entre instancias y no hay
+    bloqueos mutuos, porque se toma un solo bloqueo.
+  - **Recuperación:** el turno se libera al terminar, también si hay una excepción. Si el proceso muere, el turno vence
+    a los **30 s** con el reloj de MariaDB, que es el mismo para todas las instancias.
+  - **Saturación:** si no hay turno, la solicitud espera como mucho `ARGON2_WAIT_MS` (por defecto 2000 ms),
+    preguntando cada ~50 ms. Después responde **`503`** («El servicio está ocupado. Intenta de nuevo en unos
+    segundos.») sin ejecutar Argon2id. Como mucho 32 solicitudes por proceso esperan a la vez; las demás reciben 503 de
+    inmediato (no hay cola ilimitada). En el login, el intento de S-01 se devuelve, y en el cambio de contraseña, el de
+    C1: no se verificó nada. En la recuperación, el token queda sin usar.
+  - **Falla cerrado:** si MariaDB no puede dar un turno (caída, pool del limitador agotado, migración 006 ausente o sin
+    su fila guarda), la respuesta es `503` y Argon2id no se ejecuta. Un error dentro de Argon2id responde el `500`
+    genérico, con el turno liberado; en la recuperación, el token no se consume.
+  - **Configuración:** `ARGON2_MAX_CONCURRENT` (1–64) y `ARGON2_WAIT_MS` (0–10000). Un valor inválido impide arrancar
+    la API, nunca desactiva la protección.
+  - **Fuera de los turnos:** el hash señuelo (uno por proceso, al arrancar) y las herramientas de consola
+    (`create-admin.ts`, `demo.ts`). La creación de cuentas del dominio usa un hash de prueba con SHA-256, no Argon2id.
+  - **Riesgos residuales:**
+    - **Saturación provocada:** muchas solicitudes admitidas desde muchas IP pueden mantener ocupados los turnos.
+      Los usuarios legítimos recibirían 503 mientras dure; se pierde disponibilidad, pero el servidor no se agota. El
+      límite de S-01 por IP lo acota, salvo un ataque distribuido (R-1).
+    - **Carga adicional:** cada operación suma dos escrituras pequeñas en MariaDB (tomar y liberar el turno).
+    - **Turno vencido antes de terminar:** si una operación tardara más de 30 s, su turno vencería antes de liberarse
+      y la capacidad podría superarse un momento.
+
 - `auditoria`: `LOGIN`, `LOGOUT` e «Intento de acceso fallido» (módulo `auth`), como el `AuthService` del mock.
 
 ## Endpoints
@@ -299,7 +342,8 @@ anterior corre en producción.
 | Planificador de MariaDB                   | `event_scheduler=ON` en la configuración del servidor para el trabajo diario de VENCIDO (migración 002). Ver [`MARIADB.md`](database/MARIADB.md#migraciones).                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Zona horaria                              | Servidor de base de datos y API en la hora de la escuela (`America/Mexico_City`): `DATETIME` guarda hora local sin zona (`MARIADB.md` § 1).                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Correo (D4c: **Resend**, sin implementar) | Proveedor elegido el 2026-11-02 (DP-04). Tareas de despliegue: un transporte de Resend en `password.mailerFromEnv` (pasa por `withAppUrl`, que vuelve absolutos los enlaces con `APP_URL`), dominio remitente verificado con sus registros DNS, la clave de API como variable de entorno del servidor (nunca en el repositorio) y una prueba real de recuperación e invitación. Hasta entonces la recuperación y las invitaciones responden `503` y no crean nada.                                                                                               |
-| Una sola instancia o varias               | Varias instancias son seguras para los datos (`version_datos`, candado por base) y para el límite del login (en MariaDB, S-01; cada instancia tiene además su pool de 2 conexiones para el limitador). El límite del cambio de contraseña y de la solicitud de recuperación sigue en la memoria de cada proceso.                                                                                                                                                                                                                                                 |
+| Una sola instancia o varias               | Varias instancias son seguras para los datos (`version_datos`, candado por base), para el límite del login (en MariaDB, S-01; cada instancia tiene además su pool de 2 conexiones para el limitador) y para los turnos de Argon2id (S-02: `ARGON2_MAX_CONCURRENT` es el total del despliegue). El límite del cambio de contraseña y de la solicitud de recuperación sigue en la memoria de cada proceso.                                                                                                                                                         |
+| Memoria y Argon2id (S-02)                 | Fijar `ARGON2_MAX_CONCURRENT` según la memoria del servidor (`× 19 MiB` más Node, MariaDB y margen) y `ARGON2_WAIT_MS` según la paciencia aceptable al iniciar sesión. Aplicar la migración 006 en las bases existentes con `npm run db:setup`.                                                                                                                                                                                                                                                                                                                  |
 | Respaldo                                  | `db/mariadb/scripts/backup.sh` diario; periodicidad y restauración en [`MARIADB.md` § 6](database/MARIADB.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 **Seguridad de la sesión:** cookie `HttpOnly; SameSite=Strict; Path=/` de 8 h (30 min de inactividad), sólo el SHA-256

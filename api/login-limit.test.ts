@@ -25,6 +25,13 @@ import { openTestDb, type TestDb } from './test-db.ts';
 
 let t: TestDb;
 const servers: Server[] = [];
+/**
+ * These cases measure S-01 alone, with up to 60 simultaneous logins: their instances get room for that many Argon2id
+ * operations, so the S-02 turns (api/argon2-guard.ts, 3 by default) never answer 503 here. S-02 has its own tests.
+ */
+const ARGON2_ROOM = { limit: 64, waitMs: 10_000 };
+/** The instance of these cases (the harness one keeps the defaults). */
+let s01Base: string;
 /** Another instance on the same database, behind a trusted proxy at 127.0.0.1 (so X-Forwarded-For is believed). */
 let proxiedBase: string;
 async function listen(server: Server): Promise<string> {
@@ -34,8 +41,9 @@ async function listen(server: Server): Promise<string> {
 }
 before(async () => {
   t = await openTestDb('ef_s01');
+  s01Base = await listen(createApp(t.db, { secureCookie: false, argon2: ARGON2_ROOM }));
   proxiedBase = await listen(
-    createApp(t.db, { secureCookie: false, trustedProxies: ['127.0.0.1'] }),
+    createApp(t.db, { secureCookie: false, trustedProxies: ['127.0.0.1'], argon2: ARGON2_ROOM }),
   );
 });
 after(async () => {
@@ -48,7 +56,7 @@ beforeEach(async () => {
 });
 
 const login = (email: string, password: string, from?: { base?: string; client?: string }) =>
-  fetch(`${from?.base ?? t.base}/auth/login`, {
+  fetch(`${from?.base ?? s01Base}/auth/login`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -326,7 +334,9 @@ test('M-1: a refusal remembered by the process does not reach MariaDB at all', a
       return typeof v === 'function' ? v.bind(target) : v;
     },
   }) as Pool;
-  const base = await listen(createApp(t.db, { secureCookie: false, limiterDb: counting }));
+  const base = await listen(
+    createApp(t.db, { secureCookie: false, limiterDb: counting, argon2: ARGON2_ROOM }),
+  );
   await Promise.all(
     Array.from({ length: 50 }, (_, i) => login(`m${i}@example.com`, WRONG, { base })),
   );
