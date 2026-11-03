@@ -4,6 +4,7 @@
  * ponytail: exact-match route table; add a router when the first path parameter (/players/:id) shows up.
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { isIP } from 'node:net';
 import mariadb, { type Pool, type PoolConfig } from 'mariadb';
 import * as auth from './auth.ts';
 import * as password from './password.ts';
@@ -70,8 +71,17 @@ async function health(_ctx: Ctx, db: Pool): Promise<Reply> {
 
 export function createApp(
   db: Pool,
-  options: { secureCookie: boolean; mailer?: password.Mailer | null },
+  options: {
+    secureCookie: boolean;
+    mailer?: password.Mailer | null;
+    /** Addresses of the reverse proxies whose X-Forwarded-For is believed (TRUSTED_PROXIES); none by default. */
+    trustedProxies?: readonly string[];
+  },
 ): Server {
+  const trusted = new Set((options.trustedProxies ?? []).map(plainIp));
+  for (const ip of trusted)
+    if (!isIP(ip))
+      throw new Error(`TRUSTED_PROXIES: «${ip}» no es una dirección IP (sin rangos ni nombres).`);
   return createServer(async (req, res) => {
     let reply: Reply;
     try {
@@ -82,7 +92,7 @@ export function createApp(
             {
               body: await readJson(req, path === '/api/rpc' ? MAX_RPC_BODY_BYTES : MAX_BODY_BYTES),
               token: cookieValue(req.headers.cookie, auth.COOKIE),
-              ip: req.socket.remoteAddress ?? '',
+              ip: clientIp(req, trusted),
               userAgent: req.headers['user-agent']?.slice(0, 500) ?? null,
               secureCookie: options.secureCookie,
               mailer: options.mailer ?? null,
@@ -134,6 +144,28 @@ async function readJson(req: IncomingMessage, limit: number): Promise<unknown> {
   }
 }
 
+const plainIp = (ip: string) => ip.trim().replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/, '');
+
+/**
+ * The client's address, for the attempt limits, sessions and audit (S-01). The TCP peer, unless it is one of our own
+ * reverse proxies: then the X-Forwarded-For hop just before them (the rightmost one they didn't add). A direct client
+ * can't choose its address with that header, and nothing is believed when no proxy is configured. A hop that isn't an
+ * IP address leaves the peer's (the proxy is misconfigured; never an attacker-chosen value).
+ */
+export function clientIp(req: IncomingMessage, trusted: ReadonlySet<string>): string {
+  const peer = plainIp(req.socket.remoteAddress ?? '');
+  if (!trusted.has(peer)) return peer;
+  const header = req.headers['x-forwarded-for'];
+  const hops = (Array.isArray(header) ? header.join(',') : (header ?? '')).split(',').map(plainIp);
+  for (let i = hops.length - 1; i >= 0; i--) {
+    const hop = hops[i]!;
+    if (!hop) continue;
+    if (!isIP(hop)) return peer;
+    if (!trusted.has(hop)) return hop;
+  }
+  return peer;
+}
+
 function cookieValue(header: string | undefined, name: string): string | null {
   for (const part of header?.split(';') ?? []) {
     const [key, ...value] = part.trim().split('=');
@@ -176,9 +208,12 @@ if (import.meta.main) {
   const db = createPool(env);
   const port = Number(env['PORT'] ?? 3000);
   const secureCookie = env['NODE_ENV'] === 'production' || env['COOKIE_SECURE'] === 'true';
-  createApp(db, { secureCookie, mailer: password.mailerFromEnv(env) }).listen(port, () =>
-    console.log(
-      `Charales API en http://localhost:${port} (BD ${env['DB_NAME'] ?? 'escuela_futbol'})`,
-    ),
+  const trustedProxies = (env['TRUSTED_PROXIES'] ?? '').split(',').filter((ip) => ip.trim());
+  createApp(db, { secureCookie, mailer: password.mailerFromEnv(env), trustedProxies }).listen(
+    port,
+    () =>
+      console.log(
+        `Charales API en http://localhost:${port} (BD ${env['DB_NAME'] ?? 'escuela_futbol'})`,
+      ),
   );
 }

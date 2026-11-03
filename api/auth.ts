@@ -7,6 +7,7 @@ import { argon2, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { Pool, PoolConnection } from 'mariadb';
 import type { Ctx, Reply } from './server.ts';
+import { reserveLogin, settleLogin, type Reservation } from './login-limit.ts';
 
 /** Session policy (HU-002), same values as the mock AuthService. */
 export const SESSION_HOURS = 8;
@@ -18,6 +19,9 @@ const SCHOOL_TZ = 'America/Mexico_City';
 process.env.TZ = SCHOOL_TZ;
 
 const INVALID = 'Correo o contraseña incorrectos.';
+const TOO_MANY = 'Demasiados intentos. Intenta de nuevo más tarde.';
+const LOGIN_UNAVAILABLE =
+  'El inicio de sesión no está disponible. Intenta de nuevo en unos minutos.';
 export const NO_SESSION = 'Tu sesión no está iniciada o ya expiró. Inicia sesión de nuevo.';
 const NO_ROLE = 'Tu cuenta no tiene un rol o perfil activo. Contacta a la escuela.';
 const FORBIDDEN = 'No tienes permiso para realizar esta acción.';
@@ -35,7 +39,12 @@ export async function hashPassword(password: string): Promise<string> {
   return `$argon2id$v=19$m=${ARGON.memory},t=${ARGON.passes},p=${ARGON.parallelism}$${b64(salt)}$${b64(hash)}`;
 }
 
+/** Argon2id verifications run by this process (S-01 tests check that a refused login never reaches one). */
+let verifications = 0;
+export const passwordVerifications = () => verifications;
+
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  verifications++;
   const m = /^\$argon2id\$v=19\$m=(\d+),t=(\d+),p=(\d+)\$([^$]+)\$([^$]+)$/.exec(stored);
   if (!m) return false;
   const expected = Buffer.from(m[5]!, 'base64');
@@ -53,14 +62,16 @@ export async function verifyPassword(password: string, stored: string): Promise<
 /** Verified against when the e-mail doesn't exist, so response time doesn't reveal which accounts exist. */
 const DUMMY_HASH = hashPassword(randomBytes(16).toString('hex'));
 
-// ---------------------------------------------------------------- attempt limiting (MARIADB.md § 8.3)
+// ---------------------------------------------------------------- attempt limiting of HU-005 (MARIADB.md § 8.3)
+// The login has its own shared limits in MariaDB (api/login-limit.ts, S-01).
 
 export const MAX_FAILURES = 5;
 const FAILURE_WINDOW_MS = 15 * 60_000;
-// ponytail: in-memory per process; move to a shared store if the API ever runs as several instances.
+// ponytail: in-memory per process; the password change and recovery request would need the shared store of
+// api/login-limit.ts if the API ever runs as several instances (S-02 and later).
 const failures = new Map<string, number[]>();
 
-/** Attempts of `key` in the last 15 min; callers push `Date.now()` to count one. Shared by login and HU-005. */
+/** Attempts of `key` in the last 15 min; callers push `Date.now()` to count one (password change and recovery). */
 export function recentFailures(key: string): number[] {
   const since = Date.now() - FAILURE_WINDOW_MS;
   const list = (failures.get(key) ?? []).filter((t) => t > since);
@@ -94,9 +105,16 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
     return { status: 400, body: { error: 'Correo y contraseña son obligatorios.' } };
   if (email.length > 150 || password.length > 200) return { status: 401, body: { error: INVALID } };
 
-  const key = `${ctx.ip}|${email.trim().toLowerCase()}`;
-  if (recentFailures(key).length >= MAX_FAILURES)
-    return { status: 429, body: { error: 'Demasiados intentos. Intenta de nuevo más tarde.' } };
+  // S-01: the attempt is reserved (shared, in MariaDB) before Argon2id runs; at the limit, nothing is verified.
+  // If the limiter can't be reached the login is refused: it never runs unlimited.
+  let reservation: Reservation | null;
+  try {
+    reservation = await reserveLogin(db, ctx.ip, email);
+  } catch (e) {
+    console.error('Límite de intentos no disponible:', (e as Error).message);
+    return { status: 503, body: { error: LOGIN_UNAVAILABLE } };
+  }
+  if (!reservation) return { status: 429, body: { error: TOO_MANY } };
 
   const [row]: UserRow[] = await db.query(
     'SELECT id, rol_id, nombre, apellido, email, password_hash, activo FROM usuarios WHERE email = ?',
@@ -104,8 +122,8 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
   );
   const passwordOk = await verifyPassword(password, row?.password_hash ?? (await DUMMY_HASH));
   if (!row || !passwordOk || !row.activo) {
-    // A correct password on a disabled account isn't a guess: only wrong passwords count toward the limit.
-    if (!passwordOk) recentFailures(key).push(Date.now());
+    // A correct password on a disabled account isn't a guess: only wrong passwords keep their reservation.
+    await settleLogin(db, reservation, passwordOk ? 'right-password' : 'failed');
     await audit(
       db,
       row?.id ?? null,
@@ -117,7 +135,7 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
     );
     return { status: 401, body: { error: INVALID } };
   }
-  failures.delete(key);
+  await settleLogin(db, reservation, 'success');
 
   const access = await accessOf(db, row);
   if (!access.roles.length) return { status: 403, body: { error: NO_ROLE } };
