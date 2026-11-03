@@ -2,12 +2,17 @@
  * S-01 · the login limits hold across API instances and survive a restart: two real `api/server.ts` processes on one
  * temporary database (real clock, like production), requests split between them, then one is restarted. Argon2id
  * counts are checked in-process in api/login-limit.test.ts; here a 401 is a verified attempt and a 429 a refused one.
+ * Also on the real clock: the limiter's own pool (M-1), because the MariaDB driver measures its acquire timeout with
+ * Date, which the fixed-clock harness freezes.
  */
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createServer } from 'node:net';
+import type { Server } from 'node:http';
+import { createServer, type AddressInfo } from 'node:net';
+import { passwordVerifications } from './auth.ts';
 import { LOGIN_LIMITS, loginKeys } from './login-limit.ts';
+import { createApp, createPool } from './server.ts';
 import { openTestDb, type TestDb } from './test-db.ts';
 
 let t: TestDb;
@@ -74,7 +79,9 @@ test('S-01: two instances sharing MariaDB enforce one limit, and a restart keeps
   );
   assert.equal(count(429), 25 - LOGIN_LIMITS.CUENTA_IP);
   // the counters live in MariaDB, not in either process
-  const [pair] = loginKeys('127.0.0.1', 'marta@example.com').filter((k) => k.scope === 'CUENTA_IP');
+  const [pair] = (await loginKeys(t.db, '127.0.0.1', 'marta@example.com')).filter(
+    (k) => k.scope === 'CUENTA_IP',
+  );
   assert.equal(
     await t.count('SELECT intentos AS n FROM limite_acceso WHERE clave = ?', [pair!.key]),
     LOGIN_LIMITS.CUENTA_IP,
@@ -85,4 +92,46 @@ test('S-01: two instances sharing MariaDB enforce one limit, and a restart keeps
   const c = await instance();
   assert.equal((await login(c.base, 'demo1234')).status, 429);
   await c.stop();
+});
+
+async function inProcess(
+  limiterDb: ReturnType<typeof createPool>,
+): Promise<{ base: string; server: Server }> {
+  const server = createApp(t.db, { secureCookie: false, limiterDb }).listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+  return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, server };
+}
+const loginAt = (base: string, email: string, password: string) =>
+  fetch(`${base}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+
+test('M-1: with its own pool the limiter cannot take the rest of the API down; exhausted, it fails closed (503)', async () => {
+  const limiterDb = createPool(
+    { ...process.env, DB_NAME: t.name },
+    { connectionLimit: 1, acquireTimeout: 500 },
+  );
+  const { base, server } = await inProcess(limiterDb);
+  const cookie = await t.login('admin@example.com');
+  const held = await limiterDb.getConnection(); // the limiter's only connection is busy
+  try {
+    const before = passwordVerifications();
+    const blocked = await loginAt(base, 'coach@example.com', 'demo1234');
+    assert.equal(blocked.status, 503);
+    assert.equal(passwordVerifications() - before, 0, 'never verified without a reservation');
+    // meanwhile the rest of the API, on the main pool, answers normally
+    const res = await fetch(`${base}/api/rpc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ service: 'CategoryService', method: 'list', args: [{}] }),
+    });
+    assert.equal(res.status, 200);
+  } finally {
+    await held.release();
+  }
+  assert.equal((await loginAt(base, 'coach@example.com', 'demo1234')).status, 200);
+  server.close();
+  await limiterDb.end();
 });

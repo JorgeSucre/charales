@@ -15,11 +15,6 @@ import { Submission } from '../../shared/submission';
       @if (expired) {
         <p class="alert info" role="status">Tu sesión expiró. Vuelve a iniciar sesión.</p>
       }
-      <p class="alert info">
-        Demostración con datos simulados. Contraseña de todas las cuentas:
-        <strong>demo1234</strong>. Cuentas: admin, secretaria, coach, tutor y marta (entrenadora y
-        tutora) &#64;example.com
-      </p>
       <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
         <label>Correo <input type="email" formControlName="email" autocomplete="username" /></label>
         <app-field-error [control]="form.controls.email" />

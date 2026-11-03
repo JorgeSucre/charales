@@ -254,13 +254,18 @@ export async function confirmPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
     : { status: 400, body: { error: INVALID_LINK } };
 }
 
-/** Runs `work` in one transaction: commit on return, rollback on throw. */
+/**
+ * Runs `work` in one transaction: commit on return, rollback on throw. `isolation` applies to this transaction only
+ * (the login limiter uses READ COMMITTED: no gap locks on the counters it doesn't find).
+ */
 export async function transaction<T>(
   db: Pool,
   work: (tx: PoolConnection) => Promise<T>,
+  isolation?: 'READ COMMITTED',
 ): Promise<T> {
   const tx = await db.getConnection();
   try {
+    if (isolation) await tx.query(`SET TRANSACTION ISOLATION LEVEL ${isolation}`);
     await tx.beginTransaction();
     const result = await work(tx);
     await tx.commit();

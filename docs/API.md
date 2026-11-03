@@ -64,26 +64,44 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
   en el cuerpo ni en cabeceras.
 - `sesiones` guarda sólo el SHA-256 del token. Expira a las **8 h** o tras **30 min** sin uso (HU-002); una sesión
   vencida, o de una cuenta desactivada, se cierra y se audita como «Sesión expirada».
-- **Límite de intentos del login (S-01, `api/login-limit.ts`, migración 005).** Cada intento se **reserva antes** de
-  verificar la contraseña (Argon2id), en una transacción de MariaDB que bloquea los contadores. Así las solicitudes
-  simultáneas no pueden superar el límite, y el límite se mantiene tras reiniciar la API y entre varias instancias.
-  Hay tres contadores, cada uno con una ventana fija de 15 min que abre su primer intento:
+- **Límite de intentos del login (S-01, `api/login-limit.ts`, migración 005; corregido tras la auditoría de la PR #26).**
+  Cada intento se **reserva antes** de verificar la contraseña (Argon2id), en una transacción de MariaDB que bloquea los
+  contadores (`SELECT … FOR UPDATE`, siempre la IP primero, `READ COMMITTED`). Así las solicitudes simultáneas no pueden
+  superar el límite, y el límite se mantiene tras reiniciar la API y entre varias instancias. Hay dos contadores, cada
+  uno con una ventana fija de 15 min que abre su primer intento:
 
   | Contador                | Límite | Para qué                                                                                    |
   | ----------------------- | ------ | ------------------------------------------------------------------------------------------- |
-  | Correo + IP del cliente | 5      | La política de siempre: una persona que se equivoca desde un equipo                         |
-  | Correo (cualquier IP)   | 20     | Cambiar de IP no multiplica los intentos contra una cuenta                                  |
-  | IP (cualquier correo)   | 50     | Una dirección no puede provocar Argon2id sin límite probando correos (holgura para una NAT) |
-  - Al alcanzar cualquiera de los tres, la respuesta es `429` sin verificar nada.
+  | Cuenta + IP del cliente | 5      | Una persona que se equivoca desde un equipo, y el freno a adivinar una cuenta desde una IP  |
+  | IP (cualquier cuenta)   | 50     | Una dirección no puede provocar Argon2id sin límite probando correos (holgura para una NAT) |
+  - Al alcanzar cualquiera de los dos, la respuesta es `429` sin verificar nada.
+  - **Sin contador sólo por cuenta (H-2):** con él, quien conociera un correo podía dejar fuera a su dueño desde unas
+    pocas direcciones, mientras siguiera intentándolo, y ni restablecer la contraseña lo resolvía. Ahora los intentos
+    de otras direcciones no afectan a la del dueño.
+  - **Identidad de la cuenta (H-1):** se calcula como MariaDB compara `usuarios.email` (`utf8mb4_unicode_ci`): el peso
+    de colación del correo recortado (`WEIGHT_STRING`), sin los espacios finales que esa colación ignora. Acentos,
+    letras de ancho completo, caracteres de ancho cero, mayúsculas y espacios que llevan a la misma cuenta comparten su
+    contador. Los correos inexistentes se tratan igual (no hay enumeración).
   - **Contraseña correcta:**
-    - el inicio de sesión vacía los contadores del correo y devuelve a la IP sólo su intento;
-    - en una cuenta deshabilitada, devuelve el intento a los tres contadores.
-  - **Correos inexistentes:** cuentan igual que los existentes.
-  - **Sin retroceso progresivo:** en el contador del correo convertiría los intentos de un atacante en un bloqueo más largo
-    del usuario real. Bloquear a alguien exige 20 intentos desde 4 direcciones y dura una ventana.
-  - **Datos guardados:** sólo SHA-256 de cada clave; las filas vencidas se purgan en cada intento.
-  - **Política de fallo:** si MariaDB no responde al reservar, el login responde `503` y no verifica (falla cerrado); la
-    disponibilidad del login depende de la base, igual que la consulta del usuario.
+    - el inicio de sesión vacía el contador de la cuenta en esa IP y devuelve a la IP sólo su intento;
+    - en una cuenta deshabilitada, devuelve el intento a los dos contadores.
+  - **Un rechazo no escribe (M-1):** los contadores se leen con bloqueo y sólo se escriben si el intento cabe. Así un
+    `429` no crea filas ni actualiza nada, y los correos al azar desde una IP en su límite no hacen crecer la tabla.
+    Además, cada proceso recuerda unos 10 s las claves en su límite, y esa avalancha ni siquiera llega a MariaDB. Esa
+    memoria sólo rechaza, nunca admite.
+  - **Pool propio:** el limitador usa 2 conexiones propias con 3 s de espera máxima (`api/server.ts`), así que una
+    avalancha de intentos no agota las conexiones del resto de la API.
+  - **Restablecer la contraseña no toca los contadores:** sin el contador por cuenta, sólo afectan a la IP que falló.
+  - **Datos guardados:** sólo SHA-256 de cada clave; las filas vencidas se purgan después de cada intento admitido.
+  - **Política de fallo:** si MariaDB o el pool del limitador no responden, el login responde `503` y no verifica
+    (falla cerrado). La disponibilidad del login depende de la base, igual que la consulta del usuario.
+  - **Riesgos residuales:**
+    - **Ataque distribuido:** consigue 5 intentos por cuenta y 50 en total por cada dirección y ventana, así que el
+      límite depende del número de direcciones del atacante (en IPv6, cada cliente suele tener un /64; ver P-03).
+    - **NAT o proxy compartido:** un atacante que comparte la IP del dueño (la misma red, o un proxy sin
+      `TRUSTED_PROXIES`) sí puede agotar el contador de esa IP durante una ventana.
+    - **Memoria de rechazos:** un rechazo recordado puede durar hasta 10 s más que la ventana.
+    - **Seudónimos, no anónimos:** los hashes se revierten con un diccionario de correos o enumerando las IPv4.
 
 - `auditoria`: `LOGIN`, `LOGOUT` e «Intento de acceso fallido» (módulo `auth`), como el `AuthService` del mock.
 
@@ -281,7 +299,7 @@ anterior corre en producción.
 | Planificador de MariaDB                   | `event_scheduler=ON` en la configuración del servidor para el trabajo diario de VENCIDO (migración 002). Ver [`MARIADB.md`](database/MARIADB.md#migraciones).                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Zona horaria                              | Servidor de base de datos y API en la hora de la escuela (`America/Mexico_City`): `DATETIME` guarda hora local sin zona (`MARIADB.md` § 1).                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Correo (D4c: **Resend**, sin implementar) | Proveedor elegido el 2026-11-02 (DP-04). Tareas de despliegue: un transporte de Resend en `password.mailerFromEnv` (pasa por `withAppUrl`, que vuelve absolutos los enlaces con `APP_URL`), dominio remitente verificado con sus registros DNS, la clave de API como variable de entorno del servidor (nunca en el repositorio) y una prueba real de recuperación e invitación. Hasta entonces la recuperación y las invitaciones responden `503` y no crean nada.                                                                                               |
-| Una sola instancia o varias               | Varias instancias son seguras para los datos (`version_datos`, candado por base) y para el límite del login (en MariaDB, S-01). El límite del cambio de contraseña y de la solicitud de recuperación sigue en la memoria de cada proceso.                                                                                                                                                                                                                                                                                                                        |
+| Una sola instancia o varias               | Varias instancias son seguras para los datos (`version_datos`, candado por base) y para el límite del login (en MariaDB, S-01; cada instancia tiene además su pool de 2 conexiones para el limitador). El límite del cambio de contraseña y de la solicitud de recuperación sigue en la memoria de cada proceso.                                                                                                                                                                                                                                                 |
 | Respaldo                                  | `db/mariadb/scripts/backup.sh` diario; periodicidad y restauración en [`MARIADB.md` § 6](database/MARIADB.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 **Seguridad de la sesión:** cookie `HttpOnly; SameSite=Strict; Path=/` de 8 h (30 min de inactividad), sólo el SHA-256

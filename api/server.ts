@@ -23,6 +23,8 @@ export interface Ctx {
   secureCookie: boolean;
   /** E-mail transport for HU-005 recovery; null = recovery unavailable (503). */
   mailer: password.Mailer | null;
+  /** Pool of the login attempt limiter (S-01): its own small pool in production, the main one otherwise. */
+  limiterDb: Pool;
 }
 export interface Reply {
   status: number;
@@ -76,6 +78,8 @@ export function createApp(
     mailer?: password.Mailer | null;
     /** Addresses of the reverse proxies whose X-Forwarded-For is believed (TRUSTED_PROXIES); none by default. */
     trustedProxies?: readonly string[];
+    /** Small pool for the login limiter, so a login flood can't take the connections of the rest of the API (M-1). */
+    limiterDb?: Pool;
   },
 ): Server {
   const trusted = new Set((options.trustedProxies ?? []).map(plainIp));
@@ -96,6 +100,7 @@ export function createApp(
               userAgent: req.headers['user-agent']?.slice(0, 500) ?? null,
               secureCookie: options.secureCookie,
               mailer: options.mailer ?? null,
+              limiterDb: options.limiterDb ?? db,
             },
             db,
           )
@@ -186,7 +191,7 @@ export function createPool(
     user: env['DB_USER'],
     password: env['DB_PASSWORD'],
     database: env['DB_NAME'] ?? 'escuela_futbol',
-    connectionLimit: Number(env['DB_POOL_SIZE'] ?? 5),
+    connectionLimit: extra.connectionLimit ?? Number(env['DB_POOL_SIZE'] ?? 5),
     // DATETIME stays the school's local wall-clock string (MARIADB.md § 1); ids are plain numbers.
     dateStrings: true,
     bigIntAsNumber: true,
@@ -209,11 +214,16 @@ if (import.meta.main) {
   const port = Number(env['PORT'] ?? 3000);
   const secureCookie = env['NODE_ENV'] === 'production' || env['COOKIE_SECURE'] === 'true';
   const trustedProxies = (env['TRUSTED_PROXIES'] ?? '').split(',').filter((ip) => ip.trim());
-  createApp(db, { secureCookie, mailer: password.mailerFromEnv(env), trustedProxies }).listen(
-    port,
-    () =>
-      console.log(
-        `Charales API en http://localhost:${port} (BD ${env['DB_NAME'] ?? 'escuela_futbol'})`,
-      ),
+  // M-1: the login limiter has 2 connections of its own and waits at most 3 s for one (then the login answers 503).
+  const limiterDb = createPool(env, { connectionLimit: 2, acquireTimeout: 3000 });
+  createApp(db, {
+    secureCookie,
+    mailer: password.mailerFromEnv(env),
+    trustedProxies,
+    limiterDb,
+  }).listen(port, () =>
+    console.log(
+      `Charales API en http://localhost:${port} (BD ${env['DB_NAME'] ?? 'escuela_futbol'})`,
+    ),
   );
 }
