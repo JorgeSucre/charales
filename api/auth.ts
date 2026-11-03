@@ -109,7 +109,7 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
   // If the limiter can't be reached the login is refused: it never runs unlimited.
   let reservation: Reservation | null;
   try {
-    reservation = await reserveLogin(db, ctx.ip, email);
+    reservation = await reserveLogin(ctx.limiterDb, ctx.ip, email);
   } catch (e) {
     console.error('Límite de intentos no disponible:', (e as Error).message);
     return { status: 503, body: { error: LOGIN_UNAVAILABLE } };
@@ -123,7 +123,7 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
   const passwordOk = await verifyPassword(password, row?.password_hash ?? (await DUMMY_HASH));
   if (!row || !passwordOk || !row.activo) {
     // A correct password on a disabled account isn't a guess: only wrong passwords keep their reservation.
-    await settleLogin(db, reservation, passwordOk ? 'right-password' : 'failed');
+    await settleLogin(ctx.limiterDb, reservation, passwordOk ? 'right-password' : 'failed');
     await audit(
       db,
       row?.id ?? null,
@@ -135,7 +135,7 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
     );
     return { status: 401, body: { error: INVALID } };
   }
-  await settleLogin(db, reservation, 'success');
+  await settleLogin(ctx.limiterDb, reservation, 'success');
 
   const access = await accessOf(db, row);
   if (!access.roles.length) return { status: 403, body: { error: NO_ROLE } };
