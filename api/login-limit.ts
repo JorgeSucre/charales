@@ -41,8 +41,24 @@ export interface Reservation {
   keys: { key: string; scope: Scope }[];
 }
 
-// deadlock, lock wait timeout, «Record has changed since last read», duplicate key (two first attempts at once)
-const RETRYABLE = new Set([1213, 1205, 1020, 1062]);
+// Transient MariaDB errors of the reservation: deadlock, lock wait timeout, «Record has changed since last read».
+const TRANSIENT = new Set([1213, 1205, 1020]);
+/** Retries: at most 6 attempts within 1.5 s, waiting a random 0..10·2^n ms (at most 200 ms) between them. */
+const MAX_ATTEMPTS = 6;
+const RETRY_BUDGET_MS = 1500;
+const BACKOFF_BASE_MS = 10;
+const BACKOFF_CAP_MS = 200;
+/** Another request inserted the missing IP row first (1062 on THAT insert): retry with the row in place. */
+class IpRowRace extends Error {}
+/** A counter at its limit: thrown inside the transaction so it rolls back (nothing of a refusal is committed). */
+class AtLimit extends Error {
+  readonly key: string;
+  constructor(key: string) {
+    super('Límite de intentos alcanzado.');
+    this.key = key;
+  }
+}
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * The account as MariaDB compares it: the collation weight of the trimmed e-mail (the string the login looks up), minus
@@ -94,60 +110,99 @@ export async function reserveLogin(
   if (refusedNow(ipKey)) return null; // an address at its limit doesn't even reach MariaDB
   const keys = await loginKeys(db, ip, email);
   if (keys.some((k) => refusedNow(k.key))) return null;
+  const [ipCounter, pairCounter] = keys as [
+    Reservation['keys'][number],
+    Reservation['keys'][number],
+  ]; // IP first
+  // performance.now(): a real clock even where tests mock Date.
+  const deadline = performance.now() + RETRY_BUDGET_MS;
   for (let attempt = 1; ; attempt++) {
-    const now = Date.now(); // per attempt: a retry after a lock wait judges the window at its own time
+    const now = Date.now(); // per attempt: a retry judges the window at its own time
     const expired = localDateTime(now - LOGIN_WINDOW_MS);
     const start = localDateTime(now);
     try {
-      const outcome = await transaction(
+      await transaction(
         db,
         async (tx) => {
-          // Lock the counters that exist, IP first: every request of one address takes that row first, so they queue
-          // there and never deadlock. READ COMMITTED: a missing row takes no gap lock (two first attempts at once
-          // collide on the INSERT below instead, 1062, and the loser retries with the row in place).
-          const current: { key: string; scope: Scope; used: number; exists: boolean }[] = [];
-          for (const k of keys) {
-            const [row]: { intentos: number; ventana_inicio: string }[] = await tx.query(
-              'SELECT intentos, ventana_inicio FROM limite_acceso WHERE clave = ? FOR UPDATE',
-              [k.key],
-            );
-            const used = row && row.ventana_inicio > expired ? row.intentos : 0;
-            if (used >= LOGIN_LIMITS[k.scope]) return { refusedBy: k.key }; // nothing written
-            current.push({ ...k, used, exists: !!row });
+          // ONE lock order for every request: the IP row, then the account+IP row. The IP row is locked — or, if it
+          // doesn't exist yet, inserted (with 0 attempts) — BEFORE the account+IP row is even read, so no request can
+          // hold the pair while waiting for the IP (the inversion that deadlocked: docs/API.md, S-01). READ
+          // COMMITTED: a missing row takes no gap lock; two requests that both miss the IP row collide on its INSERT
+          // (1062), and the loser retries with the row in place. Every request of one address queues on that row.
+          const counter = async (key: string) =>
+            (
+              (await tx.query(
+                'SELECT intentos, ventana_inicio FROM limite_acceso WHERE clave = ? FOR UPDATE',
+                [key],
+              )) as { intentos: number; ventana_inicio: string }[]
+            )[0];
+          const used = (row?: { intentos: number; ventana_inicio: string }) =>
+            row && row.ventana_inicio > expired ? row.intentos : 0;
+          let ipRow = await counter(ipCounter.key);
+          if (!ipRow) {
+            try {
+              await tx.query(
+                "INSERT INTO limite_acceso (clave, ambito, intentos, ventana_inicio) VALUES (?, 'IP', 0, ?)",
+                [ipCounter.key, start],
+              );
+            } catch (e) {
+              if ((e as { errno?: number }).errno === 1062) throw new IpRowRace();
+              throw e;
+            }
+            ipRow = { intentos: 0, ventana_inicio: start };
           }
-          for (const c of current)
-            if (c.exists)
-              await tx.query(
-                'UPDATE limite_acceso SET intentos = ?, ventana_inicio = IF(?, ventana_inicio, ?) WHERE clave = ?',
-                [c.used + 1, c.used > 0, start, c.key],
-              );
-            else
-              await tx.query(
-                'INSERT INTO limite_acceso (clave, ambito, intentos, ventana_inicio) VALUES (?, ?, 1, ?)',
-                [c.key, c.scope, start],
-              );
-          return { refusedBy: null };
+          const pairRow = await counter(pairCounter.key);
+          const ipUsed = used(ipRow);
+          const pairUsed = used(pairRow);
+          // At a limit: roll back, so not even the IP row this request had to insert stays (M-1).
+          if (ipUsed >= LOGIN_LIMITS.IP) throw new AtLimit(ipCounter.key);
+          if (pairUsed >= LOGIN_LIMITS.CUENTA_IP) throw new AtLimit(pairCounter.key);
+          const bump =
+            'UPDATE limite_acceso SET intentos = ?, ventana_inicio = IF(?, ventana_inicio, ?) WHERE clave = ?';
+          await tx.query(bump, [ipUsed + 1, ipUsed > 0, start, ipCounter.key]);
+          if (pairRow) await tx.query(bump, [pairUsed + 1, pairUsed > 0, start, pairCounter.key]);
+          else
+            await tx.query(
+              "INSERT INTO limite_acceso (clave, ambito, intentos, ventana_inicio) VALUES (?, 'CUENTA_IP', 1, ?)",
+              [pairCounter.key, start],
+            );
         },
         'READ COMMITTED',
       );
-      if (outcome.refusedBy) {
-        remember(outcome.refusedBy);
+    } catch (e) {
+      if (e instanceof AtLimit) {
+        remember(e.key);
         return null;
       }
-      // Housekeeping after an admitted attempt only (a refusal writes nothing): if it fails, nothing is at stake.
-      await transaction(
-        db,
-        (tx) =>
-          tx.query('DELETE FROM limite_acceso WHERE ventana_inicio <= ? LIMIT 100', [expired]),
-        'READ COMMITTED',
-      ).catch((e: Error) =>
-        console.error('No se pudieron purgar los intentos vencidos:', e.message),
-      );
-      return { keys };
-    } catch (e) {
-      if (RETRYABLE.has((e as { errno?: number }).errno ?? 0) && attempt < 5) continue;
-      throw e;
+      const transient =
+        e instanceof IpRowRace || TRANSIENT.has((e as { errno?: number }).errno ?? 0);
+      // full jitter: a random wait up to 10·2^(attempt-1) ms, capped, so racing requests don't retry in lockstep
+      const delay = Math.random() * Math.min(BACKOFF_CAP_MS, BACKOFF_BASE_MS * 2 ** (attempt - 1));
+      if (transient && attempt < MAX_ATTEMPTS && performance.now() + delay < deadline) {
+        await sleep(delay);
+        continue;
+      }
+      throw e instanceof IpRowRace
+        ? new Error('Reserva de intentos: la fila de la IP sigue en disputa.')
+        : e;
     }
+    // Housekeeping after an admitted attempt only (a refusal writes nothing). SKIP LOCKED: the purge never waits for
+    // a row another request holds, so it can't take part in a deadlock. If it fails, nothing is at stake.
+    await transaction(
+      db,
+      async (tx) => {
+        const rows: { clave: string }[] = await tx.query(
+          'SELECT clave FROM limite_acceso WHERE ventana_inicio <= ? LIMIT 100 FOR UPDATE SKIP LOCKED',
+          [expired],
+        );
+        if (rows.length)
+          await tx.query('DELETE FROM limite_acceso WHERE clave IN (?)', [
+            rows.map((r) => r.clave),
+          ]);
+      },
+      'READ COMMITTED',
+    ).catch((e: Error) => console.error('No se pudieron purgar los intentos vencidos:', e.message));
+    return { keys };
   }
 }
 
