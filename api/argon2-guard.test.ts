@@ -1,8 +1,8 @@
 /**
- * S-02 · shared Argon2id turns (api/argon2-guard.ts, migration 006) and the order of the checks before Argon2id in
- * login, password change and recovery. Every case reads the real Argon2id runs of this process (`argon2Stats`: total
- * and most at once) and the turns stored in MariaDB, not just the HTTP codes. Fixed clock (api/test-db.ts): a turn's
- * expiry is moved with `advance`. Several instances, a restart and the limiter pool: api/argon2-guard-instances.test.ts.
+ * S-02 · the per-process Argon2id gate in the API routes (login, password change, recovery) and its interplay with the
+ * S-01 attempt limits, over MariaDB. Every case reads the real Argon2id runs of this process (`argon2Stats`: total and
+ * most at once), not just the HTTP codes. The gate alone: api/argon2-gate.test.ts.
+ * Each app of these tests has its own gate, as each API process does in production.
  */
 import { after, before, beforeEach, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,7 +10,13 @@ import crypto from 'node:crypto';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { argon2Stats, localDateTime, resetArgon2Peak, sha256 } from './auth.ts';
-import { argon2LimitsFrom, type Argon2Limits } from './argon2-guard.ts';
+import {
+  ARGON2_DEFAULTS,
+  MAX_WAITERS,
+  argon2Gate,
+  argon2LimitsFrom,
+  type Argon2Gate,
+} from './argon2-guard.ts';
 import { forgetRefusals } from './login-limit.ts';
 import { createApp } from './server.ts';
 import { openTestDb, type TestDb } from './test-db.ts';
@@ -26,13 +32,12 @@ after(async () => {
 });
 beforeEach(async () => {
   forgetRefusals();
-  await t.db.query('DELETE FROM turnos_argon2');
   await t.db.query('DELETE FROM limite_acceso');
 });
 
-/** Another instance of the API on the test database, with its own Argon2id limits. */
-async function app(argon2: Argon2Limits): Promise<string> {
-  const server = createApp(t.db, { secureCookie: false, argon2 }).listen(0);
+/** Another instance of the API on the test database, with its own Argon2id gate. */
+async function app(gate: Argon2Gate): Promise<string> {
+  const server = createApp(t.db, { secureCookie: false, argon2: gate }).listen(0);
   servers.push(server);
   await new Promise((resolve) => server.once('listening', resolve));
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -51,19 +56,18 @@ async function runs<T>(work: () => Promise<T>): Promise<[T, number]> {
   const result = await work();
   return [result, argon2Stats().runs - before];
 }
-const turns = () => t.count('SELECT COUNT(*) AS n FROM turnos_argon2');
-/** Takes `n` turns as another (or a dead) process would, until `seconds` from MariaDB's now. */
-const hold = (n: number, seconds = 600) =>
-  Promise.all(
-    Array.from({ length: n }, () =>
-      t.db.query('INSERT INTO turnos_argon2 (vence_en) VALUES (NOW(3) + INTERVAL ? SECOND)', [
-        seconds,
-      ]),
-    ),
-  );
+const counters = async () =>
+  (await t.db.query('SELECT ambito, intentos FROM limite_acceso'))
+    .map((r: { ambito: string; intentos: number }) => [r.ambito, r.intentos])
+    .sort();
 const BUSY = { error: 'El servicio está ocupado. Intenta de nuevo en unos segundos.' };
 const ACCOUNTS = ['admin', 'secretaria', 'coach', 'tutor', 'marta'].map((u) => `${u}@example.com`);
 const NEW_PASSWORD = 'Nueva2026segura';
+const statuses = (responses: Response[]) =>
+  responses.reduce<Record<number, number>>(
+    (n, r) => ({ ...n, [r.status]: (n[r.status] ?? 0) + 1 }),
+    {},
+  );
 
 /** A recovery token of `email`, as the request would store it (only its SHA-256). */
 async function recoveryToken(email: string, opts: { expired?: boolean; used?: boolean } = {}) {
@@ -91,133 +95,162 @@ const passwordHash = async (email: string) =>
       h: string;
     }[]
   )[0]!.h;
+const tokenUnused = (token: string) =>
+  t.count(
+    'SELECT COUNT(*) AS n FROM tokens_recuperacion WHERE token_hash = ? AND usado_en IS NULL',
+    [sha256(token)],
+  );
+const failingArgon2 = () =>
+  mock.method(crypto, 'argon2', (_a: string, _p: unknown, cb: (e: Error) => void) =>
+    cb(new Error('fallo simulado')),
+  );
 
-// ------------------------------------------------------------------ configuration and schema
+// ------------------------------------------------------------------ configuration
 
-test('S-02: invalid ARGON2_* settings stop the start instead of switching the guard off', () => {
-  assert.deepEqual(argon2LimitsFrom({}), { limit: 3, waitMs: 2000 });
+test('S-02: invalid ARGON2_* settings stop the start instead of switching the gate off', () => {
+  assert.deepEqual(argon2LimitsFrom({}), ARGON2_DEFAULTS);
   assert.deepEqual(argon2LimitsFrom({ ARGON2_MAX_CONCURRENT: ' 6 ', ARGON2_WAIT_MS: '0' }), {
     limit: 6,
     waitMs: 0,
   });
-  for (const bad of ['0', '-1', '2.5', 'diez', '65'])
+  for (const bad of ['0', '-1', '2.5', 'diez', 'NaN', '65'])
     assert.throws(() => argon2LimitsFrom({ ARGON2_MAX_CONCURRENT: bad }), /ARGON2_MAX_CONCURRENT/);
-  assert.throws(() => argon2LimitsFrom({ ARGON2_WAIT_MS: '10001' }), /ARGON2_WAIT_MS/);
+  for (const bad of ['-1', '1.5', '10001'])
+    assert.throws(() => argon2LimitsFrom({ ARGON2_WAIT_MS: bad }), /ARGON2_WAIT_MS/);
 });
 
-// ------------------------------------------------------------------ the cap
+// ------------------------------------------------------------------ the cap in the routes
 
-test('S-02: 10 simultaneous logins with a limit of 2 — never more than 2 Argon2id at once, all answered, turns freed', async () => {
-  const base = await app({ limit: 2, waitMs: 5000 });
+test('S-02: 10 simultaneous logins with a limit of 2 — never more than 2 Argon2id at once, all answered', async () => {
+  const gate = argon2Gate({ limit: 2, waitMs: 5000 });
+  const base = await app(gate);
   resetArgon2Peak();
   const [responses, n] = await runs(() =>
     Promise.all(ACCOUNTS.flatMap((email) => [login(base, email), login(base, email, 'mala-1')])),
   );
-  assert.deepEqual(responses.map((r) => r.status).sort(), [
-    ...Array(5).fill(200),
-    ...Array(5).fill(401),
-  ]);
+  assert.deepEqual(statuses(responses), { 200: 5, 401: 5 });
   assert.equal(n, 10);
-  assert.ok(argon2Stats().peak <= 2, `peak ${argon2Stats().peak}`);
-  assert.equal(await turns(), 0);
+  assert.equal(argon2Stats().peak, 2);
+  assert.deepEqual(gate.stats(), { active: 0, waiting: 0 });
 });
 
-test('S-02: no turn free → 503 without Argon2id, the S-01 attempt is given back, and it works once a turn frees', async () => {
-  const base = await app({ limit: 2, waitMs: 0 });
-  await hold(2);
+test('S-02: no slot → 503 without Argon2id and the S-01 attempt is given back; it works once the slot frees', async () => {
+  const gate = argon2Gate({ limit: 1, waitMs: 0 });
+  const base = await app(gate);
+  const held = (await gate.acquire())!;
   const [busy, n] = await runs(() => login(base, 'marta@example.com'));
   assert.equal(busy.status, 503);
   assert.deepEqual(await busy.json(), BUSY);
   assert.equal(n, 0, 'nothing verified');
-  assert.deepEqual(
-    (await t.db.query('SELECT ambito, intentos FROM limite_acceso'))
-      .map((r: { ambito: string; intentos: number }) => [r.ambito, r.intentos])
-      .sort(),
-    [
-      ['CUENTA_IP', 0],
-      ['IP', 0],
-    ],
-    'the attempt that never happened is not counted',
-  );
-  await t.db.query('DELETE FROM turnos_argon2');
+  assert.deepEqual(await counters(), [
+    ['CUENTA_IP', 0],
+    ['IP', 0],
+  ]);
+  held();
   const [ok, m] = await runs(() => login(base, 'marta@example.com'));
   assert.equal(ok.status, 200);
   assert.equal(m, 1);
 });
 
-test('S-02: a waiting request continues as soon as a turn frees (bounded wait)', async () => {
-  const base = await app({ limit: 1, waitMs: 5000 });
-  await hold(1);
+test('S-02: a waiting login continues as soon as the slot frees', async () => {
+  const gate = argon2Gate({ limit: 1, waitMs: 5000 });
+  const base = await app(gate);
+  const held = (await gate.acquire())!;
   const pending = runs(() => login(base, 'marta@example.com'));
   await new Promise((resolve) => setTimeout(resolve, 300));
-  assert.equal(argon2Stats().running, 0, 'still waiting, nothing running');
-  await t.db.query('DELETE FROM turnos_argon2');
+  assert.deepEqual(gate.stats(), { active: 1, waiting: 1 });
+  held();
   const [res, n] = await pending;
   assert.equal(res.status, 200);
   assert.equal(n, 1);
 });
 
-test('S-02: a turn left by a dead process expires on its own (MariaDB clock)', async () => {
-  const base = await app({ limit: 1, waitMs: 0 });
-  await hold(1, 30);
-  assert.equal((await login(base, 'marta@example.com')).status, 503);
-  await t.advance(31_000);
-  forgetRefusals();
+test('S-02: a wait that runs out answers 503 after ARGON2_WAIT_MS, without Argon2id', async () => {
+  const gate = argon2Gate({ limit: 1, waitMs: 300 });
+  const base = await app(gate);
+  const held = (await gate.acquire())!;
+  const started = performance.now();
   const [res, n] = await runs(() => login(base, 'marta@example.com'));
-  assert.equal(res.status, 200);
-  assert.equal(n, 1);
-  assert.equal(await turns(), 0, 'the expired turn was removed');
+  assert.equal(res.status, 503);
+  assert.ok(performance.now() - started >= 290, 'it waited');
+  assert.equal(n, 0);
+  assert.deepEqual(gate.stats(), { active: 1, waiting: 0 });
+  held();
 });
 
-test('S-02: an exception inside Argon2id frees the turn', async () => {
-  const base = await app({ limit: 1, waitMs: 0 });
-  const failing = mock.method(crypto, 'argon2', (_a: string, _p: unknown, cb: (e: Error) => void) =>
-    cb(new Error('fallo simulado')),
+test(`S-02: the queue is bounded — with the slot taken, ${MAX_WAITERS} logins wait and the rest get 503 at once`, async () => {
+  const gate = argon2Gate({ limit: 1, waitMs: 10_000 });
+  const base = await app(gate);
+  const held = (await gate.acquire())!;
+  resetArgon2Peak();
+  const answered: Response[] = [];
+  const all = Array.from({ length: MAX_WAITERS + 8 }, (_, i) =>
+    login(base, `cola${i}@example.com`, 'mala-1').then((r) => (answered.push(r), r)),
   );
+  while (answered.length < 8 || gate.stats().waiting < MAX_WAITERS)
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(statuses(answered), { 503: 8 }, 'refused before any wait');
+  held();
+  const responses = await Promise.all(all);
+  assert.deepEqual(statuses(responses), { 401: MAX_WAITERS, 503: 8 });
+  assert.equal(argon2Stats().peak, 1);
+  assert.deepEqual(gate.stats(), { active: 0, waiting: 0 });
+});
+
+test('S-02: an exception inside Argon2id frees the slot (500, no internal detail)', async () => {
+  const gate = argon2Gate({ limit: 1, waitMs: 0 });
+  const base = await app(gate);
+  const failing = failingArgon2();
   try {
     const res = await login(base, 'marta@example.com');
     assert.equal(res.status, 500);
-    assert.doesNotMatch(await res.text(), /fallo simulado/, 'no internal detail');
+    assert.doesNotMatch(await res.text(), /fallo simulado/);
   } finally {
     failing.mock.restore();
   }
-  assert.equal(await turns(), 0);
+  assert.deepEqual(gate.stats(), { active: 0, waiting: 0 });
   assert.equal((await login(base, 'marta@example.com')).status, 200);
 });
 
-test('S-02: if MariaDB cannot give turns (migration 006 missing), nothing is verified — 503', async () => {
-  const base = await app({ limit: 3, waitMs: 0 });
-  await t.db.query('RENAME TABLE turnos_argon2_guarda TO turnos_argon2_guarda_fuera');
-  try {
-    const [res, n] = await runs(() => login(base, 'marta@example.com'));
-    assert.equal(res.status, 503);
-    assert.equal(n, 0);
-  } finally {
-    await t.db.query('RENAME TABLE turnos_argon2_guarda_fuera TO turnos_argon2_guarda');
-  }
-  await t.db.query('DELETE FROM turnos_argon2_guarda');
-  try {
-    const [res, n] = await runs(() => login(base, 'marta@example.com'));
-    assert.equal(res.status, 503, 'without the guard row the count could not be atomic: refuse');
-    assert.equal(n, 0);
-  } finally {
-    await t.db.query('INSERT INTO turnos_argon2_guarda (id) VALUES (1)');
-  }
-});
+// ------------------------------------------------------------------ S-01 × S-02 at the default limits
 
-test('S-02 + S-01: a login refused by the attempt limits never takes a turn nor runs Argon2id', async () => {
-  const base = await app({ limit: 3, waitMs: 0 });
-  for (let i = 0; i < 5; i++) await login(base, 'marta@example.com', 'mala-1');
-  const [res, n] = await runs(() => login(base, 'marta@example.com'));
-  assert.equal(res.status, 429);
+test('S-01 × S-02 (defaults): a 503 does not spend an S-01 attempt, and a 429 neither takes a slot nor runs Argon2id', async () => {
+  const gate = argon2Gate(ARGON2_DEFAULTS);
+  const base = await app(gate);
+  const held = await Promise.all(
+    Array.from({ length: ARGON2_DEFAULTS.limit }, () => gate.acquire()),
+  );
+  // the gate is full: 10 simultaneous wrong passwords. The S-01 reservation comes BEFORE the wait for a slot, so the
+  // first 5 hold the account+IP allowance while they wait and the other 5 are refused by S-01 (429). The waits run out
+  // (503) and give their reservations back: nothing counted, nothing verified.
+  const [busy, b] = await runs(() =>
+    Promise.all(Array.from({ length: 10 }, () => login(base, 'marta@example.com', 'mala-1'))),
+  );
+  assert.deepEqual(statuses(busy), { 429: 5, 503: 5 });
+  assert.equal(b, 0);
+  assert.deepEqual(await counters(), [
+    ['CUENTA_IP', 0],
+    ['IP', 0],
+  ]);
+  forgetRefusals(); // the 429s were remembered for a few seconds by this process (S-01, M-1)
+  for (const release of held) release!();
+  // with room again: the 5 allowed guesses are verified, the 6th is refused by S-01 before the gate
+  for (let i = 0; i < 5; i++)
+    assert.equal((await login(base, 'marta@example.com', 'mala-1')).status, 401);
+  const blocked = await Promise.all(
+    Array.from({ length: ARGON2_DEFAULTS.limit }, () => gate.acquire()),
+  );
+  const [refused, n] = await runs(() => login(base, 'marta@example.com'));
+  assert.equal(refused.status, 429, 'S-01 answers first, even with the gate full');
   assert.equal(n, 0);
-  assert.equal(await turns(), 0);
+  assert.deepEqual(gate.stats(), { active: ARGON2_DEFAULTS.limit, waiting: 0 }, 'no slot taken');
+  for (const release of blocked) release!();
 });
 
-// ------------------------------------------------------------------ password recovery: the token before Argon2id
+// ------------------------------------------------------------------ password recovery
 
-test('S-02: recovery with an unknown, expired or used token runs no Argon2id', async () => {
-  const base = await app({ limit: 3, waitMs: 0 });
+test('S-02: recovery with an unknown, expired or used token, or a malformed one, runs no Argon2id', async () => {
+  const base = await app(argon2Gate(ARGON2_DEFAULTS));
   const expired = await recoveryToken('tutor@example.com', { expired: true });
   const used = await recoveryToken('tutor@example.com', { used: true });
   for (const token of ['no-existe-' + 'x'.repeat(20), expired.token, used.token]) {
@@ -228,7 +261,6 @@ test('S-02: recovery with an unknown, expired or used token runs no Argon2id', a
     assert.deepEqual(await res.json(), { error: 'El enlace no es válido o ya expiró.' });
     assert.equal(n, 0);
   }
-  // malformed requests: no query needed, no Argon2id
   for (const body of [
     {},
     { token: 'x' },
@@ -241,8 +273,8 @@ test('S-02: recovery with an unknown, expired or used token runs no Argon2id', a
   }
 });
 
-test('S-02: a valid token still works — one Argon2id, the token used once, the password changed', async () => {
-  const base = await app({ limit: 3, waitMs: 0 });
+test('S-02: a valid token still works — one Argon2id, the token used, the password changed', async () => {
+  const base = await app(argon2Gate(ARGON2_DEFAULTS));
   const { token, userId } = await recoveryToken('tutor@example.com');
   const before = await passwordHash('tutor@example.com');
   const [res, n] = await runs(() =>
@@ -250,30 +282,22 @@ test('S-02: a valid token still works — one Argon2id, the token used once, the
   );
   assert.equal(res.status, 204);
   assert.equal(n, 1);
-  assert.notEqual(await passwordHash('tutor@example.com'), before);
-  assert.equal(
-    await t.count(
-      'SELECT COUNT(*) AS n FROM tokens_recuperacion WHERE token_hash = ? AND usado_en IS NOT NULL',
-      [sha256(token)],
-    ),
-    1,
-  );
+  assert.equal(await tokenUnused(token), 0);
   assert.equal((await login(base, 'tutor@example.com', NEW_PASSWORD)).status, 200);
-  // restore the demo password for the other cases
   await t.db.query('UPDATE usuarios SET password_hash = ? WHERE id = ?', [before, userId]);
 });
 
 test('S-02: two simultaneous confirmations of one token — exactly one changes the password', async () => {
-  const base = await app({ limit: 3, waitMs: 2000 });
+  const base = await app(argon2Gate(ARGON2_DEFAULTS));
   const { token, userId } = await recoveryToken('coach@example.com');
   const before = await passwordHash('coach@example.com');
-  const statuses = (
+  const statusesOf = (
     await Promise.all([
       post(base, '/auth/password-reset/confirm', { token, newPassword: NEW_PASSWORD }),
       post(base, '/auth/password-reset/confirm', { token, newPassword: 'Otra2026segura' }),
     ])
   ).map((r) => r.status);
-  assert.deepEqual(statuses.sort(), [204, 400]);
+  assert.deepEqual(statusesOf.sort(), [204, 400]);
   assert.equal(
     await t.count(
       "SELECT COUNT(*) AS n FROM auditoria WHERE entidad = 'usuarios' AND entidad_id = ? AND descripcion = 'Restablecimiento de contraseña'",
@@ -284,19 +308,12 @@ test('S-02: two simultaneous confirmations of one token — exactly one changes 
   await t.db.query('UPDATE usuarios SET password_hash = ? WHERE id = ?', [before, userId]);
 });
 
-test('S-02: a failure computing the hash, or no turn, leaves the token unused and the password as it was', async () => {
+test('S-02: a failure computing the hash, or a 503, leaves the token unused and the password as it was', async () => {
   const { token, userId } = await recoveryToken('secretaria@example.com');
   const before = await passwordHash('secretaria@example.com');
-  const unused = () =>
-    t.count(
-      'SELECT COUNT(*) AS n FROM tokens_recuperacion WHERE usuario_id = ? AND usado_en IS NULL',
-      [userId],
-    );
-  // the hash throws
-  const base = await app({ limit: 3, waitMs: 0 });
-  const failing = mock.method(crypto, 'argon2', (_a: string, _p: unknown, cb: (e: Error) => void) =>
-    cb(new Error('fallo simulado')),
-  );
+  const gate = argon2Gate({ limit: 1, waitMs: 0 });
+  const base = await app(gate);
+  const failing = failingArgon2();
   try {
     assert.equal(
       (await post(base, '/auth/password-reset/confirm', { token, newPassword: NEW_PASSWORD }))
@@ -306,19 +323,16 @@ test('S-02: a failure computing the hash, or no turn, leaves the token unused an
   } finally {
     failing.mock.restore();
   }
-  assert.equal(await unused(), 1);
+  assert.equal(await tokenUnused(token), 1);
   assert.equal(await passwordHash('secretaria@example.com'), before);
-  // no turn
-  const full = await app({ limit: 1, waitMs: 0 });
-  await hold(1);
+  const held = (await gate.acquire())!;
   const [res, n] = await runs(() =>
-    post(full, '/auth/password-reset/confirm', { token, newPassword: NEW_PASSWORD }),
+    post(base, '/auth/password-reset/confirm', { token, newPassword: NEW_PASSWORD }),
   );
   assert.equal(res.status, 503);
   assert.equal(n, 0);
-  assert.equal(await unused(), 1);
-  // and it still works afterwards
-  await t.db.query('DELETE FROM turnos_argon2');
+  assert.equal(await tokenUnused(token), 1);
+  held();
   assert.equal(
     (await post(base, '/auth/password-reset/confirm', { token, newPassword: NEW_PASSWORD })).status,
     204,
@@ -328,40 +342,79 @@ test('S-02: a failure computing the hash, or no turn, leaves the token unused an
 
 // ------------------------------------------------------------------ password change
 
-test('S-02: password change — invalid new passwords cost no Argon2id; a valid change runs 2 in one turn; busy → 503', async () => {
-  const base = await app({ limit: 1, waitMs: 0 });
+test('S-02: password change — invalid new passwords cost no Argon2id; a change runs 2 in ONE slot; 503 gives C1 back', async () => {
+  const gate = argon2Gate({ limit: 1, waitMs: 0 });
+  let acquires = 0;
+  const acquire = gate.acquire;
+  gate.acquire = () => (acquires++, acquire());
+  const base = await app(gate);
   const cookie = (await login(base, 'marta@example.com')).headers.get('set-cookie')!.split(';')[0]!;
   const change = (currentPassword: string, newPassword: string) =>
     post(base, '/auth/password', { currentPassword, newPassword }, cookie);
   for (const [current, next] of [
     ['demo1234', 'demo1234'], // same as the current one
     ['demo1234', 'corta'], // policy
-    ['x'.repeat(201), NEW_PASSWORD], // over the length limit
   ]) {
     const [res, n] = await runs(() => change(current!, next!));
     assert.equal(res.status, 400);
-    assert.equal(n, 0, `${current!.slice(0, 10)} → ${next}`);
+    assert.equal(n, 0);
   }
-  await hold(1);
-  const [busy, b] = await runs(() => change('demo1234', NEW_PASSWORD));
-  assert.equal(busy.status, 503);
-  assert.equal(b, 0);
-  await t.db.query('DELETE FROM turnos_argon2');
+  // the right one: verify + hash with a single slot, never released in between (limit 1: never 2 at once)
+  acquires = 0;
   resetArgon2Peak();
-  const [res, n] = await runs(() => change('demo1234', NEW_PASSWORD));
-  assert.equal(res.status, 204);
+  const [ok, n] = await runs(() => change('demo1234', NEW_PASSWORD));
+  assert.equal(ok.status, 204);
   assert.equal(n, 2, 'verify the current one and hash the new one');
-  assert.equal(argon2Stats().peak, 1, 'one turn, one operation at a time');
-  assert.equal(await turns(), 0);
-  const [wrong, w] = await runs(() => change('mala-1234', 'Otra2026segura'));
-  assert.equal(wrong.status, 400);
-  assert.equal(w, 1, 'a wrong current password is verified once and nothing is hashed');
+  assert.equal(acquires, 1, 'one slot for both');
+  assert.equal(argon2Stats().peak, 1);
   assert.equal((await change(NEW_PASSWORD, 'demo1234')).status, 204); // back to the demo password
+  // over the length limit: refused without Argon2id (it counts as a C1 guess, as before S-02)
+  const [long, l] = await runs(() => change('x'.repeat(201), NEW_PASSWORD));
+  assert.equal(long.status, 400);
+  assert.equal(l, 0);
+  // busy: 503 without Argon2id, and the C1 attempt is given back each time
+  const held = (await gate.acquire())!;
+  for (let i = 0; i < 6; i++) {
+    const [busy, b] = await runs(() => change('mala-1234', 'Otra2026segura'));
+    assert.equal(busy.status, 503);
+    assert.equal(b, 0);
+  }
+  held();
+  // C1 still has its 4 guesses left (5 minus the long one): the 503s spent none
+  for (let i = 0; i < 4; i++)
+    assert.equal((await change('mala-1234', 'Otra2026segura')).status, 400, `guess ${i + 1}`);
+  assert.equal((await change('mala-1234', 'Otra2026segura')).status, 429);
+  assert.deepEqual(gate.stats(), { active: 0, waiting: 0 });
 });
 
 test('S-02: unknown accounts and wrong passwords still cost one Argon2id each (no enumeration by timing)', async () => {
-  const base = await app({ limit: 3, waitMs: 0 });
+  const base = await app(argon2Gate(ARGON2_DEFAULTS));
   const [a, n1] = await runs(() => login(base, 'nadie@example.com', 'mala-1'));
   const [b, n2] = await runs(() => login(base, 'marta@example.com', 'mala-1'));
   assert.deepEqual([a.status, b.status, n1, n2], [401, 401, 1, 1]);
+});
+
+// ------------------------------------------------------------------ several processes: the cap is per process
+
+test('S-02 (documented assumption): the cap is PER PROCESS — two instances with a limit of 3 run up to 6 at once', async () => {
+  // Each API process has its own gate; two apps here stand for two processes. Charales runs ONE process
+  // (`node api/server.ts`, no cluster): with more, the total is processes × ARGON2_MAX_CONCURRENT (docs/API.md).
+  const a = await app(argon2Gate({ limit: 3, waitMs: 10_000 }));
+  const b = await app(argon2Gate({ limit: 3, waitMs: 10_000 }));
+  const real = crypto.argon2;
+  const slow = mock.method(crypto, 'argon2', (alg: string, params: unknown, cb: unknown) =>
+    setTimeout(() => (real as (...x: unknown[]) => void).call(crypto, alg, params, cb), 150),
+  );
+  resetArgon2Peak();
+  try {
+    const responses = await Promise.all(
+      Array.from({ length: 12 }, (_, i) =>
+        login(i % 2 ? b : a, `proceso${i}@example.com`, 'mala-1'),
+      ),
+    );
+    assert.deepEqual(statuses(responses), { 401: 12 });
+  } finally {
+    slow.mock.restore();
+  }
+  assert.equal(argon2Stats().peak, 6, '3 + 3: not a global limit');
 });

@@ -24,7 +24,6 @@ import {
   verifyPassword,
 } from './auth.ts';
 import type { Ctx, Reply } from './server.ts';
-import { withArgon2Turn } from './argon2-guard.ts';
 
 export const RESET_TOKEN_MINUTES = 60;
 /** Recovery requests per e-mail and IP in the attempt window (counted whether the account exists or not). */
@@ -91,9 +90,9 @@ export async function changePassword(ctx: Ctx, db: Pool): Promise<Reply> {
   attempts.push(attempt);
   // 400, not 401: a typo in the current password must not look like an expired session to the client.
   if (currentPassword.length > 200) return { status: 400, body: { error: WRONG_CURRENT } };
-  // S-02: verification and new hash in one shared Argon2id turn. None free (or MariaDB down): 503 and the C1
-  // reservation is given back — nothing was checked.
-  const turn = await withArgon2Turn(ctx.limiterDb, ctx.argon2, async () =>
+  // S-02: verification and new hash in ONE slot of the Argon2id gate (no release in between). None in time: 503 and
+  // the C1 reservation is given back — nothing was checked.
+  const turn = await ctx.argon2.run(async () =>
     (await verifyPassword(currentPassword, s.user.password_hash))
       ? hashPassword(newPassword)
       : null,
@@ -234,7 +233,7 @@ export async function confirmPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
     );
   if (!ref || ref.usado_en || ref.expira_en <= localDateTime())
     return { status: 400, body: { error: INVALID_LINK } };
-  const turn = await withArgon2Turn(ctx.limiterDb, ctx.argon2, () => hashPassword(newPassword));
+  const turn = await ctx.argon2.run(() => hashPassword(newPassword));
   if (turn.busy) return { status: 503, body: { error: BUSY } }; // the token is untouched
   const hash = turn.value;
   const done = await transaction(db, async (tx) => {

@@ -9,7 +9,7 @@ import mariadb, { type Pool, type PoolConfig } from 'mariadb';
 import * as auth from './auth.ts';
 import * as password from './password.ts';
 import { rpc } from './rpc.ts';
-import { ARGON2_DEFAULTS, argon2LimitsFrom, type Argon2Limits } from './argon2-guard.ts';
+import { ARGON2_DEFAULTS, argon2Gate, argon2LimitsFrom, type Argon2Gate } from './argon2-guard.ts';
 
 /** Any failure without a message meant for the user: never a stack trace, SQL or internal detail (logged instead). */
 export const UNEXPECTED_MESSAGE =
@@ -26,8 +26,8 @@ export interface Ctx {
   mailer: password.Mailer | null;
   /** Pool of the login attempt limiter (S-01): its own small pool in production, the main one otherwise. */
   limiterDb: Pool;
-  /** Shared Argon2id turns (S-02, api/argon2-guard.ts). */
-  argon2: Argon2Limits;
+  /** Argon2id gate of this process (S-02, api/argon2-guard.ts). */
+  argon2: Argon2Gate;
 }
 export interface Reply {
   status: number;
@@ -83,11 +83,12 @@ export function createApp(
     trustedProxies?: readonly string[];
     /** Small pool for the login limiter, so a login flood can't take the connections of the rest of the API (M-1). */
     limiterDb?: Pool;
-    /** Argon2id turns for the whole deployment (S-02); ARGON2_DEFAULTS if omitted. */
-    argon2?: Argon2Limits;
+    /** Argon2id gate of this process (S-02); one with ARGON2_DEFAULTS if omitted. */
+    argon2?: Argon2Gate;
   },
 ): Server {
   const trusted = new Set((options.trustedProxies ?? []).map(plainIp));
+  const gate = options.argon2 ?? argon2Gate(ARGON2_DEFAULTS);
   for (const ip of trusted)
     if (!isIP(ip))
       throw new Error(`TRUSTED_PROXIES: «${ip}» no es una dirección IP (sin rangos ni nombres).`);
@@ -106,7 +107,7 @@ export function createApp(
               secureCookie: options.secureCookie,
               mailer: options.mailer ?? null,
               limiterDb: options.limiterDb ?? db,
-              argon2: options.argon2 ?? ARGON2_DEFAULTS,
+              argon2: gate,
             },
             db,
           )
@@ -227,7 +228,7 @@ if (import.meta.main) {
     mailer: password.mailerFromEnv(env),
     trustedProxies,
     limiterDb,
-    argon2: argon2LimitsFrom(env), // S-02: an invalid value stops the start
+    argon2: argon2Gate(argon2LimitsFrom(env)), // S-02, per process; an invalid value stops the start
   }).listen(port, () =>
     console.log(
       `Charales API en http://localhost:${port} (BD ${env['DB_NAME'] ?? 'escuela_futbol'})`,

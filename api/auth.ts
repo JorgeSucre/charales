@@ -7,7 +7,6 @@ import crypto, { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Pool, PoolConnection } from 'mariadb';
 import type { Ctx, Reply } from './server.ts';
 import { reserveLogin, settleLogin, type Reservation } from './login-limit.ts';
-import { withArgon2Turn } from './argon2-guard.ts';
 
 /** Session policy (HU-002), same values as the mock AuthService. */
 export const SESSION_HOURS = 8;
@@ -135,12 +134,10 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
     'SELECT id, rol_id, nombre, apellido, email, password_hash, activo FROM usuarios WHERE email = ?',
     [email.trim()],
   );
-  // S-02: the verification holds a shared Argon2id turn. None free (or MariaDB down): 503, nothing verified, and the
+  // S-02: the verification holds a slot of this process's Argon2id gate. None in time: 503, nothing verified, and the
   // S-01 reservation is given back — the attempt never happened.
   const dummy = await DUMMY_HASH;
-  const turn = await withArgon2Turn(ctx.limiterDb, ctx.argon2, () =>
-    verifyPassword(password, row?.password_hash ?? dummy),
-  );
+  const turn = await ctx.argon2.run(() => verifyPassword(password, row?.password_hash ?? dummy));
   if (turn.busy) {
     await settleLogin(ctx.limiterDb, reservation, 'not-verified');
     return { status: 503, body: { error: BUSY } };
