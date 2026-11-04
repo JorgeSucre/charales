@@ -92,7 +92,18 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
   - **Pool propio:** el limitador usa 2 conexiones propias con 3 s de espera máxima (`api/server.ts`), así que una
     avalancha de intentos no agota las conexiones del resto de la API.
   - **Restablecer la contraseña no toca los contadores:** sin el contador por cuenta, sólo afectan a la IP que falló.
-  - **Datos guardados:** sólo SHA-256 de cada clave; las filas vencidas se purgan después de cada intento admitido.
+  - **Orden de bloqueo (corregido el 2026-11-04):** toda reserva bloquea primero la fila de la IP y después la de la
+    pareja cuenta + IP. Si la fila de la IP no existe, la transacción la inserta (con 0 intentos) **antes** de leer la
+    pareja. Antes, una solicitud que no encontraba la IP podía bloquear la pareja y quedar esperando la IP que otra ya
+    tenía, mientras esa otra esperaba la pareja: un bloqueo mutuo. Si un contador está en su límite, la transacción se
+    revierte (ROLLBACK), así que un rechazo no deja ni la fila de IP que tuvo que insertar.
+  - **Reintentos:** ante un bloqueo mutuo (1213), un tiempo de espera de bloqueo (1205), «Record has changed» (1020) o
+    la colisión de dos inserciones simultáneas de la misma fila de IP (1062 en esa inserción, y sólo en ella), la
+    reserva se repite como máximo 6 veces en 1,5 s, esperando un tiempo aleatorio de hasta 10·2ⁿ ms (máx. 200 ms)
+    entre intentos. Cualquier otro 1062 es un error. Si se agotan los intentos o el tiempo, el login responde `503`.
+  - **Datos guardados:** sólo SHA-256 de cada clave. Después de cada intento admitido se purgan hasta 100 filas
+    vencidas con `FOR UPDATE SKIP LOCKED`: la purga nunca espera una fila bloqueada, así que no puede participar en un
+    bloqueo mutuo.
   - **Política de fallo:** si MariaDB o el pool del limitador no responden, el login responde `503` y no verifica
     (falla cerrado). La disponibilidad del login depende de la base, igual que la consulta del usuario.
   - **Riesgos residuales:**
