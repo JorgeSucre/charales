@@ -2,7 +2,9 @@
  * S-01 · lock order of the login reservation (api/login-limit.ts). Every request takes the IP row first — inserting it
  * if missing — and only then the account+IP row, so two requests can't hold them in opposite order (the deadlock found
  * by the 2026-11-04 audit). These cases drive `reserveLogin` through instrumented pools that can pause a transaction
- * right before it reads the account+IP row and record (or inject) MariaDB errors.
+ * right before it reads the account+IP row and record (or inject) MariaDB errors. They wrap a pool built like the API's
+ * limiter pool (createLimiterPool: innodb_lock_wait_timeout of 2 s on its sessions), with 5 connections so three
+ * transactions can interleave; the HTTP bursts use the real one (2 connections) per instance.
  */
 import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,14 +12,17 @@ import type { AddressInfo } from 'node:net';
 import type { Pool, PoolConnection } from 'mariadb';
 import { passwordVerifications } from './auth.ts';
 import { forgetRefusals, loginKeys, reserveLogin } from './login-limit.ts';
-import { createApp } from './server.ts';
+import { createApp, createLimiterPool } from './server.ts';
 import { openTestDb, type TestDb } from './test-db.ts';
 
 let t: TestDb;
+let limiter: Pool;
 before(async () => {
   t = await openTestDb('ef_s01order');
+  limiter = createLimiterPool({ ...process.env, DB_NAME: t.name }, { connectionLimit: 5 });
 });
 after(async () => {
+  await limiter?.end();
   await t?.close();
 });
 beforeEach(async () => {
@@ -77,7 +82,7 @@ function probe(
         return typeof v === 'function' ? v.bind(target) : v;
       },
     });
-  const pool = new Proxy(t.db, {
+  const pool = new Proxy(limiter, {
     get(target, prop) {
       const v = Reflect.get(target, prop, target);
       if (prop === 'getConnection') return async () => conn(await (v as Function).call(target));
@@ -232,9 +237,14 @@ test('retries: a deadlock that never clears gives up within the budget (≤ 6 at
 
 test('bursts of 50: one IP with many accounts, one account from many IPs, one pair, two instances — no 503, exact counters', async () => {
   const listen = async () => {
-    const s = createApp(t.db, { secureCookie: false, trustedProxies: ['127.0.0.1'] }).listen(0);
+    const limiterDb = createLimiterPool({ ...process.env, DB_NAME: t.name });
+    const s = createApp(t.db, {
+      secureCookie: false,
+      trustedProxies: ['127.0.0.1'],
+      limiterDb,
+    }).listen(0);
     await new Promise((resolve) => s.once('listening', resolve));
-    return { s, base: `http://127.0.0.1:${(s.address() as AddressInfo).port}` };
+    return { s, limiterDb, base: `http://127.0.0.1:${(s.address() as AddressInfo).port}` };
   };
   const a = await listen();
   const b = await listen();
@@ -288,5 +298,7 @@ test('bursts of 50: one IP with many accounts, one account from many IPs, one pa
   } finally {
     a.s.close();
     b.s.close();
+    await a.limiterDb.end();
+    await b.limiterDb.end();
   }
 });
