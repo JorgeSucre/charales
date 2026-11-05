@@ -204,6 +204,30 @@ export function createPool(
   });
 }
 
+/** S-01: seconds a limiter statement waits for a counter row another request holds before MariaDB answers 1205. */
+export const LIMITER_LOCK_WAIT_S = 2;
+
+/**
+ * M-1: the login limiter's own pool — 2 connections, at most 3 s to get one (then the login answers 503) — so a flood
+ * can't take the connections of the rest of the API. S-01: every connection of THIS pool (also the ones it opens
+ * later) waits at most {@link LIMITER_LOCK_WAIT_S} for a row lock instead of the server's innodb_lock_wait_timeout
+ * (50 s by default). A session setting: the main pool and the server keep their value. `extra` is for tests.
+ */
+export function createLimiterPool(
+  env: Record<string, string | undefined> = process.env,
+  extra: Partial<PoolConfig> = {},
+): Pool {
+  return createPool(env, {
+    connectionLimit: 2,
+    acquireTimeout: 3000,
+    ...extra,
+    initSql: [
+      `SET SESSION innodb_lock_wait_timeout = ${LIMITER_LOCK_WAIT_S}`,
+      ...[extra.initSql ?? []].flat(),
+    ],
+  });
+}
+
 /** Adds STRICT_TRANS_TABLES to whatever sql_mode the server has. */
 export const STRICT_MODE =
   "SET SESSION sql_mode = IF(@@sql_mode = '', 'STRICT_TRANS_TABLES', CONCAT(@@sql_mode, ',STRICT_TRANS_TABLES'))";
@@ -214,8 +238,7 @@ if (import.meta.main) {
   const port = Number(env['PORT'] ?? 3000);
   const secureCookie = env['NODE_ENV'] === 'production' || env['COOKIE_SECURE'] === 'true';
   const trustedProxies = (env['TRUSTED_PROXIES'] ?? '').split(',').filter((ip) => ip.trim());
-  // M-1: the login limiter has 2 connections of its own and waits at most 3 s for one (then the login answers 503).
-  const limiterDb = createPool(env, { connectionLimit: 2, acquireTimeout: 3000 });
+  const limiterDb = createLimiterPool(env);
   createApp(db, {
     secureCookie,
     mailer: password.mailerFromEnv(env),

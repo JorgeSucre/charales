@@ -92,7 +92,26 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
   - **Pool propio:** el limitador usa 2 conexiones propias con 3 s de espera máxima (`api/server.ts`), así que una
     avalancha de intentos no agota las conexiones del resto de la API.
   - **Restablecer la contraseña no toca los contadores:** sin el contador por cuenta, sólo afectan a la IP que falló.
-  - **Datos guardados:** sólo SHA-256 de cada clave; las filas vencidas se purgan después de cada intento admitido.
+  - **Orden de bloqueo (corregido el 2026-11-04):** toda reserva bloquea primero la fila de la IP y después la de la
+    pareja cuenta + IP. Si la fila de la IP no existe, la transacción la inserta (con 0 intentos) **antes** de leer la
+    pareja. Antes, una solicitud que no encontraba la IP podía bloquear la pareja y quedar esperando la IP que otra ya
+    tenía, mientras esa otra esperaba la pareja: un bloqueo mutuo. Si un contador está en su límite, la transacción se
+    revierte (ROLLBACK), así que un rechazo no deja ni la fila de IP que tuvo que insertar.
+  - **Reintentos:** ante un bloqueo mutuo (1213), un tiempo de espera de bloqueo (1205), «Record has changed» (1020) o
+    la colisión de dos inserciones simultáneas de la misma fila de IP (1062 en esa inserción, y sólo en ella), la
+    reserva se repite como máximo 6 veces en 1,5 s, esperando un tiempo aleatorio de hasta 10·2ⁿ ms (máx. 200 ms)
+    entre intentos. Cualquier otro 1062 es un error. Si se agotan los intentos o el tiempo, el login responde `503`.
+  - **Espera de bloqueo:** las conexiones del pool del limitador (`createLimiterPool`, `api/server.ts`) ejecutan al
+    abrirse `SET SESSION innodb_lock_wait_timeout = 2` (`LIMITER_LOCK_WAIT_S`): una sentencia del limitador espera como
+    máximo 2 s una fila que otra transacción tiene bloqueada y entonces MariaDB responde 1205. Afecta sólo a esas
+    sesiones (también a las que el pool abra después; el pool no reinicia la sesión al devolverla); el pool general y
+    el valor global del servidor (50 s por defecto) no cambian. Una contención normal dura milisegundos y se espera sin
+    error. El presupuesto de 1,5 s decide si **empieza** otro intento, no corta una espera en curso: un bloqueo que
+    dura más de 2 s da 503 tras unos 2 s, sin reintento, y el peor caso (un reintento que empieza justo antes de 1,5 s
+    y espera otros 2 s) ronda los 3,5 s.
+  - **Datos guardados:** sólo SHA-256 de cada clave. Después de cada intento admitido se purgan hasta 100 filas
+    vencidas con `FOR UPDATE SKIP LOCKED`: la purga nunca espera una fila bloqueada, así que no puede participar en un
+    bloqueo mutuo.
   - **Política de fallo:** si MariaDB o el pool del limitador no responden, el login responde `503` y no verifica
     (falla cerrado). La disponibilidad del login depende de la base, igual que la consulta del usuario.
   - **Riesgos residuales:**
