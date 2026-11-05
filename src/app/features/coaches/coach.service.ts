@@ -10,7 +10,16 @@ import {
   today,
 } from '../../shared/dates';
 import { matches } from '../../shared/page';
-import { optional, optionalEmail, optionalPhone, required, sameName } from '../../shared/validate';
+import {
+  CONTACT_REQUIRED_MESSAGE,
+  flag,
+  optional,
+  optionalEmail,
+  optionalPersonName,
+  optionalPhone,
+  personName,
+  sameName,
+} from '../../shared/validate';
 import { UserService } from '../users/user.service';
 
 export type CoachDraft = Pick<Coach, 'firstName' | 'lastName1' | 'lastName2' | 'phone' | 'email'>;
@@ -63,13 +72,13 @@ export class CoachService {
   async save(draft: CoachDraft & { id?: Id }): Promise<Coach> {
     this.authz.require(draft.id ? 'entrenadores.editar' : 'entrenadores.crear');
     const data = {
-      firstName: required(draft.firstName, 'El nombre', 100),
-      lastName1: required(draft.lastName1, 'El apellido paterno', 100),
-      lastName2: optional(draft.lastName2, 'El apellido materno', 100),
+      firstName: personName(draft.firstName, 'El nombre'),
+      lastName1: personName(draft.lastName1, 'El apellido paterno'),
+      lastName2: optionalPersonName(draft.lastName2, 'El apellido materno'),
       phone: optionalPhone(draft.phone),
       email: optionalEmail(draft.email),
     };
-    if (!data.phone && !data.email) throw new Error('Captura al menos un teléfono o correo.');
+    if (!data.phone && !data.email) throw new Error(CONTACT_REQUIRED_MESSAGE);
     const dup = this.db.coaches.find(
       (c) =>
         c.id !== draft.id &&
@@ -114,6 +123,7 @@ export class CoachService {
   /** Sporting status. An inactive coach loses the ENTRENADOR profile at next login but keeps history. */
   async setActive(id: Id, active: boolean): Promise<void> {
     this.authz.require('entrenadores.editar');
+    flag(active, 'Valor de «activo» inválido.');
     const before = this.db.get(this.db.coaches, id, 'Entrenador');
     this.db.update(this.db.coaches, id, { active, updatedAt: nowDateTime() });
     this.audit.log(
@@ -204,7 +214,7 @@ export class CoachService {
     const category = this.db.get(this.db.categories, draft.categoryId, 'Categoría');
     if (!coach.active) throw new Error('El entrenador está inactivo.');
     if (!category.active) throw new Error('La categoría está inactiva.');
-    if (!isISODate(draft.startDate)) throw new Error('Fecha de inicio inválida.');
+    if (!isISODate(draft.startDate)) throw new Error('Ingresa una fecha de inicio válida.');
     const same = this.db.coachCategories.filter(
       (a) => a.coachId === coach.id && a.categoryId === category.id,
     );
@@ -307,7 +317,7 @@ export class CoachService {
     if (!coach.active) throw new Error('El entrenador está inactivo.');
     if (cc.status === 'BAJA' || cc.status === 'FINALIZADA')
       throw new Error('La participación no está vigente.');
-    if (!isISODate(draft.startDate)) throw new Error('Fecha de inicio inválida.');
+    if (!isISODate(draft.startDate)) throw new Error('Ingresa una fecha de inicio válida.');
     if (
       !this.db.coachCategories.some(
         (a) =>

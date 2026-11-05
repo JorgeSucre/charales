@@ -20,7 +20,7 @@ import { PlayerService } from '../../core/services/player.service';
 import { isISODate, normalizeDateTime, nowDateTime, today } from '../../shared/dates';
 import { MAX_CENTS, assertCents, sumCents } from '../../shared/money';
 import { Page, matches, paginate } from '../../shared/page';
-import { optional, required } from '../../shared/validate';
+import { catalogName, flag, oneOf, optional, required } from '../../shared/validate';
 import {
   ChargeDraft,
   PERIOD_PATTERN,
@@ -41,6 +41,11 @@ export const METHOD_LABELS: Record<PaymentMethod, string> = {
   TARJETA: 'Tarjeta',
   OTRO: 'Otro',
 };
+
+/** HU-045: forms of payment that need the reference or receipt number of the transaction. */
+export const METHODS_WITH_REFERENCE: readonly PaymentMethod[] = ['TRANSFERENCIA', 'TARJETA'];
+export const REFERENCE_REQUIRED_MESSAGE =
+  'Falta la referencia del comprobante. Es un dato obligatorio para transferencia o tarjeta.';
 
 export const CHARGE_STATUS_LABELS: Record<ChargeStatus, string> = {
   PENDIENTE: 'Pendiente',
@@ -130,7 +135,8 @@ export class BillingService {
     draft: Pick<ChargeConcept, 'name' | 'suggestedAmountCents' | 'recurring'> & { id?: Id },
   ): Promise<ChargeConcept> {
     this.authz.require(draft.id ? 'cobranza.editar' : 'cobranza.crear');
-    const name = required(draft.name, 'El nombre', 100);
+    flag(draft.recurring, 'Valor de «recurrente» inválido.');
+    const name = catalogName(draft.name, 'El nombre', 100);
     this.assertAmount(draft.suggestedAmountCents, true);
     if (
       this.db.concepts.some((c) => c.id !== draft.id && c.name.toLowerCase() === name.toLowerCase())
@@ -176,6 +182,7 @@ export class BillingService {
   /** HU-043.3: concepts are deactivated, never deleted (charges reference them). */
   async setConceptActive(id: Id, active: boolean): Promise<void> {
     this.authz.require('cobranza.editar');
+    flag(active, 'Valor de «activo» inválido.');
     this.db.get(this.db.concepts, id, 'Concepto');
     this.db.update(this.db.concepts, id, { active });
     this.audit.log(
@@ -231,7 +238,7 @@ export class BillingService {
     if (!concept.active) throw new Error('El concepto está inactivo.');
     if (!PERIOD_PATTERN.test(draft.period))
       throw new Error('El periodo debe tener formato AAAA-MM.');
-    if (!isISODate(draft.dueDate)) throw new Error('Fecha de vencimiento inválida.');
+    if (!isISODate(draft.dueDate)) throw new Error('Ingresa una fecha de vencimiento válida.');
     if (concept.suggestedAmountCents <= 0)
       throw new Error('El concepto no tiene importe sugerido.');
     if (draft.excludedPlayerIds.length && !draft.exclusionReason?.trim())
@@ -404,7 +411,11 @@ export class BillingService {
   async registerPayment(draft: PaymentDraft): Promise<Payment> {
     this.authz.require('pagos.crear');
     const player = this.db.get(this.db.players, draft.playerId, 'Jugador');
-    if (!METHOD_LABELS[draft.method]) throw new Error('Forma de pago inválida.');
+    oneOf(draft.method, METHOD_LABELS, 'Selecciona una forma de pago válida.');
+    // HU-045: trimmed; blank = none. Checked here, so a direct API call can't skip it.
+    const reference = optional(draft.reference, 'La referencia del comprobante', 100);
+    if (METHODS_WITH_REFERENCE.includes(draft.method) && !reference)
+      throw new Error(REFERENCE_REQUIRED_MESSAGE);
     this.assertAmount(draft.amountCents, false);
     if (
       draft.tutorId !== null &&
@@ -438,6 +449,7 @@ export class BillingService {
         paidAt,
         amountCents: draft.amountCents,
         method: draft.method,
+        reference,
         status: 'APLICADO',
         cancellationReason: null,
         recordedBy: this.audit.currentUserId(),
@@ -647,6 +659,11 @@ export class BillingService {
     adjustmentCents: Cents;
   }): Promise<Discount> {
     this.authz.require('descuentos.crear');
+    oneOf(
+      draft.type,
+      ['DESCUENTO', 'BECA'],
+      'Selecciona un tipo de ajuste válido: descuento o beca.',
+    );
     const reason = required(draft.reason, 'El motivo');
     this.assertAmount(draft.adjustmentCents, false);
     const charge = this.db.get(this.db.charges, draft.chargeId, 'Cargo');

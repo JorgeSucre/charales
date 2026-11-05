@@ -8,7 +8,14 @@ import { DateTime, Id, Role, User, fullName } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
 import { nowDateTime } from '../../shared/dates';
 import { matches } from '../../shared/page';
-import { EMAIL_PATTERN, required } from '../../shared/validate';
+import {
+  EMAIL_MESSAGE,
+  EMAIL_PATTERN,
+  flag,
+  optionalPersonName,
+  personName,
+  required,
+} from '../../shared/validate';
 
 export interface UserView extends User {
   displayName: string;
@@ -64,9 +71,9 @@ export class UserService {
     this.authz.require(draft.id ? 'usuarios.editar' : 'usuarios.crear');
     if (draft.id) this.authz.assertCanManageAccount(draft.id);
     const email = required(draft.email, 'El correo', 150).toLowerCase();
-    if (!EMAIL_PATTERN.test(email)) throw new Error('Correo inválido.');
-    const firstName = required(draft.firstName, 'El nombre', 100);
-    const lastName = draft.lastName.trim() || null;
+    if (!EMAIL_PATTERN.test(email)) throw new Error(EMAIL_MESSAGE);
+    const firstName = personName(draft.firstName, 'El nombre');
+    const lastName = optionalPersonName(draft.lastName, 'El apellido');
     const role = this.db.roles.find(
       (r) => r.id === draft.roleId && r.kind === 'SEGURIDAD' && r.active,
     );
@@ -86,6 +93,7 @@ export class UserService {
         email,
         updatedAt: now,
       });
+      if (before.email !== email) await this.afterEmailChange(row);
       this.audit.log(
         'EDITAR',
         'usuarios',
@@ -121,10 +129,26 @@ export class UserService {
     return this.db.respond(this.view(row));
   }
 
+  /**
+   * The address that received access links may no longer be this person's: those links stop working and other sessions
+   * close. A pending invitation is sent again, to the new address (audit IND-01).
+   */
+  private async afterEmailChange(row: UserRow): Promise<void> {
+    const now = nowDateTime();
+    const mine = this.session.user()?.sessionId;
+    for (const s of this.db.sessions.filter(
+      (s) => s.userId === row.id && !s.closedAt && s.id !== mine,
+    ))
+      this.db.update(this.db.sessions, s.id, { closedAt: now });
+    if (this.auth.revokeAccessTokens(row.id))
+      await this.auth.issueResetToken(row, 'Tu cuenta en Charales', 'INVITACION');
+  }
+
   /** HU-004.3: a deactivated account can't log in; its open sessions are closed. */
   async setActive(id: Id, active: boolean): Promise<void> {
     this.authz.require(active ? 'usuarios.editar' : 'usuarios.cancelar');
     this.authz.assertCanManageAccount(id);
+    flag(active, 'Valor de «activo» inválido.');
     const before = this.db.get(this.db.users, id, 'Usuario');
     if (!active) {
       if (id === this.session.user()?.userId)
@@ -137,6 +161,7 @@ export class UserService {
       if (!active)
         for (const s of this.db.sessions.filter((s) => s.userId === id && !s.closedAt))
           this.db.update(this.db.sessions, s.id, { closedAt: now });
+      if (!active) this.auth.revokeAccessTokens(id);
       this.audit.log(
         active ? 'EDITAR' : 'CANCELAR',
         'usuarios',
@@ -158,7 +183,7 @@ export class UserService {
   async profileAccount(email: string): Promise<{ user: UserRow; created: boolean }> {
     this.authz.require('tutores.editar', 'entrenadores.editar');
     const normalized = required(email, 'El correo', 150).toLowerCase();
-    if (!EMAIL_PATTERN.test(normalized)) throw new Error('Correo inválido.');
+    if (!EMAIL_PATTERN.test(normalized)) throw new Error(EMAIL_MESSAGE);
     const existing = this.db.users.find((u) => u.email.toLowerCase() === normalized);
     if (existing) {
       // Linking your own login to a profile would grant you that profile's permissions (self-escalation).

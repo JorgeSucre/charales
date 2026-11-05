@@ -129,6 +129,9 @@ PlayerCategory  = player + category + [start, end) "juega en Sub-10 desde el 5 d
 - Un pago no puede aplicarse al cargo de **otro jugador**, ni quedar aplicado por más o menos de su monto.
 - La única forma de registrar pagos desde la app es `BillingService.registerPayment(PaymentDraft)`
   (ver `docs/PLAN.md` › Pagos).
+- `PaymentDraft.reference` (HU-045, criterio 5, ratificado el 2026-11-02): obligatoria con `TRANSFERENCIA` o `TARJETA`,
+  opcional con `EFECTIVO` u `OTRO`; se guarda recortada en `pagos.referencia` (migración 004) y vuelve en `Payment`
+  (recibo). Los pagos anteriores tienen `NULL` (R22 de [`DOMAIN_RULES.md`](../DOMAIN_RULES.md)).
 
 ### Qué capa valida qué
 
@@ -195,8 +198,12 @@ UniformOrder ──< UniformOrderLine (quantity, unit_price_cents histórico, en
 
 ## 7. Contratos de frontera C1–C6 (resueltos con la tabla oficial)
 
-**C1 — Tutor ↔ jugador.** `tutor_players` sólo se escribe con `TutorService` (Borrayo, HU-011): `create(tutor, links)`,
-`linkPlayer(tutorId, playerId, relationship, isPrimary)`, `unlinkPlayer`. El alta de jugador (Joss, HU-008) pide ahí
+**C1 — Tutor ↔ jugador.** `tutor_players` sólo se escribe con `TutorService` (Borrayo, HU-011):
+`save(tutor + links)` da de alta o edita al tutor y **reemplaza** su lista de vínculos (parentesco y contacto principal
+por par; un vínculo con pagos de ese tutor no se puede quitar), y `setPrimary(playerId, tutorId)` cambia el contacto
+principal de un jugador en una sola transacción (el tutor debe estar vinculado). No existen `linkPlayer`/`unlinkPlayer`
+como operaciones separadas; tampoco se borra ni se desactiva un tutor. El contacto principal es opcional (R20 de
+[`DOMAIN_RULES.md`](../DOMAIN_RULES.md)). El alta de jugador (Joss, HU-008) pide ahí
 el vínculo si captura tutor. La vinculación de cuenta (Armando, HU-012) y la edición de contacto (Armando, HU-064) son
 operaciones de `TutorService`.
 

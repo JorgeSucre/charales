@@ -1,7 +1,8 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { CharalesApi } from './charales-api.service';
+import { AppNotice } from '../services/app-notice.service';
+import { CharalesApi, MAIL_PENDING_NOTICE } from './charales-api.service';
 
 /** Rows exactly as GET /api/jugadores and /api/categorias return them for db/mariadb/020_dev_seed.sql. */
 const JUGADOR_J0001 = {
@@ -43,6 +44,22 @@ describe('CharalesApi (HTTP layer to the REST API)', () => {
     http = TestBed.inject(HttpTestingController);
   });
   afterEach(() => http.verify());
+
+  it('an operation whose e-mail stayed queued returns its result and tells the user (F5-08)', async () => {
+    const notice = TestBed.inject(AppNotice);
+    const done = api.rpc('UserService', 'save', [{}]);
+    http.expectOne('/api/rpc').flush({ result: { id: 7 }, mailPending: true });
+    await expect(done).resolves.toEqual({ id: 7 });
+    expect(notice.message()).toBe(MAIL_PENDING_NOTICE);
+  });
+
+  it('a normal operation shows no notice', async () => {
+    const notice = TestBed.inject(AppNotice);
+    const done = api.rpc('UserService', 'save', [{}]);
+    http.expectOne('/api/rpc').flush({ result: { id: 8 } });
+    await expect(done).resolves.toEqual({ id: 8 });
+    expect(notice.message()).toBeNull();
+  });
 
   it('players(): GET /api/jugadores, same-origin, no credentials flag needed', async () => {
     const result = api.players();
@@ -100,16 +117,18 @@ describe('CharalesApi (HTTP layer to the REST API)', () => {
     http
       .expectOne('/api/jugadores')
       .flush(
-        { error: 'Sesión no iniciada o expirada.' },
+        { error: 'Tu sesión no está iniciada o ya expiró. Inicia sesión de nuevo.' },
         { status: 401, statusText: 'Unauthorized' },
       );
-    await expect(players).rejects.toThrow('Sesión no iniciada o expirada.');
+    await expect(players).rejects.toThrow(
+      'Tu sesión no está iniciada o ya expiró. Inicia sesión de nuevo.',
+    );
 
     const session = api.session();
     http
       .expectOne('/auth/session')
       .flush(
-        { error: 'Sesión no iniciada o expirada.' },
+        { error: 'Tu sesión no está iniciada o ya expiró. Inicia sesión de nuevo.' },
         { status: 401, statusText: 'Unauthorized' },
       );
     expect(await session).toBeNull();
@@ -120,20 +139,20 @@ describe('CharalesApi (HTTP layer to the REST API)', () => {
     http
       .expectOne('/api/categorias')
       .flush(
-        { error: 'No tienes permiso para esta operación.' },
+        { error: 'No tienes permiso para realizar esta acción.' },
         { status: 403, statusText: 'Forbidden' },
       );
-    await expect(result).rejects.toThrow('No tienes permiso para esta operación.');
+    await expect(result).rejects.toThrow('No tienes permiso para realizar esta acción.');
   });
 
   it('status 0 / proxy 502 (API unreachable): a clear connection message, also from session()', async () => {
     const result = api.session();
     http.expectOne('/auth/session').error(new ProgressEvent('error'), { status: 0 });
-    await expect(result).rejects.toThrow('No se pudo conectar con la API');
+    await expect(result).rejects.toThrow('No se pudo conectar con el servidor');
 
     const viaProxy = api.players(); // ng serve proxy with the API stopped: 502, empty body
     http.expectOne('/api/jugadores').flush('', { status: 502, statusText: 'Bad Gateway' });
-    await expect(viaProxy).rejects.toThrow('No se pudo conectar con la API');
+    await expect(viaProxy).rejects.toThrow('No se pudo conectar con el servidor');
   });
 
   it('login(): POST /auth/login with a JSON body; the cookie is left to the browser', async () => {

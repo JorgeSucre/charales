@@ -4,7 +4,7 @@ import { CharalesApi } from '../../core/api/charales-api.service';
 import { AuthService } from '../../core/auth/auth.service';
 import { fullName } from '../../core/models';
 import { SEX_LABELS, STATUS_LABELS } from '../../core/services/player.service';
-import { FieldError } from '../../shared/field-error';
+import { FieldA11y, FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
 import { Submission } from '../../shared/submission';
 import { SubmissionAlert } from '../../shared/ui';
@@ -16,7 +16,7 @@ import { SubmissionAlert } from '../../shared/ui';
  */
 @Component({
   selector: 'app-api-demo-page',
-  imports: [ReactiveFormsModule, FieldError, LoadState, SubmissionAlert],
+  imports: [ReactiveFormsModule, FieldError, FieldA11y, LoadState, SubmissionAlert],
   template: `
     <h1>Datos desde la API</h1>
     <p class="alert info">
@@ -139,8 +139,8 @@ import { SubmissionAlert } from '../../shared/ui';
           <form [formGroup]="form" (ngSubmit)="login()" novalidate class="grid-form">
             <h2>Iniciar sesión en la API</h2>
             <p class="muted">
-              No hay sesión de la API en este navegador. Usa una cuenta de desarrollo (contraseña
-              <strong>demo1234</strong>); la API responde 403 si la cuenta no tiene permiso.
+              No hay sesión de la API en este navegador. Usa una cuenta de desarrollo; la API
+              responde 403 si la cuenta no tiene permiso.
             </p>
             <label
               >Correo <input type="email" formControlName="email" autocomplete="username"

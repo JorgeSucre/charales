@@ -1,6 +1,6 @@
 import { Injectable, computed, inject } from '@angular/core';
 import { MockDb, UserRow } from '../data/mock-db';
-import { TokenPurpose, fullName } from '../models';
+import { Id, TokenPurpose, fullName } from '../models';
 import { AuditService } from '../services/audit.service';
 import { MailerService } from '../services/mailer.service';
 import { dateTimeIn, nowDateTime } from '../../shared/dates';
@@ -219,6 +219,18 @@ export class AuthService {
       subject,
       `Abre este enlace para definir tu contraseña (válido ${validity}): /reset-password?token=${token}`,
     );
+  }
+
+  /** Every live access link of an account stops working. True if one of them was a pending invitation. */
+  revokeAccessTokens(userId: Id): boolean {
+    const now = nowDateTime();
+    let invited = false;
+    for (const t of this.db.resetTokens)
+      if (t.userId === userId && !t.usedAt && t.expiresAt > now) {
+        invited ||= t.purpose === 'INVITACION';
+        this.db.update(this.db.resetTokens, t.id, { usedAt: now });
+      }
+    return invited;
   }
 
   /** HU-005: a valid, unused, unexpired token sets the password once; it then closes every open session. */

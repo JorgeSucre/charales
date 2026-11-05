@@ -37,9 +37,13 @@ export function grants(user: AuthUser | null, permission: PermissionKey): boolea
     : user.officePermissions.includes(permission);
 }
 
-/** Landing page by role: tutors go to the portal, coaches to their panel, staff to the home page. */
+/**
+ * Landing page by role: staff go to the Tablero (the school's main page) when their role may read it; tutors to the
+ * portal; coaches to their panel. '/' only for a session that has none of those (it shows a short notice).
+ */
 export function homeUrlOf(user: AuthUser | null): string {
-  if (!user || user.isStaff) return '/';
+  if (!user) return '/';
+  if (user.isStaff) return grants(user, 'reportes.consultar') ? '/admin/dashboard' : '/';
   if (user.coachId && grants(user, 'panel_entrenador.consultar')) return '/coach';
   if (user.tutorId && grants(user, 'portal.consultar')) return '/portal';
   return '/';

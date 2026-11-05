@@ -13,6 +13,7 @@ import {
   SetupError,
   baseSchema,
   dropTestDatabase,
+  uniqueTestDatabase,
   loadDevSeed,
   serverOptions,
   setupDatabase,
@@ -21,9 +22,10 @@ import {
 import { cachedTables, unitOfWork } from './rpc.ts';
 import { createApp, createPool } from './server.ts';
 
-const FRESH = `ef_setup_${process.pid}_a`;
-const FOREIGN = `ef_setup_${process.pid}_b`;
-const SEED = `ef_setup_${process.pid}_c`;
+const RUN = uniqueTestDatabase('ef_setup');
+const FRESH = `${RUN}_a`;
+const FOREIGN = `${RUN}_b`;
+const SEED = `${RUN}_c`;
 const env = (name: string) => ({ ...process.env, DB_NAME: name });
 
 after(async () => {
@@ -41,6 +43,11 @@ test('db:setup creates and prepares a new database; a second run changes nothing
     '001_token_finalidad.sql',
     '002_cargos_vencidos.sql',
     '003_version_datos.sql',
+    '004_pago_referencia.sql',
+    '005_limite_acceso.sql',
+    '006_turnos_argon2.sql',
+    '007_correo_y_limites.sql',
+    '008_retencion_y_dispositivos.sql',
   ]);
   assert.deepEqual(first.counts, { usuarios: 0, jugadores: 0, rol_permiso: 106 });
   const second = await setupDatabase(env(FRESH));
@@ -106,7 +113,7 @@ test('db:mariadb:dev-seed is db:setup -- --dev-seed; these tests only use ef_* d
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   // The old script piped all of 010 (initial matrix included, INSERT IGNORE) and 020 with `sh`, on any database.
   assert.equal(pkg.scripts['db:mariadb:dev-seed'], 'npm run db:setup -- --dev-seed');
-  for (const name of [FRESH, FOREIGN, SEED]) assert.match(name, /^ef_setup_\d+_[a-z]$/);
+  for (const name of [FRESH, FOREIGN, SEED]) assert.match(name, /^ef_setup_\d+_[0-9a-f]{8}_[a-z]$/);
 });
 
 test('dev-seed: a seed that cannot land whole is refused and leaves nothing behind', async () => {
@@ -257,7 +264,7 @@ test('SQL files with DELIMITER blocks are split the way the server needs', () =>
 
 test('db:admin creates the first administrator (argon2id) and never overwrites an existing account', async () => {
   const db = createPool(env(FRESH));
-  const server = createApp(db, { secureCookie: false }).listen(0);
+  const server = createApp(db, { secureCookie: false }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const login = (password: string) =>
     fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/auth/login`, {

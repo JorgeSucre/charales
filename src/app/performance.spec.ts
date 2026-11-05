@@ -73,6 +73,7 @@ function seedLarge(db: MockDb): void {
           paidAt: '2026-07-01T10:00:00',
           amountCents: 60000,
           method: 'EFECTIVO',
+          reference: null,
           status: 'APLICADO',
           cancellationReason: null,
           recordedBy: 2,

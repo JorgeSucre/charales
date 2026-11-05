@@ -9,9 +9,10 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import type { Pool } from 'mariadb';
 import { createApp, createPool } from './server.ts';
-import { dropTestDatabase, runSqlFile, setupDatabase } from './schema.ts';
+import { recoveriesSettled } from './password.ts';
+import { dropTestDatabase, runSqlFile, setupDatabase, uniqueTestDatabase } from './schema.ts';
 
-const DB = `ef_apitest_${process.pid}`;
+const DB = uniqueTestDatabase('ef_apitest');
 
 let db: Pool;
 let server: Server;
@@ -20,14 +21,13 @@ let base: string;
 const mail: { to: string; subject: string; text: string }[] = [];
 
 before(async () => {
-  await dropTestDatabase(process.env, DB);
   await setupDatabase({ ...process.env, DB_NAME: DB });
   await runSqlFile(process.env, DB, 'db/mariadb/020_dev_seed.sql');
   db = createPool({ ...process.env, DB_NAME: DB });
   server = createApp(db, {
     secureCookie: false,
     mailer: (to, subject, text) => void mail.push({ to, subject, text }),
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -89,7 +89,7 @@ test('wrong password, unknown e-mail and disabled account → same 401, no cooki
 test('valid login → AuthUser + HttpOnly cookie; only the token hash is stored', async () => {
   const res = await login('ADMIN@example.com');
   assert.equal(res.status, 200);
-  const setCookie = res.headers.get('set-cookie') ?? '';
+  const setCookie = res.headers.getSetCookie()[0] ?? '';
   assert.match(
     setCookie,
     /^charales_sid=[\w-]{43}; HttpOnly; SameSite=Strict; Path=\/; Max-Age=28800$/,
@@ -213,7 +213,11 @@ const post = (path: string, body: unknown, cookie?: string) =>
   });
 const changePassword = (cookie: string | undefined, currentPassword: string, newPassword: string) =>
   post('/auth/password', { currentPassword, newPassword }, cookie);
-const requestReset = (email: string) => post('/auth/password-reset/request', { email });
+const requestReset = async (email: string) => {
+  const res = await post('/auth/password-reset/request', { email });
+  await recoveriesSettled(); // the work runs after the answer (S-06)
+  return res;
+};
 const confirmReset = (token: string, newPassword: string) =>
   post('/auth/password-reset/confirm', { token, newPassword });
 /** Raw token from the last captured e-mail to `to`. */
@@ -345,14 +349,17 @@ test('reset: policy is checked; invalid tokens get the generic message', async (
   assert.deepEqual(await res.json(), { error: 'El enlace no es válido o ya expiró.' });
 });
 
-test('reset request: limited per e-mail and IP (429), whether the account exists or not', async () => {
+test('reset request: limited per e-mail, in silence, whether the account exists or not', async () => {
   for (let i = 0; i < 5; i++) assert.equal((await requestReset('limite@example.com')).status, 204);
-  assert.equal((await requestReset('limite@example.com')).status, 429);
-  assert.equal((await requestReset('LIMITE@example.com ')).status, 429, 'normalized e-mail');
+  // Past the account's budget nothing is done, and the answer is the same: others can't show its owner a refusal.
+  const rows = await db.query('SELECT COUNT(*) AS n FROM limite_acceso');
+  assert.equal((await requestReset('limite@example.com')).status, 204);
+  assert.equal((await requestReset('LIMITE@example.com ')).status, 204, 'normalized e-mail');
+  assert.deepEqual(await db.query('SELECT COUNT(*) AS n FROM limite_acceso'), rows);
 });
 
 test('reset request without a mail transport (D4b): 503 before reading the account, no token created', async () => {
-  const noMail = createApp(db, { secureCookie: false }).listen(0);
+  const noMail = createApp(db, { secureCookie: false }).listen(0, '127.0.0.1');
   await new Promise((resolve) => noMail.once('listening', resolve));
   const url = `http://127.0.0.1:${(noMail.address() as AddressInfo).port}/auth/password-reset/request`;
   try {

@@ -145,7 +145,7 @@ describe('routes & RBAC', () => {
     // /admin/api: no API session in tests (401) → the page shows its API login form, not an error.
     for (const req of TestBed.inject(HttpTestingController).match('/auth/session'))
       req.flush(
-        { error: 'Sesión no iniciada o expirada.' },
+        { error: 'Tu sesión no está iniciada o ya expiró. Inicia sesión de nuevo.' },
         { status: 401, statusText: 'Unauthorized' },
       );
     harness.detectChanges();

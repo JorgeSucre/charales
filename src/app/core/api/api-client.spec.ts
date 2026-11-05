@@ -144,8 +144,13 @@ describe('API client (ApiAuthService + RPC)', () => {
     const pending = TestBed.inject(PlayerService).search({});
     http
       .expectOne('/api/rpc')
-      .flush({ error: 'Sesión no iniciada o expirada.' }, { status: 401, statusText: 'x' });
-    await expect(pending).rejects.toThrow('Sesión no iniciada o expirada.');
+      .flush(
+        { error: 'Tu sesión no está iniciada o ya expiró. Inicia sesión de nuevo.' },
+        { status: 401, statusText: 'x' },
+      );
+    await expect(pending).rejects.toThrow(
+      'Tu sesión no está iniciada o ya expiró. Inicia sesión de nuevo.',
+    );
     expect(store.user()).toBeNull();
     expect(navigate).toHaveBeenCalledWith(
       ['/login'],
@@ -158,8 +163,11 @@ describe('API client (ApiAuthService + RPC)', () => {
     const pending = TestBed.inject(PlayerService).search({});
     http
       .expectOne('/api/rpc')
-      .flush({ error: 'No tienes permiso para esta operación.' }, { status: 403, statusText: 'x' });
-    await expect(pending).rejects.toThrow('No tienes permiso para esta operación.');
+      .flush(
+        { error: 'No tienes permiso para realizar esta acción.' },
+        { status: 403, statusText: 'x' },
+      );
+    await expect(pending).rejects.toThrow('No tienes permiso para realizar esta acción.');
     expect(store.user()).toEqual(USER);
   });
 });

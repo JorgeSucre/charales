@@ -53,12 +53,16 @@ test('HU-008: register a player — data, age, evident duplicates, internal iden
   const rec = await t.ok<{ age: number }>(t.call(secretaria, 'PlayerService', 'record', p.id));
   assert.equal(typeof rec.age, 'number', '2) age is computed');
   await t.refused(
-    t.call(secretaria, 'PlayerService', 'create', player('Nuevo')),
+    () => t.call(secretaria, 'PlayerService', 'create', player('Nuevo')),
     400,
     /existe|duplicad/i,
   );
   assert.equal(await t.count("SELECT COUNT(*) AS n FROM jugadores WHERE nombre = 'Nuevo'"), 1);
-  await t.refused(t.call(secretaria, 'PlayerService', 'create', player('')), 400);
+  await t.refused(
+    () => t.call(secretaria, 'PlayerService', 'create', player('')),
+    400,
+    /^Falta el nombre\. Es un dato obligatorio\.$/,
+  );
 });
 
 test('HU-009: edit a player — authorized fields, same id, modification date, required fields', async () => {
@@ -88,14 +92,15 @@ test('HU-009: edit a player — authorized fields, same id, modification date, r
     1,
   );
   await t.refused(
-    t.call(secretaria, 'PlayerService', 'update', 3, { ...player('Mateo'), birthDate: '' }),
+    () => t.call(secretaria, 'PlayerService', 'update', 3, { ...player('Mateo'), birthDate: '' }),
     400,
+    /^Ingresa una fecha de nacimiento válida\.$/,
   );
 });
 
 test('HU-010: status change — reason, history kept, inactive player cannot join categories', async () => {
   await t.refused(
-    t.call(secretaria, 'PlayerService', 'changeStatus', 5, 'BAJA_TEMPORAL', ''),
+    () => t.call(secretaria, 'PlayerService', 'changeStatus', 5, 'BAJA_TEMPORAL', ''),
     400,
     /motivo/i,
   );
@@ -107,20 +112,81 @@ test('HU-010: status change — reason, history kept, inactive player cannot joi
     { ...hist },
     { estatus_anterior: 'ACTIVO', estatus_nuevo: 'BAJA_TEMPORAL', motivo: 'Lesión' },
   );
-  assert.ok(
-    (await t.count('SELECT COUNT(*) AS n FROM cargos WHERE jugador_id = 5')) >= 0,
-    '4) nothing deleted',
-  );
+  // 3) tournaments and 4) history kept: «HU-010.3 …» and «HU-010.4 …» at the end of this file.
   await t.refused(
-    t.call(admin, 'PlayerCategoryService', 'assign', {
-      playerId: 5,
-      categoryId: 3,
-      date: '2026-10-13',
-      exceptionReason: null,
-    }),
+    () =>
+      t.call(admin, 'PlayerCategoryService', 'assign', {
+        playerId: 5,
+        categoryId: 3,
+        date: '2026-10-13',
+        exceptionReason: null,
+      }),
     400,
+    /^Sólo jugadores activos pueden inscribirse a una categoría\.$/,
   );
   await t.ok(t.call(secretaria, 'PlayerService', 'changeStatus', 5, 'ACTIVO', 'Alta médica'));
+});
+
+test('HU-010: status change — unknown status (400) or no permission (403) writes nothing; admin keeps history', async () => {
+  const snapshot = async (id: number) => ({
+    player: { ...(await t.db.query('SELECT * FROM jugadores WHERE id = ?', [id]))[0] },
+    history: await t.count('SELECT COUNT(*) AS n FROM historial_estatus WHERE jugador_id = ?', [
+      id,
+    ]),
+    audit: await t.count(
+      "SELECT COUNT(*) AS n FROM auditoria WHERE entidad = 'jugadores' AND entidad_id = ?",
+      [id],
+    ),
+  });
+  const before = await snapshot(5);
+  // ['BAJA_TEMPORAL']: an array holding a valid status is still not a status.
+  for (const bad of ['SUSPENDIDO', 'activo', 'toString', null, ['BAJA_TEMPORAL']])
+    await t.refused(
+      () => t.call(secretaria, 'PlayerService', 'changeStatus', 5, bad, 'Motivo'),
+      400,
+      /^Selecciona un estatus válido\.$/,
+    );
+  assert.deepEqual(await snapshot(5), before, 'unknown status: nothing written');
+
+  // A tutor can't change it, not even for their own child (tutor 1 → player 1).
+  const tutor = await t.login('tutor@example.com');
+  const child = await snapshot(1);
+  await t.refused(
+    () => t.call(tutor, 'PlayerService', 'changeStatus', 1, 'BAJA_TEMPORAL', 'x'),
+    403,
+    /^No tienes permiso para realizar esta acción\.$/,
+  );
+  assert.deepEqual(await snapshot(1), child, 'forbidden: nothing written');
+
+  const [{ id: adminId }] = await t.db.query(
+    "SELECT id FROM usuarios WHERE email = 'admin@example.com'",
+  );
+  await t.ok(t.call(admin, 'PlayerService', 'changeStatus', 5, 'BAJA_TEMPORAL', 'Viaje'));
+  await t.ok(t.call(admin, 'PlayerService', 'changeStatus', 5, 'ACTIVO', 'Regresó'));
+  const rows = await t.db.query(
+    'SELECT estatus_anterior, estatus_nuevo, motivo, cambiado_por FROM historial_estatus WHERE jugador_id = 5 ORDER BY id DESC LIMIT 2',
+  );
+  assert.deepEqual(
+    rows.map((r: object) => ({ ...r })),
+    [
+      {
+        estatus_anterior: 'BAJA_TEMPORAL',
+        estatus_nuevo: 'ACTIVO',
+        motivo: 'Regresó',
+        cambiado_por: adminId,
+      },
+      {
+        estatus_anterior: 'ACTIVO',
+        estatus_nuevo: 'BAJA_TEMPORAL',
+        motivo: 'Viaje',
+        cambiado_por: adminId,
+      },
+    ],
+  );
+  const after = await snapshot(5);
+  assert.equal(after.player.estatus, 'ACTIVO');
+  assert.equal(after.history, before.history + 2);
+  assert.equal(after.audit, before.audit + 2);
 });
 
 test('HU-011: tutors — N:M, one primary contact per player, contact validation', async () => {
@@ -151,19 +217,20 @@ test('HU-011: tutors — N:M, one primary contact per player, contact validation
   assert.equal(email.email, 'rosa@example.com');
   // 3) one primary contact per player: Teresa already is Diego's, so a second one is refused and nothing changes.
   await t.refused(
-    t.call(secretaria, 'TutorService', 'save', {
-      id: tutor.id,
-      firstName: 'Rosa',
-      lastName1: 'Méndez',
-      lastName2: null,
-      phone: '5511112222',
-      email: 'rosa@example.com',
-      address: null,
-      links: [
-        { playerId: 1, relationship: 'Abuela', isPrimary: true },
-        { playerId: 3, relationship: 'Abuela', isPrimary: false },
-      ],
-    }),
+    () =>
+      t.call(secretaria, 'TutorService', 'save', {
+        id: tutor.id,
+        firstName: 'Rosa',
+        lastName1: 'Méndez',
+        lastName2: null,
+        phone: '5511112222',
+        email: 'rosa@example.com',
+        address: null,
+        links: [
+          { playerId: 1, relationship: 'Abuela', isPrimary: true },
+          { playerId: 3, relationship: 'Abuela', isPrimary: false },
+        ],
+      }),
     400,
     /contacto principal/,
   );
@@ -175,18 +242,143 @@ test('HU-011: tutors — N:M, one primary contact per player, contact validation
     [1],
   );
   await t.refused(
-    t.call(secretaria, 'TutorService', 'save', {
-      firstName: 'Mal',
-      lastName1: 'Correo',
-      lastName2: null,
-      phone: null,
-      email: 'no-es-correo',
-      address: null,
-      links: [{ playerId: 2, relationship: 'Tío', isPrimary: false }],
-    }),
+    () =>
+      t.call(secretaria, 'TutorService', 'save', {
+        firstName: 'Mal',
+        lastName1: 'Correo',
+        lastName2: null,
+        phone: null,
+        email: 'no-es-correo',
+        address: null,
+        links: [{ playerId: 2, relationship: 'Tío', isPrimary: false }],
+      }),
     400,
     /correo/i,
   );
+});
+
+test('HU-008/011/022: contact validation through the API — phone formats, optional e-mail, R11', async () => {
+  const tutor = (phone: unknown, email: unknown, firstName = 'Contacto') => ({
+    firstName,
+    lastName1: 'Prueba',
+    lastName2: null,
+    phone,
+    email,
+    address: null,
+    links: [{ playerId: 2, relationship: 'Tía', isPrimary: false }],
+  });
+  // International phone with separators: accepted and stored normalized; the optional e-mail may stay empty.
+  const intl = await t.ok<{ id: number }>(
+    t.call(secretaria, 'TutorService', 'save', tutor('+1 (555) 123-4567', '   ', 'Intl')),
+  );
+  const [row] = await t.db.query('SELECT telefono, email FROM tutores WHERE id = ?', [intl.id]);
+  assert.deepEqual({ ...row }, { telefono: '+15551234567', email: null });
+  const coach = await t.ok<{ id: number }>(
+    t.call(secretaria, 'CoachService', 'save', {
+      firstName: 'Ana',
+      lastName1: 'Puntos',
+      lastName2: null,
+      phone: '33.1234.5678',
+      email: null,
+    }),
+  );
+  const [c] = await t.db.query('SELECT telefono FROM entrenadores WHERE id = ?', [coach.id]);
+  assert.equal(c.telefono, '3312345678');
+  const p = await t.ok<{ id: number }>(
+    t.call(
+      secretaria,
+      'PlayerService',
+      'create',
+      player('Paréntesis', { phone: '(33) 1234-5678' }),
+    ),
+  );
+  const [pr] = await t.db.query('SELECT telefono FROM jugadores WHERE id = ?', [p.id]);
+  assert.equal(pr.telefono, '3312345678');
+  // Malformed values sent straight to the API: refused with the message, nothing written.
+  const tutors = await t.count('SELECT COUNT(*) AS n FROM tutores');
+  for (const phone of ['123', '+1234567890123456', '33+1234-5678'])
+    await t.refused(
+      () => t.call(secretaria, 'TutorService', 'save', tutor(phone, null)),
+      400,
+      /^Ingresa un número de teléfono válido: de 10 a 15 dígitos, con «\+» opcional al inicio\.$/,
+    );
+  await t.refused(
+    () => t.call(secretaria, 'TutorService', 'save', tutor(null, 'ana@example')),
+    400,
+    /^Ingresa un correo electrónico válido, por ejemplo nombre@dominio\.com\.$/,
+  );
+  // R11 (docs/DOMAIN_RULES.md): at least one phone or e-mail.
+  await t.refused(
+    () => t.call(secretaria, 'TutorService', 'save', tutor('  ', '')),
+    400,
+    /^Captura al menos un teléfono o un correo electrónico de contacto\.$/,
+  );
+  assert.equal(await t.count('SELECT COUNT(*) AS n FROM tutores'), tutors);
+});
+
+test('HU-011: setPrimary replaces the primary contact in one operation — linked tutors only, audited, by role', async () => {
+  const primaryOf = async (playerId: number) =>
+    (
+      await t.db.query(
+        'SELECT tutor_id FROM tutor_jugador WHERE jugador_id = ? AND es_contacto_principal',
+        [playerId],
+      )
+    ).map((r: { tutor_id: number }) => r.tutor_id);
+  assert.deepEqual(await primaryOf(4), [4], 'seed: tutor 4 is the primary contact of player 4');
+  const second = await t.ok<{ id: number }>(
+    t.call(secretaria, 'TutorService', 'save', {
+      firstName: 'Lucía',
+      lastName1: 'Segunda',
+      lastName2: null,
+      phone: '3311110000',
+      email: null,
+      address: null,
+      links: [{ playerId: 4, relationship: 'Madre', isPrimary: false }],
+    }),
+  );
+  const audits = () =>
+    t.count(
+      "SELECT COUNT(*) AS n FROM auditoria WHERE entidad = 'tutor_jugador' AND entidad_id = 4",
+    );
+  const before = await audits();
+  // One call swaps it: the old primary is unset and the new one set in the same transaction (one primary at most).
+  await t.ok(t.call(secretaria, 'TutorService', 'setPrimary', 4, second.id));
+  assert.deepEqual(await primaryOf(4), [second.id]);
+  assert.equal(await audits(), before + 1, 'the change is audited');
+  const [{ antes, despues }] = await t.db.query(
+    "SELECT datos_anteriores AS antes, datos_nuevos AS despues FROM auditoria WHERE entidad = 'tutor_jugador' AND entidad_id = 4 ORDER BY id DESC LIMIT 1",
+  );
+  assert.deepEqual([antes, despues], [{ primaryTutorId: 4 }, { primaryTutorId: second.id }]);
+  // Both links survive (only the flag moved): the former primary is still a tutor of the player.
+  assert.equal(await t.count('SELECT COUNT(*) AS n FROM tutor_jugador WHERE jugador_id = 4'), 2);
+  // Repeating it changes nothing and writes no audit row.
+  await t.ok(t.call(secretaria, 'TutorService', 'setPrimary', 4, second.id));
+  assert.equal(await audits(), before + 1);
+  // A tutor not linked to the player, or ids that don't exist: refused, nothing changes.
+  await t.refused(
+    () => t.call(secretaria, 'TutorService', 'setPrimary', 4, 1),
+    400,
+    /^.+ no es tutor de .+\.$/,
+  );
+  await t.refused(
+    () => t.call(secretaria, 'TutorService', 'setPrimary', 999999, second.id),
+    400,
+    /^Jugador inexistente: actualiza la página e inténtalo de nuevo\.$/,
+  );
+  await t.refused(
+    () => t.call(secretaria, 'TutorService', 'setPrimary', 4, 999999),
+    400,
+    /^Tutor inexistente: actualiza la página e inténtalo de nuevo\.$/,
+  );
+  // Without tutores.editar (coach, tutor) the server refuses it, whatever the UI shows.
+  for (const email of ['coach@example.com', 'tutor@example.com']) {
+    const cookie = await t.login(email); // outside refused(): a login writes its own audit row
+    await t.refused(() => t.call(cookie, 'TutorService', 'setPrimary', 4, 4), 403);
+  }
+  assert.deepEqual(await primaryOf(4), [second.id]);
+  // Administrador may do it too; switching back works the same way.
+  await t.ok(t.call(admin, 'TutorService', 'setPrimary', 4, 4));
+  assert.deepEqual(await primaryOf(4), [4]);
 });
 
 test('HU-012: portal account for a tutor — only registered tutors, no duplicate, initial access, own children only', async () => {
@@ -206,13 +398,21 @@ test('HU-012: portal account for a tutor — only registered tutors, no duplicat
   const jorge = await t.login('jorge.tutor@example.com', 'Portal12345');
   const kids = await t.ok<{ playerId: number }[]>(t.call(jorge, 'PortalService', 'overview'));
   assert.deepEqual(kids.map((k) => k.playerId).sort(), [3, 6], '4) sees only his children');
-  await t.refused(t.call(jorge, 'PortalService', 'child', 1), 403);
   await t.refused(
-    t.call(secretaria, 'TutorService', 'linkAccount', 9999, 'x@example.com'),
-    400,
-    /no encontrado/i,
+    () => t.call(jorge, 'PortalService', 'child', 1),
+    403,
+    /^No tienes acceso a la información de este jugador\.$/,
   );
-  await t.refused(t.call(secretaria, 'TutorService', 'linkAccount', 2, 'otro@example.com'), 400);
+  await t.refused(
+    () => t.call(secretaria, 'TutorService', 'linkAccount', 9999, 'x@example.com'),
+    400,
+    /inexistente/i,
+  );
+  await t.refused(
+    () => t.call(secretaria, 'TutorService', 'linkAccount', 2, 'otro@example.com'),
+    400,
+    /^El tutor ya tiene una cuenta vinculada\.$/,
+  );
   assert.equal(
     await t.count("SELECT COUNT(*) AS n FROM usuarios WHERE email = 'jorge.tutor@example.com'"),
     1,
@@ -239,7 +439,12 @@ test('HU-013: player record — data, categories, payments and debts, uniforms a
     '4) uniforms and competitions',
   );
   assert.ok(rec.tutors.length >= 1);
-  await t.refused(t.call(await t.login('tutor@example.com'), 'PlayerService', 'record', 2), 403);
+  const tutorCookie = await t.login('tutor@example.com'); // before: a login writes its audit row
+  await t.refused(
+    () => t.call(tutorCookie, 'PlayerService', 'record', 2),
+    403,
+    /^No tienes acceso a la información de este jugador\.$/,
+  );
 });
 
 test('HU-014: search — partial name, combinable filters, pagination', async () => {
@@ -272,23 +477,26 @@ test('HU-015: categories — unique per season, valid ranges, active flag', asyn
     }),
   );
   await t.refused(
-    t.call(secretaria, 'CategoryService', 'save', {
-      seasonId: 2,
-      name: 'Sub-14',
-      minAge: 12,
-      maxAge: 14,
-      maxCapacity: null,
-    }),
+    () =>
+      t.call(secretaria, 'CategoryService', 'save', {
+        seasonId: 2,
+        name: 'Sub-14',
+        minAge: 12,
+        maxAge: 14,
+        maxCapacity: null,
+      }),
     400,
+    /^Ya existe una categoría con ese nombre en la temporada\.$/,
   );
   await t.refused(
-    t.call(secretaria, 'CategoryService', 'save', {
-      seasonId: 2,
-      name: 'Al revés',
-      minAge: 14,
-      maxAge: 12,
-      maxCapacity: null,
-    }),
+    () =>
+      t.call(secretaria, 'CategoryService', 'save', {
+        seasonId: 2,
+        name: 'Al revés',
+        minAge: 14,
+        maxAge: 12,
+        maxCapacity: null,
+      }),
     400,
     /edad/i,
   );
@@ -326,14 +534,16 @@ test('HU-016: training schedules — day, times and venue; end after start; seve
   );
   assert.deepEqual({ ...row }, { hora_inicio: '16:00:00', hora_fin: '17:00:00' });
   await t.refused(
-    t.call(secretaria, 'ScheduleService', 'save', {
-      categoryId: 3,
-      venueId: 1,
-      weekday: 2,
-      startTime: '18:00',
-      endTime: '17:00',
-    }),
+    () =>
+      t.call(secretaria, 'ScheduleService', 'save', {
+        categoryId: 3,
+        venueId: 1,
+        weekday: 2,
+        startTime: '18:00',
+        endTime: '17:00',
+      }),
     400,
+    /^La hora de fin debe ser posterior a la de inicio\.$/,
   );
   await t.ok(t.call(secretaria, 'ScheduleService', 'setActive', s.id, false));
   assert.equal(
@@ -353,13 +563,15 @@ test('HU-017/021: category membership — active only, age rule with authorized 
   );
   assert.equal(elig.ageOk, false, '2) age validated against the category');
   await t.refused(
-    t.call(secretaria, 'PlayerCategoryService', 'assign', {
-      playerId: newbie.id,
-      categoryId: 1,
-      date: '2026-10-13',
-      exceptionReason: null,
-    }),
+    () =>
+      t.call(secretaria, 'PlayerCategoryService', 'assign', {
+        playerId: newbie.id,
+        categoryId: 1,
+        date: '2026-10-13',
+        exceptionReason: null,
+      }),
     400,
+    /^La edad \(7\) está fuera del rango 8–10; registra una excepción autorizada\.$/,
   );
   await t.ok(
     t.call(secretaria, 'PlayerCategoryService', 'assign', {
@@ -375,14 +587,15 @@ test('HU-017/021: category membership — active only, age rule with authorized 
   );
   assert.deepEqual({ ...m }, { fecha_inicio: '2026-10-13', fecha_fin: null }, '4) start date');
   await t.refused(
-    t.call(secretaria, 'PlayerCategoryService', 'assign', {
-      playerId: newbie.id,
-      categoryId: 3,
-      date: '2026-10-14',
-      exceptionReason: null,
-    }),
+    () =>
+      t.call(secretaria, 'PlayerCategoryService', 'assign', {
+        playerId: newbie.id,
+        categoryId: 3,
+        date: '2026-10-14',
+        exceptionReason: null,
+      }),
     400,
-    undefined,
+    /^Gol Ramírez ya tiene una categoría vigente; usa «Cambiar de categoría»\.$/,
   );
   // HU-021: Sub-12 holds 2 and has 2 → warns (full) and only an authorized exception lets someone in.
   const full = await t.ok<{ full: boolean; occupancy: number; capacity: number }>(
@@ -470,16 +683,18 @@ test('HU-020: annual enrollment — season, date, amount, status, linked charge,
     '2) linked charge',
   );
   await t.refused(
-    t.call(secretaria, 'EnrollmentService', 'enroll', {
-      playerId: kid.id,
-      seasonId: 2,
-      enrolledOn: '2026-10-13',
-      amountCents: 0,
-      status: 'PENDIENTE',
-      conceptId: null,
-      dueDate: null,
-    }),
+    () =>
+      t.call(secretaria, 'EnrollmentService', 'enroll', {
+        playerId: kid.id,
+        seasonId: 2,
+        enrolledOn: '2026-10-13',
+        amountCents: 0,
+        status: 'PENDIENTE',
+        conceptId: null,
+        dueDate: null,
+      }),
     400,
+    /^El jugador ya está inscrito en esta temporada\.$/,
   );
   assert.equal(
     await t.count('SELECT COUNT(*) AS n FROM jugador_categoria WHERE jugador_id = ?', [kid.id]),
@@ -501,14 +716,16 @@ test('HU-022/023: coaches — contact, status, account, duplicates; several per 
   const [row] = await t.db.query('SELECT email, activo FROM entrenadores WHERE id = ?', [c.id]);
   assert.deepEqual({ ...row }, { email: 'ivan@example.com', activo: 1 });
   await t.refused(
-    t.call(secretaria, 'CoachService', 'save', {
-      firstName: 'Iván',
-      lastName1: 'Soto',
-      lastName2: null,
-      phone: null,
-      email: 'ivan@example.com',
-    }),
+    () =>
+      t.call(secretaria, 'CoachService', 'save', {
+        firstName: 'Iván',
+        lastName1: 'Soto',
+        lastName2: null,
+        phone: null,
+        email: 'ivan@example.com',
+      }),
     400,
+    /^Posible duplicado de Iván Soto\.$/,
   );
   await t.ok(t.call(secretaria, 'CoachService', 'linkAccount', c.id, 'ivan@example.com'));
   assert.equal(
@@ -534,12 +751,13 @@ test('HU-022/023: coaches — contact, status, account, duplicates; several per 
     'HU-023.1',
   );
   await t.refused(
-    t.call(secretaria, 'CoachService', 'assignCategory', {
-      coachId: c.id,
-      categoryId: 1,
-      responsibility: null,
-      startDate: '2026-10-14',
-    }),
+    () =>
+      t.call(secretaria, 'CoachService', 'assignCategory', {
+        coachId: c.id,
+        categoryId: 1,
+        responsibility: null,
+        startDate: '2026-10-14',
+      }),
     400,
     /ya está asignado/,
   );
@@ -563,20 +781,30 @@ test('HU-024/025/027: coach views — own categories, players, weekly schedule, 
   );
   assert.ok(cats.length >= 1);
   await t.ok(t.call(coach, 'CategoryService', 'members', 1));
-  await t.refused(t.call(coach, 'CategoryService', 'members', 2), 403, undefined);
+  await t.refused(
+    () => t.call(coach, 'CategoryService', 'members', 2),
+    403,
+    /^No tienes acceso a esta categoría\.$/,
+  );
   const week = await t.ok<unknown[]>(t.call(coach, 'CoachPanelService', 'weeklySchedule'));
   assert.ok(Array.isArray(week) && week.length >= 1, 'HU-025 weekly schedule');
   await t.ok(t.call(coach, 'CoachPanelService', 'myCompetitions'));
-  await t.refused(t.call(coach, 'PlayerService', 'update', 1, player('X')), 403);
   await t.refused(
-    t.call(coach, 'CategoryService', 'save', {
-      seasonId: 2,
-      name: 'X',
-      minAge: 1,
-      maxAge: 2,
-      maxCapacity: null,
-    }),
+    () => t.call(coach, 'PlayerService', 'update', 1, player('X')),
     403,
+    /^No tienes permiso para realizar esta acción\.$/,
+  );
+  await t.refused(
+    () =>
+      t.call(coach, 'CategoryService', 'save', {
+        seasonId: 2,
+        name: 'X',
+        minAge: 1,
+        maxAge: 2,
+        maxCapacity: null,
+      }),
+    403,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
 });
 
@@ -586,12 +814,14 @@ test('HU-026: coach ↔ competition/category — current assignment required, se
   );
   assert.ok(cc, 'seed has a participation of Sub-10');
   await t.refused(
-    t.call(admin, 'CoachService', 'assignCompetition', {
-      coachId: 2,
-      competitionCategoryId: cc.id,
-      startDate: '2026-10-13',
-    }),
+    () =>
+      t.call(admin, 'CoachService', 'assignCompetition', {
+        coachId: 2,
+        competitionCategoryId: cc.id,
+        startDate: '2026-10-13',
+      }),
     400,
+    /^Marta Díaz no tiene asignación vigente a Sub-10 \(HU-023\)\.$/,
   );
   const existing = await t.count(
     'SELECT COUNT(*) AS n FROM entrenador_competencia_categoria WHERE competencia_categoria_id = ? AND activo',
@@ -612,12 +842,14 @@ test('HU-026: coach ↔ competition/category — current assignment required, se
     existing + 1,
   );
   await t.refused(
-    t.call(admin, 'CoachService', 'assignCompetition', {
-      coachId: 3,
-      competitionCategoryId: cc.id,
-      startDate: '2026-10-13',
-    }),
+    () =>
+      t.call(admin, 'CoachService', 'assignCompetition', {
+        coachId: 3,
+        competitionCategoryId: cc.id,
+        startDate: '2026-10-13',
+      }),
     400,
+    /^Esa asignación ya existe\.$/,
   );
 });
 
@@ -640,12 +872,14 @@ test('HU-069: venues — create, edit, deactivate instead of delete, reused by s
   const [row] = await t.db.query('SELECT ubicacion, referencia FROM sedes WHERE id = ?', [v.id]);
   assert.deepEqual({ ...row }, { ubicacion: 'Av. Sur 12', referencia: 'Junto al parque' });
   await t.refused(
-    t.call(secretaria, 'VenueService', 'save', {
-      name: 'Cancha Sur',
-      location: null,
-      reference: null,
-    }),
+    () =>
+      t.call(secretaria, 'VenueService', 'save', {
+        name: 'Cancha Sur',
+        location: null,
+        reference: null,
+      }),
     400,
+    /^Ya existe una sede con ese nombre\.$/,
   );
   await t.ok(t.call(secretaria, 'VenueService', 'setActive', 1, false));
   assert.equal(
@@ -671,14 +905,16 @@ test('HU-070: seasons — name and dates, one current (must be active), history 
     }),
   );
   await t.refused(
-    t.call(secretaria, 'SeasonService', 'save', {
-      name: 'Mala',
-      startDate: '2028-08-01',
-      endDate: '2027-06-30',
-      active: true,
-      isCurrent: false,
-    }),
+    () =>
+      t.call(secretaria, 'SeasonService', 'save', {
+        name: 'Mala',
+        startDate: '2028-08-01',
+        endDate: '2027-06-30',
+        active: true,
+        isCurrent: false,
+      }),
     400,
+    /^La fecha de fin no puede ser anterior al inicio\.$/,
   );
   await t.ok(
     t.call(secretaria, 'SeasonService', 'save', {
@@ -697,15 +933,17 @@ test('HU-070: seasons — name and dates, one current (must be active), history 
     '2) exactly one current season',
   );
   await t.refused(
-    t.call(secretaria, 'SeasonService', 'save', {
-      id: s.id,
-      name: 'Temporada 2027-2028',
-      startDate: '2027-08-01',
-      endDate: '2028-06-30',
-      active: false,
-      isCurrent: true,
-    }),
+    () =>
+      t.call(secretaria, 'SeasonService', 'save', {
+        id: s.id,
+        name: 'Temporada 2027-2028',
+        startDate: '2027-08-01',
+        endDate: '2028-06-30',
+        active: false,
+        isCurrent: true,
+      }),
     400,
+    /^La temporada actual debe estar activa\.$/,
   );
   const list = await t.ok<{ id: number; categories: number }[]>(
     t.call(secretaria, 'SeasonService', 'list'),
@@ -720,5 +958,152 @@ test('HU-070: seasons — name and dates, one current (must be active), history 
       active: true,
       isCurrent: true,
     }),
+  );
+});
+
+// HU-010.3 and HU-010.4 (T5). Last in this file: they leave players in BAJA, which earlier tests must not see.
+
+test('HU-010.3: a player in BAJA does not join a tournament roster — not offered, 400, nothing written', async () => {
+  // An INSCRITA participation and an ACTIVO member of its category who is not in its roster yet: eligible today.
+  const [pick] = await t.db.query(
+    `SELECT cc.id AS participation, jc.jugador_id AS player
+       FROM competencia_categoria cc
+       JOIN jugador_categoria jc ON jc.categoria_id = cc.categoria_id AND jc.fecha_fin IS NULL
+       JOIN jugadores j ON j.id = jc.jugador_id AND j.estatus = 'ACTIVO'
+      WHERE cc.estatus = 'INSCRITA' AND NOT EXISTS (SELECT 1 FROM jugador_competencia_categoria r
+             WHERE r.competencia_categoria_id = cc.id AND r.jugador_id = jc.jugador_id)
+      ORDER BY cc.id, jc.jugador_id LIMIT 1`,
+  );
+  assert.ok(pick, 'fixture: an ACTIVO player who could join an INSCRITA participation');
+  const { participation, player } = pick as { participation: number; player: number };
+  const offered = async () =>
+    (
+      await t.ok<{ id: number }[]>(
+        t.call(secretaria, 'CompetitionService', 'eligiblePlayers', participation),
+      )
+    ).map((p) => p.id);
+  const inRoster = () =>
+    t.count(
+      'SELECT COUNT(*) AS n FROM jugador_competencia_categoria WHERE jugador_id = ? AND competencia_categoria_id = ?',
+      [player, participation],
+    );
+  assert.ok((await offered()).includes(player), 'while ACTIVO the player is eligible');
+
+  // Both kinds of BAJA (the transition between them is allowed today; reactivation is not used: decision pending).
+  for (const status of ['BAJA_TEMPORAL', 'BAJA_DEFINITIVA'] as const) {
+    await t.ok(t.call(secretaria, 'PlayerService', 'changeStatus', player, status, `T5 ${status}`));
+    assert.ok(!(await offered()).includes(player), `${status}: no longer offered for the roster`);
+    // The real flow (CompetitionService.addToRoster): refused with its rule, nothing written (t.refused checks it).
+    await t.refused(
+      () =>
+        t.call(
+          secretaria,
+          'CompetitionService',
+          'addToRoster',
+          participation,
+          player,
+          '2026-10-13',
+        ),
+      400,
+      /^Sólo jugadores activos pueden integrarse al plantel\.$/,
+    );
+    assert.equal(await inRoster(), 0, `${status}: not in the roster`);
+  }
+});
+
+test('HU-010.4: a BAJA keeps the payment, charge and match history exactly (no row deleted, changed or duplicated)', async () => {
+  // A player with charges, payments, a discount and a roster whose participation has matches (demo seed: Sofía).
+  // One simple count per table: four EXISTS in one query kept MariaDB 13's optimizer busy for minutes.
+  const has = async (sql: string, id: number) => (await t.count(sql, [id])) > 0;
+  let player = 0;
+  for (const { id } of await t.db.query(
+    "SELECT id FROM jugadores WHERE estatus = 'ACTIVO' ORDER BY id",
+  )) {
+    if (
+      (await has('SELECT COUNT(*) AS n FROM cargos WHERE jugador_id = ?', id)) &&
+      (await has('SELECT COUNT(*) AS n FROM pagos WHERE jugador_id = ?', id)) &&
+      (await has(
+        'SELECT COUNT(*) AS n FROM descuentos d JOIN cargos c ON c.id = d.cargo_id WHERE c.jugador_id = ?',
+        id,
+      )) &&
+      (await has(
+        `SELECT COUNT(*) AS n FROM partidos m JOIN jugador_competencia_categoria r
+           ON r.competencia_categoria_id = m.competencia_categoria_id WHERE r.jugador_id = ?`,
+        id,
+      ))
+    ) {
+      player = Number(id);
+      break;
+    }
+  }
+  assert.ok(player, 'fixture: a player with charges, payments, a discount and matches');
+  const rows = async (sql: string) =>
+    (await t.db.query(sql, [player])).map((r: object) => ({ ...r }));
+  // Every column of every row, by id: a deleted, changed or duplicated row makes the comparison fail.
+  const history = async () => ({
+    charges: await rows('SELECT * FROM cargos WHERE jugador_id = ? ORDER BY id'),
+    payments: await rows('SELECT * FROM pagos WHERE jugador_id = ? ORDER BY id'),
+    applications: await rows('SELECT * FROM pago_aplicacion WHERE jugador_id = ? ORDER BY id'),
+    discounts: await rows(
+      'SELECT d.* FROM descuentos d JOIN cargos c ON c.id = d.cargo_id WHERE c.jugador_id = ? ORDER BY d.id',
+    ),
+    roster: await rows(
+      'SELECT * FROM jugador_competencia_categoria WHERE jugador_id = ? ORDER BY id',
+    ),
+    matches: await rows(
+      `SELECT m.* FROM partidos m WHERE m.competencia_categoria_id IN
+         (SELECT competencia_categoria_id FROM jugador_competencia_categoria WHERE jugador_id = ?) ORDER BY m.id`,
+    ),
+    attendance: await rows('SELECT * FROM asistencias WHERE jugador_id = ? ORDER BY id'),
+    statusHistory: await rows('SELECT * FROM historial_estatus WHERE jugador_id = ? ORDER BY id'),
+  });
+  // What the office sees (HU-013 record): charges, payments and competitions.
+  type Record = { charges: unknown[]; payments: unknown[]; competitions: unknown[] };
+  const record = async () => {
+    const r = await t.ok<Record>(t.call(secretaria, 'PlayerService', 'record', player));
+    return { charges: r.charges, payments: r.payments, competitions: r.competitions };
+  };
+
+  const before = await history();
+  const seen = await record();
+  for (const key of [
+    'charges',
+    'payments',
+    'applications',
+    'discounts',
+    'roster',
+    'matches',
+  ] as const)
+    assert.ok(before[key].length > 0, `fixture: ${key} to keep`);
+
+  await t.ok(
+    t.call(secretaria, 'PlayerService', 'changeStatus', player, 'BAJA_DEFINITIVA', 'T5: historial'),
+  );
+
+  const after = await history();
+  const { statusHistory, ...kept } = after;
+  const { statusHistory: previous, ...expected } = before;
+  assert.deepEqual(
+    kept,
+    expected,
+    'payments, charges, applications, discounts, roster, matches, attendance',
+  );
+  // The status history only grows by the new change; earlier entries are untouched.
+  assert.deepEqual(statusHistory.slice(0, previous.length), previous);
+  assert.equal(statusHistory.length, previous.length + 1);
+  assert.deepEqual(
+    (({ estatus_anterior, estatus_nuevo, motivo }) => ({
+      estatus_anterior,
+      estatus_nuevo,
+      motivo,
+    }))(
+      statusHistory.at(-1) as { estatus_anterior: string; estatus_nuevo: string; motivo: string },
+    ),
+    { estatus_anterior: 'ACTIVO', estatus_nuevo: 'BAJA_DEFINITIVA', motivo: 'T5: historial' },
+  );
+  assert.deepEqual(
+    await record(),
+    seen,
+    'the record (HU-013) shows the same charges, payments and competitions',
   );
 });

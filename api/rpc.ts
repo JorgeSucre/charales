@@ -15,7 +15,10 @@
  */
 import type { Pool, PoolConnection } from 'mariadb';
 import type { Ctx, Reply } from './server.ts';
-import { NO_SESSION, sessionUser } from './auth.ts';
+import { argon2Gate, type Argon2Gate } from './argon2-guard.ts';
+import { NO_SESSION, localDateTime, sessionUser } from './auth.ts';
+import { revokeDevices } from './device-trust.ts';
+import { deliverMail, enqueueMail, tokenHashOf } from './mail.ts';
 import { TABLES, type TableMap } from './tables.ts';
 
 type Row = Record<string, unknown>;
@@ -49,8 +52,17 @@ const LOCK_SECONDS = 10;
 const RETRYABLE = new Set([1020, 1213, 1205]);
 /** Rules MariaDB enforces itself: duplicate key, FK, CHECK. */
 const INTEGRITY = new Set([1062, 1451, 1452, 4025, 3819]);
+/** A TypeError in a service: the browser sent a shape it can't use. Nothing written; logged in case it is a bug. */
+export const TYPE_ERROR_MESSAGE =
+  'No se pudieron procesar los datos enviados. Revisa el formulario e inténtalo de nuevo.';
 const INTEGRITY_MESSAGE =
   'La operación no respeta una regla de integridad de los datos. Revisa la información e intenta de nuevo.';
+/** The constraint MariaDB enforced, in the user's words (no table or column names). */
+const INTEGRITY_MESSAGES: Record<number, string> = {
+  1062: 'Ya existe un registro con esos datos.',
+  1451: 'No se puede quitar: hay otros registros que dependen de éste.',
+  1452: 'Hace referencia a un registro que no existe. Actualiza la página e inténtalo de nuevo.',
+};
 const JSON_COLUMNS = new Set(['auditoria.datos_anteriores', 'auditoria.datos_nuevos']);
 const SECRET_FIELDS = new Set(['passwordHash', 'tokenHash']);
 
@@ -61,15 +73,42 @@ export async function rpc(ctx: Ctx, db: Pool): Promise<Reply> {
     args?: unknown;
   };
   if (typeof service !== 'string' || typeof method !== 'string' || !Array.isArray(args))
-    return { status: 400, body: { error: 'Solicitud inválida.' } };
+    return {
+      status: 400,
+      body: { error: 'No se pudo procesar la solicitud. Recarga la página e inténtalo de nuevo.' },
+    };
   const d = await domain;
   if (!d.isRpcMethod(service, method))
-    return { status: 404, body: { error: 'Operación no disponible.' } };
-  const user = await sessionUser(ctx, db);
-  if (!user) return { status: 401, body: { error: NO_SESSION } };
+    return { status: 404, body: { error: 'Esa operación no está disponible.' } };
+  if (!ctx.token) return { status: 401, body: { error: NO_SESSION } };
+  // Every operation holds a connection and the global lock, so one session flooding the bridge would queue everyone
+  // else (F5-10). Its operations run a few at a time, in order; past the queue it is told to wait, before any query.
+  const gate = sessionGate(ctx.token);
+  try {
+    const turn = await gate.run(async () => {
+      const user = await sessionUser(ctx, db);
+      if (!user) return { status: 401, body: { error: NO_SESSION } };
+      return runOperation(ctx, db, d, user, service, method, args);
+    });
+    return turn.busy ? { status: 429, body: { error: TOO_MANY_AT_ONCE } } : turn.value;
+  } finally {
+    const { active, waiting } = gate.stats();
+    if (!active && !waiting) gates.delete(ctx.token);
+  }
+}
 
+async function runOperation(
+  ctx: Ctx,
+  db: Pool,
+  d: Domain,
+  user: NonNullable<Awaited<ReturnType<typeof sessionUser>>>,
+  service: string,
+  method: string,
+  args: unknown[],
+): Promise<Reply> {
   for (let attempt = 1; ; attempt++) {
     try {
+      const mailIds: number[] = [];
       const { result, outbox } = await unitOfWork(
         db,
         async (tables) => {
@@ -78,31 +117,106 @@ export async function rpc(ctx: Ctx, db: Pool): Promise<Reply> {
           if (out.outbox.length && !ctx.mailer) throw new MailUnavailable();
           return out;
         },
-        { audit: service === 'AuditService' },
+        {
+          audit: service === 'AuditService',
+          // In the same transaction: the operation and its notice are committed together (F5-08).
+          beforeCommit: async (conn, out, before) => {
+            await settleAccountChanges(conn, before, out.tables, user.sessionId);
+            mailIds.length = 0;
+            for (const m of out.outbox)
+              mailIds.push(await enqueueMail(conn, m.to, m.subject, tokenHashOf(m.body)));
+          },
+        },
       );
-      for (const m of outbox) await ctx.mailer!(m.to, m.subject, m.body);
-      return { status: 200, body: { result: scrub(result) ?? null } };
+      // After COMMIT the operation HAPPENED, whatever the provider says: a failure stays queued for the worker and the
+      // answer says so, never as an error of the operation (and never with the provider's words).
+      let mailPending = false;
+      for (const [i, m] of outbox.entries())
+        if (
+          (await deliverMail(db, ctx.mailer!, mailIds[i]!, m.to, m.subject, m.body)) !== 'ENVIADO'
+        )
+          mailPending = true;
+      return {
+        status: 200,
+        body: { result: scrub(result) ?? null, ...(mailPending ? { mailPending } : {}) },
+      };
     } catch (e) {
       const code = (e as { errno?: number }).errno;
-      if (code && RETRYABLE.has(code) && attempt < 3) continue;
+      if (code && RETRYABLE.has(code) && attempt < 5) continue;
       if (e instanceof MailUnavailable || e instanceof LockTimeout)
         return { status: 503, body: { error: e.message } };
       if (d.isForbidden(e)) return { status: 403, body: { error: (e as Error).message } };
       if (code && INTEGRITY.has(code)) {
         console.error(`rpc ${service}.${method}: integridad (errno ${code})`);
-        return { status: 409, body: { error: INTEGRITY_MESSAGE } };
+        return { status: 409, body: { error: INTEGRITY_MESSAGES[code] ?? INTEGRITY_MESSAGE } };
       }
       // Arguments come from the browser (a trust boundary): a TypeError means the service got a shape it can't use.
       // Nothing was written (ROLLBACK); it answers 400 and is logged, in case it is a bug and not bad input.
       if (e instanceof TypeError) {
         console.error(`rpc ${service}.${method}: ${e.message}`);
-        return { status: 400, body: { error: 'Datos de la solicitud inválidos.' } };
+        return { status: 400, body: { error: TYPE_ERROR_MESSAGE } };
       }
       // Only plain Errors are business rules; anything else stays a logged 500.
       if (code || !(e instanceof Error) || e.constructor !== Error) throw e;
       // Business-rule errors of the services (Spanish messages meant for the user), like over MockDb.
       return { status: 400, body: { error: e.message } };
     }
+  }
+}
+
+/** Operations of one session running at once: less than the pool (5 by default), so others always find a connection. */
+const SESSION_LIMITS = { limit: 3, waitMs: 5000 };
+const TOO_MANY_AT_ONCE = 'Demasiadas solicitudes a la vez. Espera un momento e inténtalo de nuevo.';
+/** Only sessions with operations running or queued are here, so it can't grow beyond what is in flight. */
+const gates = new Map<string, Argon2Gate>();
+function sessionGate(token: string): Argon2Gate {
+  let gate = gates.get(token);
+  if (!gate) gates.set(token, (gate = argon2Gate(SESSION_LIMITS)));
+  return gate;
+}
+
+/** The database doesn't match the code (a migration is missing): logged in full, a generic 500 for the client. */
+class SchemaError extends Error {}
+
+/**
+ * An account that changed e-mail or was deactivated: what trusted the old state stops counting, in the same transaction,
+ * which already holds the account's row (audit IND-01, IND-08, IND2-03). The service revoked what it could see, but its
+ * tables are a snapshot, and a request may have committed since; here it is done on the real rows, sparing only what this
+ * operation just wrote (the new invitation) and the session making the change.
+ */
+async function settleAccountChanges(
+  conn: PoolConnection,
+  before: Tables,
+  after: Tables,
+  sessionId: number,
+) {
+  const old = new Map((before['users'] ?? []).map((u) => [u['id'], u]));
+  const known = new Set((before['resetTokens'] ?? []).map((t) => t['id']));
+  const written = (after['resetTokens'] ?? [])
+    .filter((t) => !known.has(t['id']))
+    .map((t) => t['tokenHash']);
+  for (const user of after['users'] ?? []) {
+    const prev = old.get(user['id']);
+    if (!prev || prev === user) continue;
+    const moved = prev['email'] !== user['email'];
+    if (!moved && (user['active'] || !prev['active'])) continue;
+    const now = localDateTime();
+    await revokeDevices(conn, user['id'] as number);
+    await conn.query(
+      `UPDATE correo_saliente SET estado = 'FALLIDO', ultimo_error = 'CUENTA_MODIFICADA', cerrado_en = ?, bloqueado_hasta = NULL
+        WHERE usuario_id = ? AND estado IN ('PENDIENTE', 'ENVIANDO')`,
+      [now, user['id']],
+    );
+    await conn.query(
+      `UPDATE tokens_recuperacion SET usado_en = ?
+        WHERE usuario_id = ? AND usado_en IS NULL AND token_hash NOT IN (?)`,
+      [now, user['id'], written.length ? written : ['']],
+    );
+    if (moved)
+      await conn.query(
+        'UPDATE sesiones SET cerrada_en = ? WHERE usuario_id = ? AND cerrada_en IS NULL AND id <> ?',
+        [now, user['id'], sessionId],
+      );
   }
 }
 
@@ -128,7 +242,11 @@ const metas = new WeakMap<Pool, Meta>();
 export async function unitOfWork<T extends { tables: Tables }>(
   db: Pool,
   work: (tables: Tables) => Promise<T>,
-  options: { audit?: boolean } = {},
+  options: {
+    audit?: boolean;
+    /** Runs on the same connection, after the writes and before COMMIT: its writes share the transaction. */
+    beforeCommit?: (conn: PoolConnection, out: T, before: Tables) => Promise<void>;
+  } = {},
 ): Promise<T> {
   const conn = await db.getConnection();
   try {
@@ -143,7 +261,7 @@ export async function unitOfWork<T extends { tables: Tables }>(
         const meta = metas.get(db) ?? (await columns(conn));
         metas.set(db, meta);
         const [row] = await conn.query('SELECT version FROM version_datos WHERE id = 1');
-        if (!row) throw new Error('Falta version_datos: aplica db/mariadb/migrations.');
+        if (!row) throw new SchemaError('Falta version_datos: aplica db/mariadb/migrations.');
         const version = Number(row.version);
         let cache = caches.get(db);
         if (cache?.version !== version) {
@@ -161,6 +279,7 @@ export async function unitOfWork<T extends { tables: Tables }>(
           Object.fromEntries(Object.entries(before).map(([k, rows]) => [k, [...rows]])),
         );
         const changed = await applyChanges(conn, meta, before, out.tables);
+        await options.beforeCommit?.(conn, out, before);
         const touched = [...changed].filter((t) => !FRESH.has(t));
         let next: Tables | null = null;
         if (touched.length) {
@@ -214,7 +333,9 @@ export async function columns(conn: PoolConnection): Promise<Meta> {
     const cols = Object.entries(t.cols).map(([name, field]) => {
       const info = rows.find((r) => r.t === t.table && r.c === name);
       if (!info)
-        throw new Error(`Columna ${t.table}.${name} no existe: aplica db/mariadb/migrations.`);
+        throw new SchemaError(
+          `Columna ${t.table}.${name} no existe: aplica db/mariadb/migrations.`,
+        );
       const kind: Kind = JSON_COLUMNS.has(`${t.table}.${name}`)
         ? 'json'
         : info.dt === 'decimal'

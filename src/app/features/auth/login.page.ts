@@ -2,24 +2,19 @@ import { Component, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
-import { FieldError } from '../../shared/field-error';
+import { FieldA11y, FieldError } from '../../shared/field-error';
 import { Submission } from '../../shared/submission';
 
 /** HU-001/002/003: one login for every role; the landing page depends on the roles/profiles of the account. */
 @Component({
   selector: 'app-login-page',
-  imports: [ReactiveFormsModule, RouterLink, FieldError],
+  imports: [ReactiveFormsModule, RouterLink, FieldError, FieldA11y],
   template: `
     <main class="auth-box">
       <h1>⚽ Escuela de Fútbol Charales</h1>
       @if (expired) {
         <p class="alert info" role="status">Tu sesión expiró. Vuelve a iniciar sesión.</p>
       }
-      <p class="alert info">
-        Demostración con datos simulados. Contraseña de todas las cuentas:
-        <strong>demo1234</strong>. Cuentas: admin, secretaria, coach, tutor y marta (entrenadora y
-        tutora) &#64;example.com
-      </p>
       <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
         <label>Correo <input type="email" formControlName="email" autocomplete="username" /></label>
         <app-field-error [control]="form.controls.email" />

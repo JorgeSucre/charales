@@ -5,7 +5,10 @@ import { AuthService } from '../../core/auth/auth.service';
 import { Id } from '../../core/models';
 import { CategoryService, CategoryView } from '../../core/services/category.service';
 import { WEEKDAYS } from '../../shared/dates';
-import { FieldError } from '../../shared/field-error';
+import { catalogNameValidator } from '../../shared/validate';
+import { FormPanel } from '../../shared/form-panel';
+import { focusFirstInvalid } from '../../shared/focus';
+import { FieldA11y, FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
 import { Submission } from '../../shared/submission';
 import { SubmissionAlert, idOrNull } from '../../shared/ui';
@@ -16,11 +19,39 @@ import { VenueService } from '../venues/venue.service';
 /** HU-015 (categories: name per season, age range, status) + HU-021 (capacity and occupancy). */
 @Component({
   selector: 'app-categories-page',
-  imports: [ReactiveFormsModule, FormsModule, RouterLink, FieldError, LoadState, SubmissionAlert],
+  imports: [
+    ReactiveFormsModule,
+    FormsModule,
+    RouterLink,
+    FieldError,
+    FieldA11y,
+    LoadState,
+    SubmissionAlert,
+  ],
   template: `
-    <h1>Categorías</h1>
-    @if (auth.can('categorias.crear') || editingId()) {
-      <form [formGroup]="form" (ngSubmit)="submit()" novalidate class="grid-form">
+    <div class="page-head">
+      <h1>Categorías</h1>
+      @if (auth.can('categorias.crear')) {
+        <button
+          type="button"
+          (click)="create()"
+          [attr.aria-expanded]="panel.open() && !editingId()"
+          aria-controls="category-form"
+        >
+          Nueva categoría
+        </button>
+      }
+    </div>
+    <app-submission-alert [submission]="submission" />
+    @if (panel.open()) {
+      <form
+        id="category-form"
+        [formGroup]="form"
+        (ngSubmit)="submit()"
+        novalidate
+        class="grid-form"
+        (keydown.escape)="cancel()"
+      >
         <h2>{{ editingId() ? 'Editar categoría' : 'Nueva categoría' }}</h2>
         <label
           >Temporada
@@ -34,24 +65,23 @@ import { VenueService } from '../venues/venue.service';
         <label>Nombre <input formControlName="name" placeholder="Sub-10" /></label>
         <app-field-error [control]="form.controls.name" />
         <div class="two-col">
-          <label
-            >Edad mínima <input type="number" min="0" max="99" formControlName="minAge"
-          /></label>
+          <div>
+            <label
+              >Edad mínima <input type="number" min="0" max="99" formControlName="minAge"
+            /></label>
+            <app-field-error [control]="form.controls.minAge" />
+          </div>
           <label
             >Edad máxima <input type="number" min="0" max="99" formControlName="maxAge"
           /></label>
         </div>
-        <app-field-error [control]="form.controls.minAge" />
         <label
           >Cupo máximo (vacío = sin límite)
           <input type="number" min="1" formControlName="maxCapacity"
         /></label>
-        <app-submission-alert [submission]="submission" />
         <div class="actions">
           <button type="submit" [disabled]="submission.busy()">Guardar</button>
-          @if (editingId()) {
-            <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
-          }
+          <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
         </div>
       </form>
     }
@@ -131,13 +161,18 @@ export class CategoriesPage {
   protected editingId = signal<Id | null>(null);
   protected form = inject(FormBuilder).group({
     seasonId: [null as Id | null],
-    name: ['', Validators.required],
+    name: ['', [Validators.required, catalogNameValidator]],
     minAge: [8, [Validators.required, Validators.min(0)]],
     maxAge: [10, [Validators.required, Validators.min(0)]],
     maxCapacity: [null as number | null, Validators.min(1)],
   });
 
+  protected panel = new FormPanel('category-form', () => this.form.dirty);
+
   edit(c: CategoryView): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.submission.result.set(null);
     this.editingId.set(c.id);
     this.form.setValue({
       seasonId: c.seasonId,
@@ -146,15 +181,34 @@ export class CategoriesPage {
       maxAge: c.maxAge,
       maxCapacity: c.maxCapacity,
     });
+    this.form.markAsPristine();
+    this.panel.show();
   }
 
+  /** Opens an empty form (asks first if the open one has unsaved changes). */
+  create(): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.submission.result.set(null);
+    this.panel.show();
+  }
+
+  /** Closes the form without saving (asks first if it has unsaved changes); the record is untouched. */
   cancel(): void {
+    if (this.panel.close()) this.reset();
+  }
+
+  private reset(): void {
     this.editingId.set(null);
     this.form.reset({ seasonId: null, name: '', minAge: 8, maxAge: 10, maxCapacity: null });
   }
 
   async submit(): Promise<void> {
-    if (this.form.invalid) return this.form.markAllAsTouched();
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      setTimeout(() => focusFirstInvalid(document.getElementById('category-form')!));
+      return;
+    }
     const v = this.form.getRawValue();
     const draft = {
       id: this.editingId() ?? undefined,
@@ -166,7 +220,8 @@ export class CategoriesPage {
         v.maxCapacity === null || (v.maxCapacity as unknown) === '' ? null : Number(v.maxCapacity),
     };
     if (await this.submission.run(() => this.service.save(draft), 'Categoría guardada.')) {
-      this.cancel();
+      this.panel.done();
+      this.reset();
       this.categories.reload();
     }
   }
@@ -246,9 +301,29 @@ export class CategoriesPage {
             }
           </ul>
 
-          <h2>Horarios de entrenamiento</h2>
-          @if (auth.can('categorias.editar')) {
-            <form class="grid-form" (ngSubmit)="addSchedule(c.id)" novalidate>
+          <div class="page-head">
+            <h2>Horarios de entrenamiento</h2>
+            @if (auth.can('categorias.editar')) {
+              <button
+                type="button"
+                class="secondary"
+                (click)="openSchedule()"
+                [attr.aria-expanded]="panel.open()"
+                aria-controls="schedule-form"
+              >
+                Agregar horario
+              </button>
+            }
+          </div>
+          <app-submission-alert [submission]="submission" />
+          @if (panel.open()) {
+            <form
+              id="schedule-form"
+              class="grid-form"
+              (ngSubmit)="addSchedule(c.id)"
+              (keydown.escape)="closeSchedule()"
+              novalidate
+            >
               <div class="two-col">
                 <label
                   >Día
@@ -270,10 +345,12 @@ export class CategoriesPage {
                 <label>Inicio <input type="time" name="start" [(ngModel)]="startTime" /></label>
                 <label>Fin <input type="time" name="end" [(ngModel)]="endTime" /></label>
               </div>
-              <app-submission-alert [submission]="submission" />
-              <button type="submit" [disabled]="submission.busy() || !venueId">
-                Agregar horario
-              </button>
+              <div class="actions">
+                <button type="submit" [disabled]="submission.busy() || !venueId">
+                  Agregar horario
+                </button>
+                <button type="button" class="secondary" (click)="closeSchedule()">Cancelar</button>
+              </div>
             </form>
           }
           <div class="table-wrap">
@@ -358,6 +435,31 @@ export class CategoryDetailPage {
     return WEEKDAYS[n];
   }
 
+  private opened = '';
+  private snapshot = () =>
+    JSON.stringify([this.weekday, this.venueId, this.startTime, this.endTime]);
+  protected panel = new FormPanel('schedule-form', () => this.snapshot() !== this.opened);
+
+  openSchedule(): void {
+    if (!this.panel.close()) return;
+    this.resetSchedule();
+    this.opened = this.snapshot();
+    this.submission.result.set(null);
+    this.panel.show();
+  }
+
+  /** Closes the form without adding a schedule (asks first if it has unsaved changes). */
+  closeSchedule(): void {
+    if (this.panel.close()) this.resetSchedule();
+  }
+
+  private resetSchedule(): void {
+    this.weekday = 1;
+    this.venueId = null;
+    this.startTime = '17:00';
+    this.endTime = '18:30';
+  }
+
   async addSchedule(categoryId: Id): Promise<void> {
     const ok = await this.submission.run(
       () =>
@@ -370,7 +472,11 @@ export class CategoryDetailPage {
         }),
       'Horario agregado.',
     );
-    if (ok) this.schedules.reload();
+    if (ok) {
+      this.panel.done();
+      this.resetSchedule();
+      this.schedules.reload();
+    }
   }
 
   async toggleSchedule(id: Id, active: boolean): Promise<void> {

@@ -5,7 +5,7 @@ import { Category, Id, ISODate, Player, PlayerCategory, fullName } from '../../c
 import { AuditService } from '../../core/services/audit.service';
 import { CategoryService } from '../../core/services/category.service';
 import { addDays, ageOn, isISODate, nowDateTime } from '../../shared/dates';
-import { optional, required } from '../../shared/validate';
+import { DATE_MESSAGE, optional, required } from '../../shared/validate';
 
 export interface Eligibility {
   age: number;
@@ -139,7 +139,7 @@ export class PlayerCategoryService {
     if (player.status !== 'ACTIVO')
       throw new Error('Sólo jugadores activos pueden inscribirse a una categoría.');
     if (!category.active) throw new Error('La categoría está inactiva.');
-    if (!isISODate(draft.date)) throw new Error('Fecha inválida.');
+    if (!isISODate(draft.date)) throw new Error(DATE_MESSAGE);
     const exception = optional(draft.exceptionReason, 'El motivo de la excepción');
     const check = this.check(player, category, draft.date);
     if ((!check.ageOk || check.full) && !exception)

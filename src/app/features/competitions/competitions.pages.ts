@@ -12,7 +12,10 @@ import {
   TYPE_LABELS,
 } from '../../core/services/competition.service';
 import { today } from '../../shared/dates';
-import { FieldError } from '../../shared/field-error';
+import { catalogNameValidator } from '../../shared/validate';
+import { FormPanel } from '../../shared/form-panel';
+import { focusFirstInvalid } from '../../shared/focus';
+import { FieldA11y, FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
 import { Submission } from '../../shared/submission';
@@ -22,11 +25,31 @@ import { SeasonService } from '../seasons/season.service';
 /** HU-034: tournaments, leagues and others (competencias.tipo) with season, organizer, dates and status. */
 @Component({
   selector: 'app-competitions-page',
-  imports: [ReactiveFormsModule, RouterLink, FieldError, LoadState, SubmissionAlert],
+  imports: [ReactiveFormsModule, RouterLink, FieldError, FieldA11y, LoadState, SubmissionAlert],
   template: `
-    <h1>Competencias</h1>
-    @if (auth.can('competencias.crear') || editingId()) {
-      <form [formGroup]="form" (ngSubmit)="submit()" novalidate class="grid-form">
+    <div class="page-head">
+      <h1>Competencias</h1>
+      @if (auth.can('competencias.crear')) {
+        <button
+          type="button"
+          (click)="create()"
+          [attr.aria-expanded]="panel.open() && !editingId()"
+          aria-controls="competition-form"
+        >
+          Nueva competencia
+        </button>
+      }
+    </div>
+    <app-submission-alert [submission]="submission" />
+    @if (panel.open()) {
+      <form
+        id="competition-form"
+        [formGroup]="form"
+        (ngSubmit)="submit()"
+        novalidate
+        class="grid-form"
+        (keydown.escape)="cancel()"
+      >
         <h2>{{ editingId() ? 'Editar competencia' : 'Nueva competencia' }}</h2>
         <label>Nombre <input formControlName="name" /></label>
         <app-field-error [control]="form.controls.name" />
@@ -62,12 +85,9 @@ import { SeasonService } from '../seasons/season.service';
           </select>
         </label>
         <label>Observaciones <textarea rows="2" formControlName="notes"></textarea></label>
-        <app-submission-alert [submission]="submission" />
         <div class="actions">
           <button type="submit" [disabled]="submission.busy()">Guardar</button>
-          @if (editingId()) {
-            <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
-          }
+          <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
         </div>
       </form>
     }
@@ -142,10 +162,15 @@ export class CompetitionsPage {
   };
   protected form = inject(FormBuilder).nonNullable.group({
     ...this.blank,
-    name: ['', Validators.required],
+    name: ['', [Validators.required, catalogNameValidator]],
   });
 
+  protected panel = new FormPanel('competition-form', () => this.form.dirty);
+
   edit(c: CompetitionView): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.submission.result.set(null);
     this.editingId.set(c.id);
     this.form.setValue({
       name: c.name,
@@ -158,15 +183,34 @@ export class CompetitionsPage {
       status: c.status,
       notes: c.notes ?? '',
     });
+    this.form.markAsPristine();
+    this.panel.show();
   }
 
+  /** Opens an empty form (asks first if the open one has unsaved changes). */
+  create(): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.submission.result.set(null);
+    this.panel.show();
+  }
+
+  /** Closes the form without saving (asks first if it has unsaved changes); the record is untouched. */
   cancel(): void {
+    if (this.panel.close()) this.reset();
+  }
+
+  private reset(): void {
     this.editingId.set(null);
     this.form.reset();
   }
 
   async submit(): Promise<void> {
-    if (this.form.invalid) return this.form.markAllAsTouched();
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      setTimeout(() => focusFirstInvalid(document.getElementById('competition-form')!));
+      return;
+    }
     const v = this.form.getRawValue();
     const draft = {
       ...v,
@@ -175,7 +219,8 @@ export class CompetitionsPage {
       endDate: v.endDate || null,
     };
     if (await this.submission.run(() => this.service.save(draft), 'Competencia guardada.')) {
-      this.cancel();
+      this.panel.done();
+      this.reset();
       this.competitions.reload();
     }
   }
@@ -200,9 +245,28 @@ export class CompetitionsPage {
           </p>
           <app-submission-alert [submission]="submission" />
 
-          <h2>Categorías participantes</h2>
-          @if (auth.can('competencias.editar')) {
-            <form class="grid-form" (ngSubmit)="register()" novalidate>
+          <div class="page-head">
+            <h2>Categorías participantes</h2>
+            @if (auth.can('competencias.editar')) {
+              <button
+                type="button"
+                class="secondary"
+                (click)="openRegister()"
+                [attr.aria-expanded]="panel.open()"
+                aria-controls="register-form"
+              >
+                Inscribir categoría
+              </button>
+            }
+          </div>
+          @if (panel.open()) {
+            <form
+              id="register-form"
+              class="grid-form"
+              (ngSubmit)="register()"
+              (keydown.escape)="closeRegister()"
+              novalidate
+            >
               <div class="two-col">
                 <label
                   >Categoría
@@ -230,9 +294,12 @@ export class CompetitionsPage {
                   </select>
                 </label>
               </div>
-              <button type="submit" [disabled]="submission.busy() || !categoryId">
-                Inscribir categoría
-              </button>
+              <div class="actions">
+                <button type="submit" [disabled]="submission.busy() || !categoryId">
+                  Inscribir categoría
+                </button>
+                <button type="button" class="secondary" (click)="closeRegister()">Cancelar</button>
+              </div>
             </form>
           }
           <app-load-state [res]="participations" emptyText="Sin categorías inscritas."
@@ -354,6 +421,31 @@ export class CompetitionDetailPage {
     this.rosterOf.set(this.rosterOf() === id ? null : id);
   }
 
+  private opened = '';
+  private snapshot = () =>
+    JSON.stringify([this.categoryId, this.registeredOn, this.cost, this.participationStatus]);
+  protected panel = new FormPanel('register-form', () => this.snapshot() !== this.opened);
+
+  openRegister(): void {
+    if (!this.panel.close()) return;
+    this.resetRegister();
+    this.opened = this.snapshot();
+    this.submission.result.set(null);
+    this.panel.show();
+  }
+
+  /** Closes the form without registering (asks first if it has unsaved changes). */
+  closeRegister(): void {
+    if (this.panel.close()) this.resetRegister();
+  }
+
+  private resetRegister(): void {
+    this.categoryId = null;
+    this.registeredOn = today();
+    this.cost = null;
+    this.participationStatus = 'INSCRITA';
+  }
+
   async register(): Promise<void> {
     const draft = {
       competitionId: this.id(),
@@ -364,7 +456,8 @@ export class CompetitionDetailPage {
       status: this.participationStatus,
     };
     if (await this.submission.run(() => this.service.register(draft), 'Categoría inscrita.')) {
-      this.categoryId = null;
+      this.panel.done();
+      this.resetRegister();
       this.participations.reload();
     }
   }

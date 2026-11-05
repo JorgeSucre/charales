@@ -7,6 +7,7 @@
  * the idempotent migrations and the permission catalog (its role matrix only on a first install, so an administrator's
  * changes are kept); any other non-empty database is refused.
  */
+import { randomBytes } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import mariadb, { type Connection, type ConnectionConfig } from 'mariadb';
 
@@ -282,6 +283,40 @@ export async function loadDevSeed(env: Record<string, string | undefined>): Prom
  * Drops a TEMPORARY test database. Refuses any name not starting with `ef_` (the prefix of every test database), so a
  * mistake can never drop escuela_futbol or another real database.
  */
+/** What the running code needs from the latest migrations and this database lacks (F5-06). Reads metadata only. */
+export async function missingSchema(db: {
+  query(sql: string, params?: unknown[]): Promise<unknown>;
+}): Promise<string[]> {
+  const rows = (await db.query(
+    `SELECT TABLE_NAME AS t, COLUMN_NAME AS c, COLUMN_TYPE AS ct FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME IN ('version_datos', 'limite_acceso', 'dispositivo_confiable', 'correo_saliente', 'pagos')`,
+  )) as { t: string; c: string; ct: string }[];
+  const has = (t: string, c?: string) => rows.some((r) => r.t === t && (!c || r.c === c));
+  return [
+    ...['version_datos', 'limite_acceso', 'dispositivo_confiable', 'correo_saliente'].filter(
+      (t) => !has(t),
+    ),
+    ...(has('pagos', 'referencia') ? [] : ['pagos.referencia']),
+    ...(rows.some(
+      (r) => r.t === 'limite_acceso' && r.c === 'ambito' && !r.ct.includes("'CUENTA_RED'"),
+    )
+      ? ['limite_acceso.ambito (CUENTA_RED)']
+      : []),
+    ...(has('correo_saliente') && !has('correo_saliente', 'cerrado_en')
+      ? ['correo_saliente.cerrado_en']
+      : []),
+  ];
+}
+
+/**
+ * A test database name no earlier run can have used. Never built from the pid alone: pids repeat, and the suites drop
+ * the database they name, so a repeated pid would destroy a database an earlier run or person left behind.
+ */
+export function uniqueTestDatabase(prefix: string): string {
+  return `${prefix}_${process.pid}_${randomBytes(4).toString('hex')}`;
+}
+
 export async function dropTestDatabase(
   env: Record<string, string | undefined>,
   name: string,

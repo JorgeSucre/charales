@@ -4,25 +4,46 @@
  * ponytail: exact-match route table; add a router when the first path parameter (/players/:id) shows up.
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { isIP } from 'node:net';
 import mariadb, { type Pool, type PoolConfig } from 'mariadb';
 import * as auth from './auth.ts';
 import * as password from './password.ts';
 import { rpc } from './rpc.ts';
+import { ARGON2_DEFAULTS, argon2Gate, argon2LimitsFrom, type Argon2Gate } from './argon2-guard.ts';
+import {
+  canonicalIp,
+  trustedProxies as proxyList,
+  trustedProxiesFromEnv,
+  type TrustedProxies,
+} from './client-ip.ts';
+import { checkEnvironment, isProduction } from './config.ts';
+import { mailRetentionFrom, startMailRetention, startMailWorker } from './mail.ts';
+import { missingSchema } from './schema.ts';
+
+/** Any failure without a message meant for the user: never a stack trace, SQL or internal detail (logged instead). */
+export const UNEXPECTED_MESSAGE =
+  'Ocurrió un error inesperado. Inténtalo de nuevo; si continúa, avisa al administrador.';
 
 export interface Ctx {
   body: unknown;
   /** Value of the session cookie, if any. */
   token: string | null;
+  /** Value of any other cookie. */
+  cookie(name: string): string | null;
   ip: string;
   userAgent: string | null;
   secureCookie: boolean;
   /** E-mail transport for HU-005 recovery; null = recovery unavailable (503). */
   mailer: password.Mailer | null;
+  /** Pool of the login attempt limiter (S-01): its own small pool in production, the main one otherwise. */
+  limiterDb: Pool;
+  /** Argon2id gate of this process (S-02, api/argon2-guard.ts). */
+  argon2: Argon2Gate;
 }
 export interface Reply {
   status: number;
   body?: unknown;
-  cookie?: string;
+  cookie?: string | string[];
 }
 type Handler = (ctx: Ctx, db: Pool) => Promise<Reply>;
 
@@ -39,7 +60,13 @@ const routes: Record<string, Handler> = {
   'POST /auth/password': password.changePassword,
   'POST /auth/password-reset/request': password.requestPasswordReset,
   'POST /auth/password-reset/confirm': password.confirmPasswordReset,
-  // Lab exercise (docs/API.md § Práctica): plain table reads, same permissions as PlayerService.search and
+  // Domain operations of the app (D13, docs/API.md § Operaciones de dominio): the services run here, on MariaDB.
+  'POST /api/rpc': rpc,
+};
+
+/** Lab exercise of the course: on in development only (`createApp` option `labApi`), never in production (F5-18). */
+const labRoutes: Record<string, Handler> = {
+  // docs/API.md § Práctica: plain table reads, same permissions as PlayerService.search and
   // CategoryService.list. Rows go out as stored (snake_case), so they compare 1:1 with SELECT * in MariaDB.
   'GET /api/jugadores': async (ctx, db) =>
     (await auth.requireOffice(ctx, db, 'jugadores.consultar')) ?? {
@@ -51,8 +78,6 @@ const routes: Record<string, Handler> = {
       status: 200,
       body: await db.query('SELECT * FROM categorias ORDER BY id'),
     },
-  // Domain operations of the app (D13, docs/API.md § Operaciones de dominio): the services run here, on MariaDB.
-  'POST /api/rpc': rpc,
 };
 
 async function health(_ctx: Ctx, db: Pool): Promise<Reply> {
@@ -66,22 +91,52 @@ async function health(_ctx: Ctx, db: Pool): Promise<Reply> {
 
 export function createApp(
   db: Pool,
-  options: { secureCookie: boolean; mailer?: password.Mailer | null },
+  options: {
+    secureCookie: boolean;
+    mailer?: password.Mailer | null;
+    /** Addresses or CIDR ranges of the proxies whose X-Forwarded-For is believed (TRUSTED_PROXIES); none by default. */
+    trustedProxies?: readonly string[];
+    /** Small pool for the login limiter, so a login flood can't take the connections of the rest of the API (M-1). */
+    limiterDb?: Pool;
+    /** Argon2id gate of this process (S-02); one with ARGON2_DEFAULTS if omitted. */
+    argon2?: Argon2Gate;
+    /** The course's plain-table endpoints (`labRoutes`). Off in production. */
+    labApi?: boolean;
+  },
 ): Server {
+  const trusted = proxyList(options.trustedProxies ?? []);
+  const gate = options.argon2 ?? argon2Gate(ARGON2_DEFAULTS);
+  const table = options.labApi === false ? routes : { ...routes, ...labRoutes };
+  let warnedForwarded = false;
   return createServer(async (req, res) => {
     let reply: Reply;
     try {
       const path = new URL(req.url ?? '/', 'http://localhost').pathname;
-      const handler = routes[`${req.method} ${path}`];
+      const handler = table[`${req.method} ${path}`];
+      // A proxy we don't trust is in front: every client it serves shares one attempt limit (F5-04). Said once.
+      if (
+        !warnedForwarded &&
+        req.headers['x-forwarded-for'] &&
+        !trusted.has(req.socket.remoteAddress ?? '')
+      ) {
+        warnedForwarded = true;
+        console.warn(
+          `Llegó X-Forwarded-For desde ${canonicalIp(req.socket.remoteAddress ?? '')}, que no está en TRUSTED_PROXIES: ` +
+            'se ignora. Si hay un proxy, configúralo: si no, todos sus clientes comparten un solo límite de intentos.',
+        );
+      }
       reply = handler
         ? await handler(
             {
               body: await readJson(req, path === '/api/rpc' ? MAX_RPC_BODY_BYTES : MAX_BODY_BYTES),
               token: cookieValue(req.headers.cookie, auth.COOKIE),
-              ip: req.socket.remoteAddress ?? '',
+              cookie: (name) => cookieValue(req.headers.cookie, name),
+              ip: clientIp(req, trusted),
               userAgent: req.headers['user-agent']?.slice(0, 500) ?? null,
               secureCookie: options.secureCookie,
               mailer: options.mailer ?? null,
+              limiterDb: options.limiterDb ?? db,
+              argon2: gate,
             },
             db,
           )
@@ -90,11 +145,14 @@ export function createApp(
       if (e instanceof BadRequest) reply = { status: e.status, body: { error: e.message } };
       else {
         console.error(e);
-        reply = { status: 500, body: { error: 'Error interno.' } };
+        reply = { status: 500, body: { error: UNEXPECTED_MESSAGE } };
       }
     }
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    // JSON only: nothing here may load, frame or leak. The app's own headers are the proxy's (docs/deployment).
+    res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+    res.setHeader('Referrer-Policy', 'no-referrer');
     if (reply.cookie) res.setHeader('Set-Cookie', reply.cookie);
     if (reply.body === undefined) res.writeHead(reply.status).end();
     else
@@ -123,8 +181,33 @@ async function readJson(req: IncomingMessage, limit: number): Promise<unknown> {
   try {
     return raw ? JSON.parse(raw) : undefined;
   } catch {
-    throw new BadRequest(400, 'JSON inválido.');
+    throw new BadRequest(
+      400,
+      'No se pudo procesar la solicitud. Recarga la página e inténtalo de nuevo.',
+    );
   }
+}
+
+/**
+ * The client's address, for the attempt limits, sessions and audit (S-01). The TCP peer, unless it is one of our own
+ * reverse proxies: then the X-Forwarded-For hop just before them (the rightmost one they didn't add). A direct client
+ * can't choose its address with that header, and nothing is believed when no proxy is configured. A hop that isn't an
+ * IP address leaves the peer's (the proxy is misconfigured; never an attacker-chosen value).
+ */
+export function clientIp(req: IncomingMessage, trusted: TrustedProxies): string {
+  const peer = canonicalIp(req.socket.remoteAddress ?? '');
+  if (!trusted.has(peer)) return peer;
+  const header = req.headers['x-forwarded-for'];
+  const hops = (Array.isArray(header) ? header.join(',') : (header ?? ''))
+    .split(',')
+    .map(canonicalIp);
+  for (let i = hops.length - 1; i >= 0; i--) {
+    const hop = hops[i]!;
+    if (!hop) continue;
+    if (!isIP(hop)) return peer;
+    if (!trusted.has(hop)) return hop;
+  }
+  return peer;
 }
 
 function cookieValue(header: string | undefined, name: string): string | null {
@@ -147,22 +230,81 @@ export function createPool(
     user: env['DB_USER'],
     password: env['DB_PASSWORD'],
     database: env['DB_NAME'] ?? 'escuela_futbol',
-    connectionLimit: Number(env['DB_POOL_SIZE'] ?? 5),
+    connectionLimit: extra.connectionLimit ?? Number(env['DB_POOL_SIZE'] ?? 5),
     // DATETIME stays the school's local wall-clock string (MARIADB.md § 1); ids are plain numbers.
     dateStrings: true,
     bigIntAsNumber: true,
     insertIdAsNumber: true,
     // Errors must not echo query parameters (e-mails, hashes, IPs) into the logs (M0 D4d). The driver's default is true.
     logParam: false,
+    // Defense in depth (T1): the services validate their input, but a server configured without strict mode would
+    // store '' for an ENUM value they let through instead of rejecting it. Runs last, after any caller's initSql.
+    initSql: [...[extra.initSql ?? []].flat(), STRICT_MODE],
   });
 }
 
+/** S-01: seconds a limiter statement waits for a counter row another request holds before MariaDB answers 1205. */
+export const LIMITER_LOCK_WAIT_S = 2;
+
+/**
+ * M-1: the login limiter's own pool — 2 connections, at most 3 s to get one (then the login answers 503) — so a flood
+ * can't take the connections of the rest of the API. S-01: every connection of THIS pool (also the ones it opens
+ * later) waits at most {@link LIMITER_LOCK_WAIT_S} for a row lock instead of the server's innodb_lock_wait_timeout
+ * (50 s by default). A session setting: the main pool and the server keep their value. `extra` is for tests.
+ */
+export function createLimiterPool(
+  env: Record<string, string | undefined> = process.env,
+  extra: Partial<PoolConfig> = {},
+): Pool {
+  return createPool(env, {
+    connectionLimit: 2,
+    acquireTimeout: 3000,
+    ...extra,
+    initSql: [
+      `SET SESSION innodb_lock_wait_timeout = ${LIMITER_LOCK_WAIT_S}`,
+      ...[extra.initSql ?? []].flat(),
+    ],
+  });
+}
+
+/** Adds STRICT_TRANS_TABLES to whatever sql_mode the server has. */
+export const STRICT_MODE =
+  "SET SESSION sql_mode = IF(@@sql_mode = '', 'STRICT_TRANS_TABLES', CONCAT(@@sql_mode, ',STRICT_TRANS_TABLES'))";
+
 if (import.meta.main) {
   const env = process.env;
+  const report = checkEnvironment(env);
+  for (const w of report.warnings) console.warn(`Aviso: ${w}`);
+  if (report.errors.length) {
+    for (const e of report.errors) console.error(`Error de configuración: ${e}`);
+    process.exit(1);
+  }
+  const production = isProduction(env);
   const db = createPool(env);
+  // A database behind the code: login and operations would fail one by one, so it is said at once (F5-06).
+  const missing = await missingSchema(db).catch((e: Error) => [`(sin conexión: ${e.message})`]);
+  if (missing.length) {
+    console.error(
+      `La base no está al día, falta: ${missing.join(', ')}. Aplica las migraciones: npm run db:setup (docs/SETUP.md).`,
+    );
+    if (production) process.exit(1);
+  }
   const port = Number(env['PORT'] ?? 3000);
-  const secureCookie = env['NODE_ENV'] === 'production' || env['COOKIE_SECURE'] === 'true';
-  createApp(db, { secureCookie, mailer: password.mailerFromEnv(env) }).listen(port, () =>
+  const secureCookie = production || env['COOKIE_SECURE'] === 'true';
+  const limiterDb = createLimiterPool(env);
+  const mailer = password.mailerFromEnv(env);
+  if (!missing.length) {
+    startMailRetention(db, mailRetentionFrom(env));
+    if (mailer) startMailWorker(db, mailer);
+  }
+  createApp(db, {
+    secureCookie,
+    mailer,
+    trustedProxies: trustedProxiesFromEnv(env['TRUSTED_PROXIES']),
+    limiterDb,
+    labApi: !production,
+    argon2: argon2Gate(argon2LimitsFrom(env)), // S-02, per process; an invalid value stops the start
+  }).listen(port, env['HOST'] || undefined, () =>
     console.log(
       `Charales API en http://localhost:${port} (BD ${env['DB_NAME'] ?? 'escuela_futbol'})`,
     ),

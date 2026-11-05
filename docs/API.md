@@ -64,24 +64,155 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
   en el cuerpo ni en cabeceras.
 - `sesiones` guarda sólo el SHA-256 del token. Expira a las **8 h** o tras **30 min** sin uso (HU-002); una sesión
   vencida, o de una cuenta desactivada, se cierra y se audita como «Sesión expirada».
-- Login con 5 contraseñas incorrectas para el mismo correo desde la misma IP en 15 min → `429` hasta que pase la
-  ventana (en memoria del proceso).
+- **Límite de intentos del login (S-01, `api/login-limit.ts`, migración 005; corregido tras la auditoría de la PR #26).**
+  Cada intento se **reserva antes** de verificar la contraseña (Argon2id), en una transacción de MariaDB que bloquea los
+  contadores (`SELECT … FOR UPDATE`, siempre la IP primero, `READ COMMITTED`). Así las solicitudes simultáneas no pueden
+  superar el límite, y el límite se mantiene tras reiniciar la API y entre varias instancias. Hay dos contadores, cada
+  uno con una ventana fija de 15 min que abre su primer intento:
+
+  | Contador                | Límite | Para qué                                                                                    |
+  | ----------------------- | ------ | ------------------------------------------------------------------------------------------- |
+  | Cuenta + IP del cliente | 5      | Una persona que se equivoca desde un equipo, y el freno a adivinar una cuenta desde una IP  |
+  | IP (cualquier cuenta)   | 50     | Una dirección no puede provocar Argon2id sin límite probando correos (holgura para una NAT) |
+  - Al alcanzar cualquiera de los dos, la respuesta es `429` sin verificar nada.
+  - **Sin contador sólo por cuenta (H-2):** con él, quien conociera un correo podía dejar fuera a su dueño desde unas
+    pocas direcciones, mientras siguiera intentándolo, y ni restablecer la contraseña lo resolvía. Ahora los intentos
+    de otras direcciones no afectan a la del dueño.
+  - **Identidad de la cuenta (H-1):** se calcula como MariaDB compara `usuarios.email` (`utf8mb4_unicode_ci`): el peso
+    de colación del correo recortado (`WEIGHT_STRING`), sin los espacios finales que esa colación ignora. Acentos,
+    letras de ancho completo, caracteres de ancho cero, mayúsculas y espacios que llevan a la misma cuenta comparten su
+    contador. Los correos inexistentes se tratan igual (no hay enumeración).
+  - **Contraseña correcta:**
+    - el inicio de sesión vacía el contador de la cuenta en esa IP y devuelve a la IP sólo su intento;
+    - en una cuenta deshabilitada, devuelve el intento a los dos contadores.
+  - **Un rechazo no escribe (M-1):** los contadores se leen con bloqueo y sólo se escriben si el intento cabe. Así un
+    `429` no crea filas ni actualiza nada, y los correos al azar desde una IP en su límite no hacen crecer la tabla.
+    Además, cada proceso recuerda unos 10 s las claves en su límite, y esa avalancha ni siquiera llega a MariaDB. Esa
+    memoria sólo rechaza, nunca admite.
+  - **Pool propio:** el limitador usa 2 conexiones propias con 3 s de espera máxima (`api/server.ts`), así que una
+    avalancha de intentos no agota las conexiones del resto de la API.
+  - **Restablecer la contraseña no toca los contadores:** sin el contador por cuenta, sólo afectan a la IP que falló.
+  - **Orden de bloqueo (corregido el 2026-11-04):** toda reserva bloquea primero la fila de la IP y después la de la
+    pareja cuenta + IP. Si la fila de la IP no existe, la transacción la inserta (con 0 intentos) **antes** de leer la
+    pareja. Antes, una solicitud que no encontraba la IP podía bloquear la pareja y quedar esperando la IP que otra ya
+    tenía, mientras esa otra esperaba la pareja: un bloqueo mutuo. Si un contador está en su límite, la transacción se
+    revierte (ROLLBACK), así que un rechazo no deja ni la fila de IP que tuvo que insertar.
+  - **Reintentos:** ante un bloqueo mutuo (1213), un tiempo de espera de bloqueo (1205), «Record has changed» (1020) o
+    la colisión de dos inserciones simultáneas de la misma fila de IP (1062 en esa inserción, y sólo en ella), la
+    reserva se repite como máximo 6 veces en 1,5 s, esperando un tiempo aleatorio de hasta 10·2ⁿ ms (máx. 200 ms)
+    entre intentos. Cualquier otro 1062 es un error. Si se agotan los intentos o el tiempo, el login responde `503`.
+  - **Espera de bloqueo:** las conexiones del pool del limitador (`createLimiterPool`, `api/server.ts`) ejecutan al
+    abrirse `SET SESSION innodb_lock_wait_timeout = 2` (`LIMITER_LOCK_WAIT_S`): una sentencia del limitador espera como
+    máximo 2 s una fila que otra transacción tiene bloqueada y entonces MariaDB responde 1205. Afecta sólo a esas
+    sesiones (también a las que el pool abra después; el pool no reinicia la sesión al devolverla); el pool general y
+    el valor global del servidor (50 s por defecto) no cambian. Una contención normal dura milisegundos y se espera sin
+    error. El presupuesto de 1,5 s decide si **empieza** otro intento, no corta una espera en curso: un bloqueo que
+    dura más de 2 s da 503 tras unos 2 s, sin reintento, y el peor caso (un reintento que empieza justo antes de 1,5 s
+    y espera otros 2 s) ronda los 3,5 s.
+  - **Datos guardados:** sólo SHA-256 de cada clave. Después de cada intento admitido se purgan hasta 100 filas
+    vencidas con `FOR UPDATE SKIP LOCKED`: la purga nunca espera una fila bloqueada, así que no puede participar en un
+    bloqueo mutuo.
+  - **Política de fallo:** si MariaDB o el pool del limitador no responden, el login responde `503` y no verifica
+    (falla cerrado). La disponibilidad del login depende de la base, igual que la consulta del usuario.
+  - **Red, no dirección (R-1, `api/client-ip.ts`):** los límites cuentan una dirección IPv4 o el **/64** de una IPv6, en
+    forma canónica (una dirección IPv4 mapeada cuenta como IPv4; todas las escrituras de una IPv6 son la misma). Un
+    cliente suele tener un /64 completo, así que contar direcciones no limitaría nada.
+  - **Límite por cuenta (R-1):** un presupuesto de **10 intentos que recupera 1 cada 30 min**, sumando todas las redes y
+    procesos (MariaDB). Son 58 adivinanzas como máximo el primer día y 48 los siguientes, frente a las 1 920 de antes
+    (medido). Se recarga solo, así que nunca bloquea para siempre: cuando el ataque termina, un intento cabe en 30 min como
+    máximo. Una contraseña correcta devuelve su intento, sin reiniciar el ataque.
+  - **Parte de cada origen (`CUENTA_RED`, IND-03):** una asignación (/24 de IPv4 o /48 de IPv6) gasta como máximo 8 intentos de una
+    cuenta y recupera 1 cada 6 h. Para mantener vacío el presupuesto hacen falta unas 12 asignaciones, no un solo origen. Precio:
+    quien comparta /24 o /48 con el dueño puede agotar esa parte para esa cuenta, nunca para toda la red (IND2-05).
+  - **Navegador de confianza (`api/device-trust.ts`, migración 008):** el navegador desde el que una cuenta ya entró guarda un
+    secreto en una cookie `HttpOnly; SameSite=Strict; Path=/auth`, y `Secure` en producción. MariaDB sólo guarda su SHA-256,
+    ligado a la cuenta. Ese navegador no gasta los límites compartidos, en ninguna red, así que un atacante no puede
+    bloquear a la persona desde donde suele entrar (H-2).
+    - **Nunca evita la contraseña.** Cada intento reserva 1 de 5 de forma atómica, antes de Argon2id; 5 errores seguidos y
+      deja de valer. Una cookie robada vale 5 adivinanzas como máximo.
+    - Cada inicio de sesión correcto reemplaza el secreto (una copia antigua deja de funcionar) y renueva los 90 días.
+    - Un cambio o una recuperación de contraseña, desactivar la cuenta o cambiar su correo **revocan todos**; como máximo 10 por cuenta. Revocar a mano:
+      `DELETE FROM dispositivo_confiable WHERE usuario_id = ?`.
+  - **Riesgos residuales:**
+    - **Ataque distribuido:** 48 adivinanzas al día por cuenta, unas 17 500 al año. Depende también de la calidad de las
+      contraseñas. Reduce mucho el riesgo; no lo elimina.
+    - **Navegador nuevo durante un ataque sostenido:** recibe 429 aunque la contraseña sea correcta, porque verificarla ahí
+      permitiría probar contraseñas sin límite. Sus vías: un enlace de recuperación, que además hace de confianza ese navegador,
+      o uno generado por quien administra el servidor (`npm run db:access-link -- <correo>`, se entrega por otro canal). **Sin
+      correo real en producción sólo queda la segunda.** Tras el despliegue, todos cuentan como navegador nuevo hasta su primer login.
+    - **Bloqueo con varias redes:** unas 12 asignaciones sostenidas dejan sin intentos a un navegador nuevo de esa cuenta;
+      los /48 pueden conseguirse gratis. Afecta a una cuenta cada vez y no a navegadores de confianza ni a la recuperación.
+    - **Red compartida:** sin navegador de confianza, un atacante en la misma red comparte el contador de red.
+    - **Avalancha de cookies inventadas:** cada una cuesta una consulta por clave primaria. La acota el proxy.
+    - **Errores propios en un navegador nuevo:** 8 contraseñas incorrectas desde una red gastan la parte de esa red para la
+      cuenta durante 6 h, también para otros navegadores nuevos de esa misma red (IND3-04). La recuperación sigue disponible.
+    - **Enlace del operador:** se emite como invitación; si después se corrige el correo, se envía una invitación a la dirección
+      nueva (IND3-05).
+    - **Tope global de correos:** no hay. Muchas asignaciones y cuentas distintas pueden gastar la cuota del proveedor.
+    - **Disponibilidad:** el pool de 2 conexiones puede dejar el login en 503 ante una avalancha desde muchas redes; hay
+      que limitarlo también en el proxy (`deploy/nginx/charales.conf`).
+    - **Memoria de rechazos:** un rechazo recordado puede durar hasta 10 s más que la ventana.
+    - **Seudónimos, no anónimos:** los hashes se revierten con un diccionario de correos o enumerando las IPv4.
+
+- **Argon2id (S-02, `api/argon2-guard.ts`).** Las contraseñas siguen protegidas con Argon2id (m=19456 KiB, t=2, p=1).
+  Cada operación usa unos **19 MiB** y un hilo del pool de libuv durante decenas de milisegundos. Para que muchas
+  operaciones a la vez no agoten la memoria ni la CPU, cada verificación o hash de una solicitud pasa por un
+  **semáforo local del proceso**, sin MariaDB:
+
+  | Ruta                                | Argon2id                                   | Qué se comprueba antes, sin Argon2id                                                                         |
+  | ----------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+  | `POST /auth/login`                  | 1 verificación                             | Cuerpo y longitudes; límite de intentos de S-01 (un 429 nunca ocupa el semáforo)                             |
+  | `POST /auth/password`               | verificación + hash nuevo, en **un** turno | Sesión; contraseña nueva distinta y con política válida; límite C1; longitudes                               |
+  | `POST /auth/password-reset/confirm` | 1 hash                                     | Política; **token existente, vigente y sin usar**; después, la transacción vuelve a comprobarlo bajo bloqueo |
+  | `POST /auth/password-reset/request` | ninguno                                    | —                                                                                                            |
+  - **Límite por proceso:** `ARGON2_MAX_CONCURRENT` operaciones a la vez, por defecto **3** (unos 57 MiB). **No es un
+    límite global**: con varios procesos de la API, el máximo total es aproximadamente
+    `procesos × ARGON2_MAX_CONCURRENT`. Charales corre **un solo proceso** (`node api/server.ts`, sin cluster, PM2 ni
+    réplicas en el repositorio); si eso cambia, hay que dividir el presupuesto entre los procesos.
+  - **Dimensionamiento:** la memoria de Argon2id es `ARGON2_MAX_CONCURRENT × 19 MiB` por proceso. A eso se suma, por
+    proceso, la memoria base de Node (unos 100–150 MiB), más el buffer pool de MariaDB, los buffers del sistema y un
+    margen; el total debe caber en la memoria real del servidor. Node ejecuta Argon2id en el pool de libuv (4 hilos por
+    defecto, compartidos con archivos y DNS): más de 4 no aporta en un proceso, y 3 deja un hilo libre. Para subirlo,
+    sube también `UV_THREADPOOL_SIZE`. **3 es un valor conservador, no una cifra validada para el servidor de
+    producción**, cuya memoria no se conoce.
+  - **Espera acotada:** sin turno libre, una solicitud espera como mucho `ARGON2_WAIT_MS` (por defecto 2000 ms), y un
+    turno liberado pasa al que lleva más tiempo esperando. Como mucho **32** esperan por proceso; las demás reciben
+    `503` de inmediato. **No hay cola ilimitada.**
+  - **Saturación:** cola llena o espera agotada → **`503`** («El servicio está ocupado. Intenta de nuevo en unos
+    segundos.») sin ejecutar Argon2id.
+    - En el login, el intento de S-01 se devuelve. Mientras espera, el intento cuenta para el límite correo + IP: otros
+      intentos simultáneos de la misma pareja pueden recibir 429.
+    - En el cambio de contraseña se devuelve la reserva C1.
+    - En la recuperación, el token queda sin usar.
+  - **Liberación:** un turno se libera en `finally`, también si Argon2id falla (la solicitud responde el `500`
+    genérico). Liberarlo dos veces no tiene efecto. Al no depender de MariaDB, no hay turnos huérfanos ni vencimientos.
+  - **Configuración:** `ARGON2_MAX_CONCURRENT` (1–64) y `ARGON2_WAIT_MS` (0–10000). Un valor inválido (0, negativo,
+    decimal, NaN o fuera de rango) impide arrancar la API; nunca desactiva la protección.
+  - **Fuera del semáforo:** el hash señuelo del login (uno por proceso, al arrancar) y las herramientas de consola
+    (`create-admin.ts`, `demo.ts`, `node api/auth.ts`). Son una operación cada una, fuera de las solicitudes. La creación
+    de cuentas del dominio usa un hash de prueba con SHA-256, no Argon2id.
+  - **Riesgos residuales:**
+    - Muchas solicitudes admitidas desde muchas IP pueden mantener ocupado el semáforo: los usuarios legítimos reciben
+      503 mientras dure (se pierde disponibilidad, pero el servidor no se agota). El límite de S-01 por IP lo acota,
+      salvo un ataque distribuido (R-1).
+    - Con varios procesos, el límite total crece con su número.
+
 - `auditoria`: `LOGIN`, `LOGOUT` e «Intento de acceso fallido» (módulo `auth`), como el `AuthService` del mock.
 
 ## Endpoints
 
-| Método y ruta                       | Sesión | Respuestas                                                                                                                                                      |
-| ----------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /health`                       | No     | `200 {status:"ok",database:"ok"}` · `503` si MariaDB no responde                                                                                                |
-| `POST /auth/login`                  | No     | `200 AuthUser` + cookie · `400` faltan datos · `401` correo/contraseña incorrectos **o cuenta deshabilitada** (mismo mensaje) · `403` sin rol ni perfil · `429` |
-| `GET /auth/session`                 | Sí     | `200 AuthUser` (renueva el uso) · `401` sin sesión, vencida o cerrada                                                                                           |
-| `POST /auth/logout`                 | —      | `204` siempre; borra la cookie y cierra la sesión si había una                                                                                                  |
-| `POST /auth/password`               | Sí     | `{currentPassword, newPassword}` → `204` (cierra las otras sesiones) · `400` actual incorrecta, política o igual a la actual · `401` sin sesión · `429`         |
-| `POST /auth/password-reset/request` | No     | `{email}` → `204` siempre (exista o no la cuenta) · `400` sin correo · `429` · `503` sin transporte de correo                                                   |
-| `POST /auth/password-reset/confirm` | No     | `{token, newPassword}` → `204` (cierra todas las sesiones y borra la cookie) · `400` política, o «El enlace no es válido o ya expiró.»                          |
-| `GET /api/jugadores`                | Sí     | `200` arreglo de filas de `jugadores` · `401` sin sesión · `403` sin `jugadores.consultar` del rol de seguridad                                                 |
-| `GET /api/categorias`               | Sí     | `200` arreglo de filas de `categorias` · `401` sin sesión · `403` sin ningún permiso de oficina                                                                 |
-| `POST /api/rpc`                     | Sí     | `{service, method, args}` → `200 {result}` · `400` regla de negocio o datos inválidos · `401` · `403` · `404` fuera de la lista · `409` integridad · `503`      |
+| Método y ruta                            | Sesión | Respuestas                                                                                                                                                                                                      |
+| ---------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /health`                            | No     | `200 {status:"ok",database:"ok"}` · `503` si MariaDB no responde                                                                                                                                                |
+| `POST /auth/login`                       | No     | `200 AuthUser` + cookie · `400` faltan datos · `401` correo/contraseña incorrectos **o cuenta deshabilitada** (mismo mensaje) · `403` sin rol ni perfil · `429` límite de intentos · `503` límite no disponible |
+| `GET /auth/session`                      | Sí     | `200 AuthUser` (renueva el uso) · `401` sin sesión, vencida o cerrada                                                                                                                                           |
+| `POST /auth/logout`                      | —      | `204` siempre; borra la cookie y cierra la sesión si había una                                                                                                                                                  |
+| `POST /auth/password`                    | Sí     | `{currentPassword, newPassword}` → `204` (cierra las otras sesiones) · `400` actual incorrecta, política o igual a la actual · `401` sin sesión · `429`                                                         |
+| `POST /auth/password-reset/request`      | No     | `{email}` → `204` siempre (exista o no la cuenta) · `400` sin correo · `429` · `503` sin transporte de correo                                                                                                   |
+| `POST /auth/password-reset/confirm`      | No     | `{token, newPassword}` → `204` (cierra todas las sesiones y borra la cookie) · `400` política, o «El enlace no es válido o ya expiró.»                                                                          |
+| `GET /api/jugadores` (no en producción)  | Sí     | `200` arreglo de filas de `jugadores` · `401` sin sesión · `403` sin `jugadores.consultar` del rol de seguridad                                                                                                 |
+| `GET /api/categorias` (no en producción) | Sí     | `200` arreglo de filas de `categorias` · `401` sin sesión · `403` sin ningún permiso de oficina                                                                                                                 |
+| `POST /api/rpc`                          | Sí     | `{service, method, args}` → `200 {result}` · `400` regla de negocio o datos inválidos · `401` · `403` · `404` fuera de la lista · `409` integridad · `429` demasiadas operaciones de la sesión a la vez · `503` |
 
 `AuthUser` es la interfaz de `src/app/core/auth/session.store.ts`: `userId`, `sessionId`, `email`, `displayName`,
 `roles`, `permissions`, `officePermissions`, `tutorId`, `coachId`, `isStaff`, `expiresAt`, `lastUsedAt`. Nunca incluye
@@ -100,16 +231,34 @@ Código: [`api/password.ts`](../api/password.ts). Responsable de la historia: Bo
 
 - **Cambio y recuperación son operaciones distintas.** El cambio exige sesión y la contraseña actual; una actual
   incorrecta responde `400` (no `401`, para que el cliente no lo confunda con una sesión vencida) y cuenta para el
-  límite de 5 intentos en 15 min por usuario. Al cambiarla se cierran las **demás** sesiones y se conserva la actual.
-- **Política** (igual que el frontend): 8 a 200 caracteres, con letras y números; distinta de la actual.
+  límite de 5 intentos en 15 min por usuario, compartido entre procesos (MariaDB). Al cambiarla se cierran las **demás** sesiones y se conserva la actual.
+- **Política** (igual que el frontend): 8 a 200 caracteres, con letras y números; distinta de la actual; fuera de una
+  lista corta de contraseñas comunes.
 - **Recuperación:** token aleatorio de 32 bytes; sólo se guarda su SHA-256 en `tokens_recuperacion`; un solo uso;
   vence a los 60 min. Una nueva solicitud revoca los tokens anteriores vigentes de la cuenta marcando `usado_en` (se
   conserva el historial). Confirmar cierra **todas** las sesiones, en una transacción con la auditoría.
-- **Sin enumeración:** la solicitud responde `204` igual para cuentas existentes, inexistentes o inactivas; límite de 5
-  solicitudes por correo e IP en 15 min (también para correos inexistentes).
-- **Correo:** no hay proveedor (D4c pendiente). Sin transporte, la solicitud responde `503` antes de consultar la
-  cuenta, y la recuperación queda **deshabilitada en producción**. En desarrollo, `MAIL_CONSOLE=true` imprime el correo
-  (con el enlace y su token) en la consola de la API; nunca con `NODE_ENV=production`.
+- **Sin enumeración:** la solicitud responde `204` igual para cuentas existentes, inexistentes o inactivas, y el trabajo
+  (consulta, token y envío) ocurre **después** de responder, para que el tiempo no lo delate. Límites en MariaDB, también para
+  correos inexistentes: por red, 20 que recuperan 1 cada 15 min (`429`); por cuenta sumando todas las redes, 5 que recuperan 1
+  por hora, como mucho 29 correos el primer día (en silencio: `204` sin enviar, para que otros no muestren un rechazo a su
+  dueño; el último correo sigue valiendo, porque nada nuevo lo revoca).
+- **Correo (`api/mail.ts`):** `MAIL_PROVIDER=resend` (DP-04), `none` o, en desarrollo, `MAIL_CONSOLE=true`. **Resend está
+  implementado y probado contra un simulador; nunca se ha enviado un correo real.** Sin transporte, la solicitud y las
+  invitaciones responden `503` y no crean nada.
+- **Bandeja de salida (`correo_saliente`, migración 007):** cada correo de acceso se registra en la misma transacción que la
+  operación y se envía después del COMMIT.
+  - Si el proveedor falla, la operación **sigue hecha**: responde `200` con `mailPending: true` y la app lo avisa, sin
+    detalles del proveedor. Un proceso de fondo reintenta (2, 4, 8… minutos, como máximo 8 veces) hasta que venza el enlace.
+  - La tabla no guarda el cuerpo ni el token: un reintento **emite un token nuevo y revoca el anterior**. La entrega es «al
+    menos una vez»: si el proveedor aceptó pero la respuesta se perdió, llegan dos correos y sólo funciona el último.
+  - Un error permanente (`HTTP_4xx`), una cuenta inactiva, un enlace ya usado o vencido cierran la fila como `FALLIDO`, con
+    un código en `ultimo_error`. Quien no recibió una invitación puede pedir un enlace por «¿Olvidaste tu contraseña?».
+- **Retención de `correo_saliente` (migración 008):** lo pendiente o en proceso no se toca. Un mensaje cerrado (enviado o
+  fallido para siempre) pierde dirección, usuario, token y referencia del proveedor a los **30 días**
+  (`CORREO_RETENCION_DIAS`, de 1 a 365; **no es un plazo legal**, sino un valor inicial hasta que la escuela defina su política),
+  y sus metadatos se borran al año. Uno vencido que nadie procesó se cierra como `ABANDONADO` a los 7 días. Corre cada hora y
+  con `npm run db:mail-purge`, por lotes y sin esperar filas bloqueadas; repetirla o interrumpirla es seguro. **Los respaldos
+  conservan las direcciones mientras se conserven.**
 - **Finalidad del token (D3e, migración 001):** `RECUPERACION` (esta solicitud, 60 min) o `INVITACION` (acceso
   inicial de una cuenta nueva o ligada: HU-004, HU-012, HU-022; 24 h, D3c). Una solicitud de recuperación sólo revoca
   tokens de recuperación; `confirm` acepta ambas finalidades, una sola vez.
@@ -133,7 +282,7 @@ Código: [`api/password.ts`](../api/password.ts). Responsable de la historia: Bo
 API** el método del servicio de dominio de Angular, con el usuario de la cookie, sobre MariaDB (decisión D13,
 [`MARIADB.md`](database/MARIADB.md)). Responde `{ "result": … }` con el mismo modelo que devolvía sobre `MockDb`.
 
-- **Lista blanca:** [`src/app/core/api/rpc-methods.ts`](../src/app/core/api/rpc-methods.ts), 22 servicios y 125
+- **Lista blanca:** [`src/app/core/api/rpc-methods.ts`](../src/app/core/api/rpc-methods.ts), 22 servicios y 126
   métodos: los que usan las páginas. Cada uno verifica permiso y alcance con `AuthorizationService` en su primera
   línea; los métodos internos (síncronos, `profileAccount`, `AuthService.*`) no se exponen (`404`).
 - **Unidad de trabajo** ([`api/rpc.ts`](../api/rpc.ts)): candado `GET_LOCK` por base → transacción → carga de las
@@ -150,6 +299,26 @@ API** el método del servicio de dominio de Angular, con el usuario de la cookie
 - **Argumentos:** vienen del navegador. Los servicios copian sólo los campos de su borrador (nunca `...draft` en una
   fila), así que un cliente no puede fijar `active`, `createdAt` ni otros campos que la operación no recibe; un nombre
   de servicio o método fuera de la lista (incluidos `constructor`, `__proto__`…) responde `404`.
+- **Valores de catálogo y booleanos (T1/T2):** un argumento que va a una columna `ENUM` debe ser **un texto** igual a
+  uno de sus valores (no un arreglo como `["ACTIVO"]`, ni `null`, ni otra capitalización, ni nombres como
+  `toString`); uno que va a una columna `BOOLEAN` debe ser `true` o `false` (no `"false"`, `0` ni `null`). Si no,
+  `400` con el mensaje de la operación («Estatus inválido.», «Estado inválido.», «Tipo inválido.», «Forma de pago
+  inválida.», «Tipo de ajuste inválido.», «Estado de asistencia inválido.», «Valor de «activo» inválido.»…) y no se
+  escribe nada. El permiso se verifica antes que el valor (`403` primero). Validadores: `oneOf` y `flag` de
+  `src/app/shared/validate.ts`. Operaciones: `PlayerService.create` (estatus) y `changeStatus`;
+  `EnrollmentService.enroll` (sólo `PENDIENTE` o `ACTIVA`) y `setStatus`; `TrainingService.setStatus`;
+  `AttendanceService.record`; `CompetitionService.save` (tipo y estatus), `register` y `setParticipationStatus`;
+  `BillingService.registerPayment` (forma de pago), `addDiscount` (tipo), `saveConcept` (`recurring`) y
+  `setConceptActive`; `setActive` de `UserService`, `CategoryService`, `ScheduleService`, `CoachService` y
+  `VenueService`; `UniformService.setProductActive/setVariantActive`; `NoticeService.save` (`published`) y
+  `setPublished`; `RoleService.setPermission` (`granted`); `SeasonService.save` (`active`, `isCurrent`);
+  `TutorService.save` (`isPrimary` de cada vínculo). `CompetitionService.register` permite **omitir** `status`
+  (HU-035.4): queda `INSCRITA`, también al reinscribir una participación en `BAJA`; `null` no cuenta como omitido. Los
+  filtros de las consultas (listas, búsquedas) no se validan con estas reglas. Pruebas: `api/input-validation.test.ts`.
+- **Modo estricto:** cada conexión de la API agrega `STRICT_TRANS_TABLES` a su `sql_mode` (`createPool`, después de
+  cualquier `initSql`), aunque el servidor no lo tenga: si un valor inválido llegara a MariaDB, se rechaza en lugar de
+  guardarse como `''`. Ese error no se traduce a `400`: responde `500` y se registra, porque indica una validación
+  que falta en el servicio.
 - **Cuerpo:** hasta 200 KB (formularios completos: listas de asistencia, avisos); el resto de los endpoints, 10 KB.
 - **Sesión:** cada operación valida la cookie y renueva su uso (HU-002); un `401` hace que el frontend vuelva al
   login. Los permisos se recalculan en cada solicitud (HU-006).
@@ -230,20 +399,20 @@ con su request, ejemplos y `pm.test` en la misma PR; las pruebas propias del bac
 
 ## Producción y despliegue
 
-**Estado (auditoría 2026-10-15):** desarrollo verificado y preparado para revisión; **no desplegado**. Nada de lo
-anterior corre en producción.
+**No desplegado.** Procedimiento completo y plantillas: [`deployment/PROCEDIMIENTO_PRODUCCION.md`](deployment/PROCEDIMIENTO_PRODUCCION.md) y `deploy/`. Con `NODE_ENV=production`, la API se niega a arrancar si la configuración es peligrosa o falta una migración (`api/config.ts`).
 
-| Requisito del entorno objetivo | Qué hacer                                                                                                                                                                                                                                                                                                             |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mismo origen                   | Servir `dist/project/browser` y la API detrás de un único dominio: el proxy inverso envía `/api`, `/auth` y `/health` a la API (como hace `e2e/app.e2e.ts`). La API no envía cabeceras CORS a propósito.                                                                                                              |
-| HTTPS y cookie                 | `NODE_ENV=production` (o `COOKIE_SECURE=true`): la cookie lleva `Secure`. Sin HTTPS el navegador no la enviaría.                                                                                                                                                                                                      |
-| IP real del cliente            | Detrás del proxy, la API ve la IP del proxy: el límite de intentos (login y recuperación) quedaría compartido por todos. Falta leer `X-Forwarded-For` de un proxy de confianza antes de desplegar.                                                                                                                    |
-| Base de datos                  | Base nueva: `docs/escuela_futbol_mariadb.sql` (**borra sus 39 tablas si la base existe**) + `db/mariadb/scripts/migrate.sh` + `010_permisos_app.sql`. Base existente: **sólo** `migrate.sh` (idempotente). Nunca `020_dev_seed.sql` ni `db:mariadb:demo`.                                                             |
-| Planificador de MariaDB        | `event_scheduler=ON` en la configuración del servidor para el trabajo diario de VENCIDO (migración 002). Ver [`MARIADB.md`](database/MARIADB.md#migraciones).                                                                                                                                                         |
-| Zona horaria                   | Servidor de base de datos y API en la hora de la escuela (`America/Mexico_City`): `DATETIME` guarda hora local sin zona (`MARIADB.md` § 1).                                                                                                                                                                           |
-| Correo (D4c, **pendiente**)    | No hay proveedor. Hace falta: un transporte en `password.mailerFromEnv` (SMTP o API del proveedor, con credenciales fuera del repo) y una URL base de la app para los enlaces, que hoy son relativos (`/reset-password?token=…`). Sin transporte, la recuperación y las invitaciones responden `503` y no crean nada. |
-| Una sola instancia o varias    | Varias instancias son seguras para los datos (`version_datos`, candado por base), pero el límite de intentos vive en la memoria de cada proceso.                                                                                                                                                                      |
-| Respaldo                       | `db/mariadb/scripts/backup.sh` diario; periodicidad y restauración en [`MARIADB.md` § 6](database/MARIADB.md).                                                                                                                                                                                                        |
+| Requisito del entorno objetivo | Qué hacer                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mismo origen                   | Servir `dist/project/browser` y la API detrás de un único dominio: el proxy inverso envía `/api`, `/auth` y `/health` a la API (como hace `e2e/app.e2e.ts`). La API no envía cabeceras CORS a propósito.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| HTTPS y cookie                 | `NODE_ENV=production` (o `COOKIE_SECURE=true`): la cookie lleva `Secure`. Sin HTTPS el navegador no la enviaría.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| IP real del cliente            | `TRUSTED_PROXIES` con las IP o rangos CIDR del proxy inverso, separados por comas (sin nombres; rangos de /8 en adelante; una entrada inválida impide arrancar, y en producción es obligatorio: `none` si no hay proxy). Sólo cuando la conexión viene de una de ellas se usa `X-Forwarded-For`: el salto más a la derecha que no sea un proxy propio. El proxy debe **añadir** la IP del cliente a ese encabezado (nginx: `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`). Sin `TRUSTED_PROXIES` el encabezado se ignora y cuenta la IP de la conexión: detrás de un proxy, todos los clientes compartirían el límite por IP. |
+| Base de datos                  | Base nueva: `docs/escuela_futbol_mariadb.sql` (**borra sus 39 tablas si la base existe**) + `db/mariadb/scripts/migrate.sh` + `010_permisos_app.sql`. Base existente: **sólo** `migrate.sh` (idempotente). Nunca `020_dev_seed.sql` ni `db:mariadb:demo`.                                                                                                                                                                                                                                                                                                                                                                                      |
+| Planificador de MariaDB        | `event_scheduler=ON` en la configuración del servidor para el trabajo diario de VENCIDO (migración 002). Ver [`MARIADB.md`](database/MARIADB.md#migraciones).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Zona horaria                   | Servidor de base de datos y API en la hora de la escuela (`America/Mexico_City`): `DATETIME` guarda hora local sin zona (`MARIADB.md` § 1).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Correo (D4c: **Resend**)       | `MAIL_PROVIDER=resend`, `RESEND_API_KEY`, `MAIL_FROM` y `APP_URL` con https. Falta la cuenta, el dominio verificado y **una prueba real**: sin ellos no se puede dar por funcional el envío (HU-004, HU-012, HU-022).                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Una sola instancia o varias    | Varias instancias son seguras para los datos (`version_datos`, candado por base) y para el límite del login (en MariaDB, S-01; cada instancia tiene además su pool de 2 conexiones para el limitador). El semáforo de Argon2id (S-02) es **por proceso**: con N procesos, el máximo es N × `ARGON2_MAX_CONCURRENT`. Los límites de cambio de contraseña y de recuperación también están en MariaDB. El reparto de operaciones por sesión del puente RPC y el semáforo son por proceso.                                                                                                                                                         |
+| Memoria y Argon2id (S-02)      | Fijar `ARGON2_MAX_CONCURRENT` por proceso según la memoria del servidor (`× 19 MiB` más Node, MariaDB y margen, multiplicado por el número de procesos) y `ARGON2_WAIT_MS` según la espera aceptable al iniciar sesión.                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Respaldo                       | `db/mariadb/scripts/backup.sh` diario; periodicidad y restauración en [`MARIADB.md` § 6](database/MARIADB.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 **Seguridad de la sesión:** cookie `HttpOnly; SameSite=Strict; Path=/` de 8 h (30 min de inactividad), sólo el SHA-256
 del token en `sesiones`. CSRF: además de `SameSite=Strict`, los cuerpos sólo se aceptan como `application/json`, que un
@@ -258,5 +427,5 @@ formulario de otro sitio no puede enviar sin una solicitud previa de CORS (que l
 - **Permisos recalculados en cada `GET /auth/session` y en cada operación de dominio.** `sesiones` no tiene columna para guardar la foto de permisos
   del login, así que un cambio de permisos (HU-006) o de perfil se refleja ya en las sesiones abiertas, no sólo en las
   nuevas. Es más estricto que el mock; si se quiere la foto exacta hace falta una columna (cambio de esquema).
-- **El límite de intentos sólo cuenta contraseñas incorrectas:** la contraseña correcta de una cuenta deshabilitada no
-  es un intento de adivinar.
+- **Una cuenta deshabilitada gasta su intento también con la contraseña correcta:** devolverlo revelaría, por los contadores,
+  que la contraseña era correcta (IND-11).

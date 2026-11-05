@@ -82,7 +82,7 @@ export const RPC_METHODS = {
   ScheduleService: ['list', 'save', 'setActive'],
   SeasonService: ['list', 'save'],
   TrainingService: ['generateFromSchedules', 'get', 'list', 'program', 'saveNotes', 'setStatus'],
-  TutorService: ['get', 'linkAccount', 'list', 'save', 'unlinkAccount'],
+  TutorService: ['get', 'linkAccount', 'list', 'save', 'setPrimary', 'unlinkAccount'],
   UniformService: [
     'cancelOrder',
     'createOrder',

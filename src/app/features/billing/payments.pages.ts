@@ -1,26 +1,36 @@
 import { sumCents } from '../../shared/money';
 import {
   Component,
+  ElementRef,
   computed,
   inject,
   input,
   numberAttribute,
   resource,
   signal,
+  viewChild,
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { FormsModule } from '@angular/forms';
+import { FormsModule, NgModel, ValidationErrors } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { Id, PaymentMethod } from '../../core/models';
 import { CategoryService } from '../../core/services/category.service';
 import { PlayerService } from '../../core/services/player.service';
 import { nowDateTime } from '../../shared/dates';
+import { focusFirstInvalid } from '../../shared/focus';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
+import { CHARGE_TONE, PAYMENT_TONE } from '../../shared/status-tone';
 import { Submission } from '../../shared/submission';
 import { Paginator, SubmissionAlert, centsFromInput, idOrNull } from '../../shared/ui';
-import { BillingService, CHARGE_STATUS_LABELS, METHOD_LABELS } from './billing.service';
+import {
+  BillingService,
+  CHARGE_STATUS_LABELS,
+  METHODS_WITH_REFERENCE,
+  METHOD_LABELS,
+  REFERENCE_REQUIRED_MESSAGE,
+} from './billing.service';
 
 /** HU-045: payment capture — player, payer (one of their tutors), charges, amount (total or partial), method → folio. */
 @Component({
@@ -28,7 +38,7 @@ import { BillingService, CHARGE_STATUS_LABELS, METHOD_LABELS } from './billing.s
   imports: [FormsModule, RouterLink, LoadState, MoneyPipe, SubmissionAlert],
   template: `
     <h1>Registrar pago</h1>
-    <form class="grid-form" (ngSubmit)="submit()" novalidate>
+    <form #formEl class="grid-form" (ngSubmit)="submit()" novalidate>
       <label
         >Jugador
         <select name="player" [ngModel]="playerId()" (ngModelChange)="selectPlayer($event)">
@@ -56,9 +66,7 @@ import { BillingService, CHARGE_STATUS_LABELS, METHOD_LABELS } from './billing.s
                 <label class="check">
                   <input type="checkbox" [checked]="selected().has(c.id)" (change)="toggle(c.id)" />
                   {{ c.label }} · vence {{ c.dueDate ?? '—' }} · saldo {{ c.balanceCents | money }}
-                  <span class="tag" [class.off]="c.status === 'VENCIDO'">{{
-                    chargeLabels[c.status]
-                  }}</span>
+                  <span class="tag {{ chargeTone[c.status] }}">{{ chargeLabels[c.status] }}</span>
                 </label>
               }
               <p>
@@ -68,16 +76,28 @@ import { BillingService, CHARGE_STATUS_LABELS, METHOD_LABELS } from './billing.s
           >
         </fieldset>
         <div class="two-col">
-          <label
-            >Importe (MXN)
-            <input
-              type="number"
-              min="0.01"
-              step="0.01"
-              inputmode="decimal"
-              name="amount"
-              [(ngModel)]="amount"
-          /></label>
+          <!-- One .two-col cell; the error stays out of the label so it is not part of the field's name. -->
+          <div>
+            <label
+              >Importe (MXN)
+              <input
+                type="number"
+                required
+                min="0.01"
+                [max]="due() / 100"
+                step="0.01"
+                inputmode="decimal"
+                name="amount"
+                aria-describedby="amount-error"
+                [attr.aria-invalid]="amountModel.touched && amountModel.invalid ? 'true' : null"
+                [(ngModel)]="amount"
+                #amountModel="ngModel"
+              />
+            </label>
+            <small id="amount-error" class="field-error" role="alert">{{
+              amountModel.touched ? amountError(amountModel.errors) : ''
+            }}</small>
+          </div>
           <label
             >Fecha y hora del pago
             <input type="datetime-local" name="paidAt" [(ngModel)]="paidAt" [max]="maxPaidAt" />
@@ -90,13 +110,76 @@ import { BillingService, CHARGE_STATUS_LABELS, METHOD_LABELS } from './billing.s
               }
             </select>
           </label>
+          @if (needsReference()) {
+            <!-- HU-045: only for transfer and card; blank or spaces only is refused here and by the API. -->
+            <div>
+              <label
+                >Referencia o número de comprobante
+                <input
+                  name="reference"
+                  required
+                  pattern=".*\\S.*"
+                  maxlength="100"
+                  autocomplete="off"
+                  aria-describedby="reference-error"
+                  [attr.aria-invalid]="
+                    referenceModel.touched && referenceModel.invalid ? 'true' : null
+                  "
+                  [(ngModel)]="reference"
+                  #referenceModel="ngModel"
+                />
+              </label>
+              <small id="reference-error" class="field-error" role="alert">{{
+                referenceModel.touched && referenceModel.invalid ? referenceRequired : ''
+              }}</small>
+            </div>
+          }
         </div>
         <button type="button" class="link" (click)="amount = due() / 100">
           Pagar el total seleccionado
         </button>
+        @if (selected().size) {
+          <dl class="summary" aria-label="Resumen del pago">
+            <div>
+              <dt>Cargos</dt>
+              <dd>{{ selectedLabels() }}</dd>
+            </div>
+            <div>
+              <dt>Importe</dt>
+              <dd>{{ (amount ?? 0) * 100 | money }}</dd>
+            </div>
+            <div>
+              <dt>Forma de pago</dt>
+              <dd>{{ methodLabels[method] }}</dd>
+            </div>
+            @if (needsReference()) {
+              <div>
+                <dt>Referencia</dt>
+                <dd>{{ reference.trim() || '—' }}</dd>
+              </div>
+            }
+            <div>
+              <dt>Quién paga</dt>
+              <dd>{{ payerName() }}</dd>
+            </div>
+          </dl>
+        }
+      }
+      @if (!playerId() || !selected().size) {
+        <p id="pay-hint" class="alert info">
+          {{
+            playerId()
+              ? 'Selecciona al menos un cargo para habilitar «Registrar pago».'
+              : 'Elige un jugador para ver sus cargos con saldo.'
+          }}
+        </p>
       }
       <app-submission-alert [submission]="submission" />
-      <button type="submit" [disabled]="submission.busy() || !playerId() || !selected().size">
+      <button
+        type="submit"
+        aria-describedby="pay-hint"
+        [disabled]="submission.busy() || !playerId() || !selected().size"
+      >
         Registrar pago
       </button>
     </form>
@@ -109,7 +192,16 @@ export class PaymentPage {
   private service = inject(BillingService);
   private playerService = inject(PlayerService);
   protected chargeLabels = CHARGE_STATUS_LABELS;
+  protected chargeTone = CHARGE_TONE;
+  protected methodLabels = METHOD_LABELS;
   protected methods = Object.entries(METHOD_LABELS) as [PaymentMethod, string][];
+  /** HU-045: kept while the form is open, but only sent with a transfer or card (never with cash). */
+  protected reference = '';
+  protected referenceRequired = REFERENCE_REQUIRED_MESSAGE;
+  private formEl = viewChild.required<ElementRef<HTMLFormElement>>('formEl');
+  private amountModel = viewChild<NgModel>('amountModel');
+  private referenceModel = viewChild<NgModel>('referenceModel');
+  private money = new MoneyPipe();
   protected players = resource({ loader: () => this.playerService.options() });
   protected playerId = signal<Id | null>(
     idOrNull(inject(ActivatedRoute).snapshot.queryParamMap.get('player')),
@@ -128,8 +220,14 @@ export class PaymentPage {
       (this.open.value() ?? []).filter((c) => this.selected().has(c.id)).map((c) => c.balanceCents),
     ),
   );
+  protected selectedLabels = computed(() =>
+    (this.open.value() ?? [])
+      .filter((c) => this.selected().has(c.id))
+      .map((c) => c.label)
+      .join(', '),
+  );
   protected tutorId: Id | null = null;
-  protected amount = 0;
+  protected amount: number | null = 0;
   protected method: PaymentMethod = 'EFECTIVO';
   protected maxPaidAt = nowDateTime().slice(0, 16);
   protected paidAt = this.maxPaidAt;
@@ -141,6 +239,24 @@ export class PaymentPage {
     this.selected.set(new Set());
     this.tutorId = null;
     this.amount = 0;
+    this.amountModel()?.control.markAsUntouched();
+  }
+
+  needsReference(): boolean {
+    return METHODS_WITH_REFERENCE.includes(this.method);
+  }
+
+  payerName(): string {
+    return this.payers.value()?.find((t) => t.id === this.tutorId)?.name ?? 'No especificado';
+  }
+
+  /** Client check of the amount (required, ≥ $0.01, ≤ balance of the selected charges); the server still validates. */
+  amountError(errors: ValidationErrors | null): string {
+    if (errors?.['required']) return 'Este campo es obligatorio.';
+    if (errors?.['min']) return 'Ingresa un importe de al menos $0.01.';
+    if (errors?.['max'])
+      return `El importe no puede superar el saldo de los cargos seleccionados (${this.money.transform(this.due())}).`;
+    return '';
   }
 
   toggle(id: Id): void {
@@ -150,12 +266,22 @@ export class PaymentPage {
   }
 
   async submit(): Promise<void> {
+    const field = this.amountModel()?.control;
+    // The reference field exists only for transfer and card (HU-045); an invalid form never reaches the service.
+    const reference = this.needsReference() ? this.referenceModel()?.control : undefined;
+    if (field?.invalid || reference?.invalid) {
+      field?.markAsTouched();
+      reference?.markAsTouched();
+      focusFirstInvalid(this.formEl().nativeElement);
+      return;
+    }
     if (!confirm(`¿Registrar el pago por $${this.amount}?`)) return;
     const draft = {
       playerId: this.playerId()!,
       tutorId: this.tutorId,
       amountCents: centsFromInput(this.amount),
       method: this.method,
+      reference: this.needsReference() ? this.reference.trim() : null,
       chargeIds: [...this.selected()],
       paidAt: this.paidAt,
     };
@@ -169,6 +295,9 @@ export class PaymentPage {
     if (ok) {
       this.selected.set(new Set());
       this.amount = 0;
+      this.reference = '';
+      field?.markAsUntouched();
+      reference?.markAsUntouched();
       this.open.reload();
     }
   }
@@ -204,6 +333,9 @@ export class PaymentPage {
       ><ng-template>
         <div class="table-wrap">
           <table>
+            <caption class="sr-only">
+              Pagos y recibos: folio, fecha, jugador, quién pagó, forma de pago e importe
+            </caption>
             <thead>
               <tr>
                 <th>Folio</th>
@@ -221,7 +353,7 @@ export class PaymentPage {
                   <td>
                     {{ r.payment.folio }}
                     @if (r.payment.status === 'CANCELADO') {
-                      <span class="tag off">Cancelado</span>
+                      <span class="tag {{ paymentTone[r.payment.status] }}">Cancelado</span>
                     }
                   </td>
                   <td>{{ r.payment.paidAt | date: 'd MMM y, HH:mm' }}</td>
@@ -254,6 +386,7 @@ export class ReceiptsPage {
   private service = inject(BillingService);
   protected auth = inject(AuthService);
   protected methods = METHOD_LABELS;
+  protected paymentTone = PAYMENT_TONE;
   protected query = signal('');
   protected status = signal<'' | 'APLICADO' | 'CANCELADO'>('');
   protected page = signal(1);
@@ -300,6 +433,10 @@ export class ReceiptsPage {
               <dd>{{ r.tutorName ?? '—' }}</dd>
               <dt>Forma de pago</dt>
               <dd>{{ methods[r.payment.method] }}</dd>
+              @if (r.payment.reference) {
+                <dt>Referencia</dt>
+                <dd>{{ r.payment.reference }}</dd>
+              }
             </dl>
             <table>
               <thead>
@@ -406,6 +543,9 @@ export class ReceiptPage {
             <h2>Cargos</h2>
             <div class="table-wrap">
               <table>
+                <caption class="sr-only">
+                  Cargos del jugador: fecha, vencimiento, importes, saldo y estado
+                </caption>
                 <thead>
                   <tr>
                     <th>Fecha</th>
@@ -429,11 +569,7 @@ export class ReceiptPage {
                       <td class="num">{{ c.paidCents | money }}</td>
                       <td class="num">{{ c.balanceCents | money }}</td>
                       <td>
-                        <span
-                          class="tag"
-                          [class.off]="c.status === 'VENCIDO' || c.status === 'CANCELADO'"
-                          >{{ labels[c.status] }}</span
-                        >
+                        <span class="tag {{ chargeTone[c.status] }}">{{ labels[c.status] }}</span>
                       </td>
                     </tr>
                   } @empty {
@@ -447,6 +583,9 @@ export class ReceiptPage {
             <h2>Pagos</h2>
             <div class="table-wrap">
               <table>
+                <caption class="sr-only">
+                  Pagos del jugador: folio, fecha, cargos a los que se aplicó, importe y estado
+                </caption>
                 <thead>
                   <tr>
                     <th>Folio</th>
@@ -470,7 +609,7 @@ export class ReceiptPage {
                       </td>
                       <td class="num">{{ p.amountCents | money }}</td>
                       <td>
-                        <span class="tag" [class.off]="p.status === 'CANCELADO'">{{
+                        <span class="tag {{ paymentTone[p.status] }}">{{
                           p.status === 'CANCELADO' ? 'Cancelado' : 'Aplicado'
                         }}</span>
                       </td>
@@ -486,6 +625,8 @@ export class ReceiptPage {
           }
         </ng-template></app-load-state
       >
+    } @else {
+      <p class="alert info">Elige un jugador para ver sus cargos, pagos y saldo.</p>
     }
   `,
 })
@@ -496,6 +637,8 @@ export class StatementPage {
   protected auth = inject(AuthService);
   protected idOrNull = idOrNull;
   protected labels = CHARGE_STATUS_LABELS;
+  protected chargeTone = CHARGE_TONE;
+  protected paymentTone = PAYMENT_TONE;
   protected players = resource({ loader: () => this.playerService.options() });
   protected concepts = resource({ loader: () => this.service.concepts() });
   protected playerId = signal<Id | null>(
@@ -549,11 +692,19 @@ export class StatementPage {
     </div>
     <app-load-state [res]="debts" emptyText="No hay adeudos con esos filtros."
       ><ng-template>
-        <p>
-          <strong>Vencido: {{ overdue() | money }}</strong> · Saldo total: {{ total() | money }}
-        </p>
+        <div class="kpis">
+          <div class="kpi" [class.danger]="overdue() > 0">
+            <span>Vencido</span><strong>{{ overdue() | money }}</strong>
+          </div>
+          <div class="kpi">
+            <span>Saldo total</span><strong>{{ total() | money }}</strong>
+          </div>
+        </div>
         <div class="table-wrap">
           <table>
+            <caption class="sr-only">
+              Adeudos por jugador: categoría, tutor principal, contacto, cargos, vencido y saldo
+            </caption>
             <thead>
               <tr>
                 <th>Jugador</th>

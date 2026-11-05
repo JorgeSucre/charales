@@ -21,7 +21,7 @@ import {
   weekday,
   isCurrentAssignment,
 } from '../../shared/dates';
-import { optional, required } from '../../shared/validate';
+import { DATE_MESSAGE, TIMES_MESSAGE, oneOf, optional, required } from '../../shared/validate';
 
 export interface SessionView extends TrainingSession {
   categoryName: string;
@@ -103,8 +103,7 @@ export class TrainingService {
 
   /** HU-029/HU-030: the session with its group (active members of the category on that date) and their attendance. */
   async get(id: Id): Promise<SessionDetail> {
-    const s = this.db.get(this.db.trainingSessions, id, 'Sesión');
-    if (!this.inScope(s)) throw new ForbiddenError('No tienes acceso a esta sesión.');
+    const s = this.sessionFor(id, (x) => this.inScope(x), 'No tienes acceso a esta sesión.');
     const recorded = new Map(
       this.db.attendance.filter((a) => a.sessionId === id).map((a) => [a.playerId, a]),
     );
@@ -169,7 +168,9 @@ export class TrainingService {
   ): Promise<{ created: number; skipped: number }> {
     this.authz.require('entrenamientos.crear');
     if (!isISODate(from) || !isISODate(to) || to < from)
-      throw new Error('Rango de fechas inválido.');
+      throw new Error(
+        'Ingresa un rango de fechas válido: la fecha final no puede ser anterior a la inicial.',
+      );
     if (addDays(from, 62) < to) throw new Error('Genera como máximo dos meses a la vez.');
     let created = 0;
     let skipped = 0;
@@ -219,6 +220,7 @@ export class TrainingService {
 
   async setStatus(id: Id, status: TrainingStatus, reason = ''): Promise<void> {
     this.authz.require('entrenamientos.editar');
+    oneOf(status, TRAINING_STATUS_LABELS, 'Selecciona un estado válido.');
     const before = this.db.get(this.db.trainingSessions, id, 'Sesión');
     if (before.status === status) return this.db.respond(undefined);
     if (status === 'REALIZADO' && before.date > today())
@@ -248,11 +250,11 @@ export class TrainingService {
     id: Id,
     draft: { objective: string | null; notes: string | null },
   ): Promise<void> {
-    const before = this.db.get(this.db.trainingSessions, id, 'Sesión');
-    if (!this.canRecord(before))
-      throw new ForbiddenError(
-        'Sólo el entrenador asignado o un administrador pueden editar la sesión.',
-      );
+    const before = this.sessionFor(
+      id,
+      (s) => this.canRecord(s),
+      'Sólo el entrenador asignado o un administrador pueden editar la sesión.',
+    );
     const updated = this.db.update(this.db.trainingSessions, id, {
       objective: optional(draft.objective, 'El objetivo'),
       notes: optional(draft.notes, 'Las observaciones', 5000),
@@ -289,6 +291,19 @@ export class TrainingService {
    */
   inScope(s: TrainingSession): boolean {
     return this.authz.has('entrenamientos.consultar') || this.coachesSession(s);
+  }
+
+  /**
+   * The session `id` if `allowed` for the caller; otherwise ForbiddenError(`message`) — for a missing id too, so a
+   * refusal never tells whether the session exists (B-2, docs/AUTHORIZATION.md). Only a caller who may already read
+   * every session (entrenamientos.consultar) gets the usual «Sesión inexistente…» for a missing id.
+   */
+  sessionFor(id: Id, allowed: (s: TrainingSession) => boolean, message: string): TrainingSession {
+    const s = this.db.trainingSessions.find((x) => x.id === id);
+    if (s && allowed(s)) return s;
+    if (!s && this.authz.has('entrenamientos.consultar'))
+      return this.db.get(this.db.trainingSessions, id, 'Sesión'); // throws the 400 «inexistente»
+    throw new ForbiddenError(message);
   }
 
   /**
@@ -329,8 +344,8 @@ export class TrainingService {
       this.db.get(this.db.schedules, d.scheduleId, 'Horario').categoryId !== d.categoryId
     )
       throw new Error('El horario pertenece a otra categoría.');
-    if (!isISODate(d.date)) throw new Error('Fecha inválida.');
-    if (!isTime(d.startTime) || !isTime(d.endTime)) throw new Error('Horas inválidas.');
+    if (!isISODate(d.date)) throw new Error(DATE_MESSAGE);
+    if (!isTime(d.startTime) || !isTime(d.endTime)) throw new Error(TIMES_MESSAGE);
     if (d.endTime <= d.startTime)
       throw new Error('La hora de fin debe ser posterior a la de inicio.');
   }

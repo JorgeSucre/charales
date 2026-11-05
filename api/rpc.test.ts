@@ -10,7 +10,7 @@ import type { Pool } from 'mariadb';
 import { createApp } from './server.ts';
 import { grantsOf } from './demo.ts';
 import { applyChanges, cachedTables, columns, domain, loadTables, unitOfWork } from './rpc.ts';
-import { TEST_NOW, openTestDb, type TestDb } from './test-db.ts';
+import { TEST_NOW, TYPE_ERROR, TYPE_ERROR_MESSAGE, openTestDb, type TestDb } from './test-db.ts';
 
 let t: TestDb;
 let db: Pool;
@@ -76,7 +76,32 @@ test('rpc: 401 without session, 404 outside the allowlist, 400 malformed', async
   // Arguments the service can't use (missing list): 400, nothing written.
   const missing = await call(admin, 'AttendanceService', 'record', 1);
   assert.equal(missing.status, 400);
-  assert.deepEqual(await missing.json(), { error: 'Datos de la solicitud inválidos.' });
+  assert.deepEqual(await missing.json(), { error: TYPE_ERROR_MESSAGE });
+});
+
+test('T3 harness: refused() never takes a TypeError for a rejection, needs a message for a 400, and catches writes', async () => {
+  const admin = await login('admin@example.com');
+  // AttendanceService.record without its list: the service throws a TypeError → the generic 400 of api/rpc.ts.
+  const typeError = () => call(admin, 'AttendanceService', 'record', 1);
+  await assert.rejects(t.refused(typeError, 400, /^Selecciona un estatus válido\.$/), /TypeError/);
+  await assert.rejects(
+    t.refused(typeError, 400, /datos/),
+    /TypeError/,
+    'a loose pattern is not enough',
+  );
+  await t.refused(typeError, 400, TYPE_ERROR); // only an explicit expectation accepts it
+  // A business rejection: its own message is checked; a 400 without one doesn't pass.
+  const unnamed = () => call(admin, 'PlayerService', 'create', newPlayer(''));
+  await t.refused(unnamed, 400, /^Falta el nombre\. Es un dato obligatorio\.$/);
+  // (The types already refuse `refused(send, 400)`; this checks the runtime guard behind them.)
+  const untyped = t.refused as (send: () => Promise<Response>, status: number) => Promise<void>;
+  await assert.rejects(untyped(unnamed, 400), /message/);
+  // A wrong status fails, and an operation that writes is caught by unchanged().
+  await assert.rejects(t.refused(unnamed, 403), /400/);
+  await assert.rejects(
+    t.unchanged(() => ok(call(admin, 'PlayerService', 'create', newPlayer('Escritura')))),
+    /wrote to the database/,
+  );
 });
 
 test('HU-008: a player created through the API is stored in MariaDB with its audit row', async () => {
@@ -244,7 +269,7 @@ test('HU-004: a new staff account gets a 24 h invitation (D3c/D3e), usable once 
 });
 
 test('HU-004: without a mail transport the account is not created (503, rolled back)', async () => {
-  const noMail = createApp(db, { secureCookie: false }).listen(0);
+  const noMail = createApp(db, { secureCookie: false }).listen(0, '127.0.0.1');
   await new Promise((resolve) => noMail.once('listening', resolve));
   const url = `http://127.0.0.1:${(noMail.address() as AddressInfo).port}`;
   try {
@@ -299,8 +324,9 @@ test('concurrency: parallel writes and logins never collide (ids, audit rows)', 
   const admin = await login('admin@example.com');
   const auditBefore = await count('SELECT COUNT(*) AS n FROM auditoria');
   const results = await Promise.all([
-    ...Array.from({ length: 8 }, (_, i) =>
-      call(admin, 'PlayerService', 'create', newPlayer(`Paralelo${i}`)),
+    ...Array.from(
+      { length: 8 },
+      (_, i) => call(admin, 'PlayerService', 'create', newPlayer(`Paralelo ${'ABCDEFGH'[i]}`)), // R21: no digits
     ),
     ...Array.from({ length: 4 }, () =>
       fetch(`${base}/auth/login`, {
@@ -428,12 +454,12 @@ test('audit: session cookie attributes — HttpOnly, SameSite=Strict, Path=/, 8 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'admin@example.com', password: 'demo1234' }),
   });
-  const cookie = res.headers.get('set-cookie')!;
+  const cookie = res.headers.getSetCookie()[0]!;
   assert.match(
     cookie,
     /^charales_sid=[\w-]{40,}; HttpOnly; SameSite=Strict; Path=\/; Max-Age=28800$/,
   );
-  const secure = createApp(db, { secureCookie: true }).listen(0);
+  const secure = createApp(db, { secureCookie: true }).listen(0, '127.0.0.1');
   await new Promise((resolve) => secure.once('listening', resolve));
   try {
     const r = await fetch(`http://127.0.0.1:${(secure.address() as AddressInfo).port}/auth/login`, {
@@ -441,7 +467,7 @@ test('audit: session cookie attributes — HttpOnly, SameSite=Strict, Path=/, 8 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'admin@example.com', password: 'demo1234' }),
     });
-    assert.match(r.headers.get('set-cookie')!, /; Secure$/);
+    assert.match(r.headers.getSetCookie()[0]!, /; Secure$/);
   } finally {
     secure.close();
   }

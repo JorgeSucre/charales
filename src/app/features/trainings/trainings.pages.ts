@@ -9,12 +9,13 @@ import {
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { AttendanceStatus, Id, TrainingStatus } from '../../core/models';
 import { CategoryService } from '../../core/services/category.service';
 import { PlayerService } from '../../core/services/player.service';
 import { addDays, today } from '../../shared/dates';
+import { FormPanel } from '../../shared/form-panel';
 import { LoadState } from '../../shared/load-state';
 import { Submission } from '../../shared/submission';
 import { SubmissionAlert, idOrNull } from '../../shared/ui';
@@ -29,77 +30,118 @@ import { TRAINING_STATUS_LABELS, TrainingService } from './training.service';
   selector: 'app-trainings-page',
   imports: [FormsModule, RouterLink, LoadState, SubmissionAlert, DatePipe],
   template: `
-    <h1>Sesiones de entrenamiento</h1>
+    <div class="page-head">
+      <h1>Sesiones de entrenamiento</h1>
+      @if (auth.can('entrenamientos.crear')) {
+        <div class="actions">
+          <button
+            type="button"
+            class="secondary"
+            (click)="openGenerate()"
+            [attr.aria-expanded]="generatePanel.open()"
+            aria-controls="generate-form"
+          >
+            Generar desde horarios
+          </button>
+          <button
+            type="button"
+            (click)="openProgram()"
+            [attr.aria-expanded]="programPanel.open()"
+            aria-controls="program-form"
+          >
+            Programar sesión
+          </button>
+        </div>
+      }
+    </div>
     <app-submission-alert [submission]="submission" />
-    @if (auth.can('entrenamientos.crear')) {
-      <div class="two-col">
-        <form class="grid-form" (ngSubmit)="program()" novalidate>
-          <h2>Programar sesión</h2>
-          <label
-            >Categoría
-            <select
-              name="cat"
-              [ngModel]="draft.categoryId"
-              (ngModelChange)="draft.categoryId = $event; draft.scheduleId = null"
-            >
-              <option [ngValue]="null">Selecciona…</option>
-              @for (c of categories.value() ?? []; track c.id) {
-                <option [ngValue]="c.id">{{ c.name }}</option>
-              }
-            </select>
-          </label>
-          <label
-            >Desde un horario recurrente (opcional)
-            <select name="sch" [ngModel]="draft.scheduleId" (ngModelChange)="pickSchedule($event)">
-              <option [ngValue]="null">Ninguno</option>
-              @for (s of schedulesOf(draft.categoryId); track s.id) {
-                <option [ngValue]="s.id">
-                  {{ s.venueName }} · día {{ s.weekday }} {{ s.startTime }}–{{ s.endTime }}
-                </option>
-              }
-            </select>
-          </label>
-          <label>Fecha <input type="date" name="date" [(ngModel)]="draft.date" /></label>
-          <div class="two-col">
-            <label>Inicio <input type="time" name="start" [(ngModel)]="draft.startTime" /></label>
-            <label>Fin <input type="time" name="end" [(ngModel)]="draft.endTime" /></label>
-          </div>
-          <label
-            >Sede
-            <select name="venue" [(ngModel)]="draft.venueId">
-              <option [ngValue]="null">Selecciona…</option>
-              @for (v of venues.value() ?? []; track v.id) {
-                <option [ngValue]="v.id">{{ v.name }}</option>
-              }
-            </select>
-          </label>
-          <label
-            >Entrenador
-            <select name="coach" [(ngModel)]="draft.coachId">
-              <option [ngValue]="null">Sin asignar</option>
-              @for (c of coaches.value() ?? []; track c.id) {
-                <option [ngValue]="c.id">{{ c.name }}</option>
-              }
-            </select>
-          </label>
-          <label>Objetivo / tema <input name="obj" [(ngModel)]="draft.objective" /></label>
+    @if (programPanel.open()) {
+      <form
+        id="program-form"
+        class="grid-form"
+        (ngSubmit)="program()"
+        (keydown.escape)="closeProgram()"
+        novalidate
+      >
+        <h2>Programar sesión</h2>
+        <label
+          >Categoría
+          <select
+            name="cat"
+            [ngModel]="draft.categoryId"
+            (ngModelChange)="draft.categoryId = $event; draft.scheduleId = null"
+          >
+            <option [ngValue]="null">Selecciona…</option>
+            @for (c of categories.value() ?? []; track c.id) {
+              <option [ngValue]="c.id">{{ c.name }}</option>
+            }
+          </select>
+        </label>
+        <label
+          >Desde un horario recurrente (opcional)
+          <select name="sch" [ngModel]="draft.scheduleId" (ngModelChange)="pickSchedule($event)">
+            <option [ngValue]="null">Ninguno</option>
+            @for (s of schedulesOf(draft.categoryId); track s.id) {
+              <option [ngValue]="s.id">
+                {{ s.venueName }} · día {{ s.weekday }} {{ s.startTime }}–{{ s.endTime }}
+              </option>
+            }
+          </select>
+        </label>
+        <label>Fecha <input type="date" name="date" [(ngModel)]="draft.date" /></label>
+        <div class="two-col">
+          <label>Inicio <input type="time" name="start" [(ngModel)]="draft.startTime" /></label>
+          <label>Fin <input type="time" name="end" [(ngModel)]="draft.endTime" /></label>
+        </div>
+        <label
+          >Sede
+          <select name="venue" [(ngModel)]="draft.venueId">
+            <option [ngValue]="null">Selecciona…</option>
+            @for (v of venues.value() ?? []; track v.id) {
+              <option [ngValue]="v.id">{{ v.name }}</option>
+            }
+          </select>
+        </label>
+        <label
+          >Entrenador
+          <select name="coach" [(ngModel)]="draft.coachId">
+            <option [ngValue]="null">Sin asignar</option>
+            @for (c of coaches.value() ?? []; track c.id) {
+              <option [ngValue]="c.id">{{ c.name }}</option>
+            }
+          </select>
+        </label>
+        <label>Objetivo / tema <input name="obj" [(ngModel)]="draft.objective" /></label>
+        <div class="actions">
           <button
             type="submit"
             [disabled]="submission.busy() || !draft.categoryId || !draft.venueId"
           >
             Programar
           </button>
-        </form>
-        <form class="grid-form" (ngSubmit)="generate()" novalidate>
-          <h2>Generar desde horarios</h2>
-          <p class="muted">
-            Crea las sesiones de cada horario activo en el rango; las que ya existen no se duplican.
-          </p>
-          <label>Desde <input type="date" name="gfrom" [(ngModel)]="genFrom" /></label>
-          <label>Hasta <input type="date" name="gto" [(ngModel)]="genTo" /></label>
+          <button type="button" class="secondary" (click)="closeProgram()">Cancelar</button>
+        </div>
+      </form>
+    }
+    @if (generatePanel.open()) {
+      <form
+        id="generate-form"
+        class="grid-form"
+        (ngSubmit)="generate()"
+        (keydown.escape)="generatePanel.close()"
+        novalidate
+      >
+        <h2>Generar desde horarios</h2>
+        <p class="muted">
+          Crea las sesiones de cada horario activo en el rango; las que ya existen no se duplican.
+        </p>
+        <label>Desde <input type="date" name="gfrom" [(ngModel)]="genFrom" /></label>
+        <label>Hasta <input type="date" name="gto" [(ngModel)]="genTo" /></label>
+        <div class="actions">
           <button type="submit" [disabled]="submission.busy()">Generar</button>
-        </form>
-      </div>
+          <button type="button" class="secondary" (click)="generatePanel.close()">Cancelar</button>
+        </div>
+      </form>
     }
     <div class="filters">
       <label
@@ -179,6 +221,10 @@ export class TrainingsPage {
   private venueService = inject(VenueService);
   private coachService = inject(CoachService);
   protected auth = inject(AuthService);
+  /** `?nuevo=1` (a quick task of the Tablero) opens the create form at once, if the role may create. */
+  private openOnArrival = inject(ActivatedRoute).snapshot.queryParamMap.has('nuevo')
+    ? setTimeout(() => this.auth.can('entrenamientos.crear') && this.openProgram())
+    : null;
   protected idOrNull = idOrNull;
   protected labels = TRAINING_STATUS_LABELS;
   protected statuses = Object.entries(TRAINING_STATUS_LABELS) as [TrainingStatus, string][];
@@ -205,6 +251,35 @@ export class TrainingsPage {
   protected draft = this.emptyDraft();
   protected genFrom = today();
   protected genTo = addDays(today(), 13);
+
+  private opened = '';
+  protected programPanel = new FormPanel(
+    'program-form',
+    () => JSON.stringify(this.draft) !== this.opened,
+  );
+  protected generatePanel = new FormPanel('generate-form');
+
+  openProgram(): void {
+    if (!this.generatePanel.close() || !this.programPanel.close()) return;
+    this.draft = this.emptyDraft();
+    this.opened = JSON.stringify(this.draft);
+    this.submission.result.set(null);
+    this.programPanel.show();
+  }
+
+  /** Closes the form without programming anything (asks first if it has unsaved changes). */
+  closeProgram(): void {
+    if (this.programPanel.close()) this.draft = this.emptyDraft();
+  }
+
+  openGenerate(): void {
+    if (!this.programPanel.close()) return;
+    this.draft = this.emptyDraft();
+    this.genFrom = today();
+    this.genTo = addDays(today(), 13);
+    this.submission.result.set(null);
+    this.generatePanel.show();
+  }
 
   private emptyDraft() {
     return {
@@ -243,6 +318,7 @@ export class TrainingsPage {
       'Sesión programada.',
     );
     if (ok) {
+      this.programPanel.done();
       this.draft = this.emptyDraft();
       this.sessions.reload();
     }
@@ -254,8 +330,10 @@ export class TrainingsPage {
         () => this.service.generateFromSchedules(this.genFrom, this.genTo),
         (r) => `Se crearon ${r.created} sesiones (${r.skipped} ya existían).`,
       )
-    )
+    ) {
+      this.generatePanel.done();
       this.sessions.reload();
+    }
   }
 
   async cancel(id: Id): Promise<void> {

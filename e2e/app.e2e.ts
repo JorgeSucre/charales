@@ -26,6 +26,7 @@ const TYPES: Record<string, string> = {
   '.css': 'text/css',
   '.ico': 'image/x-icon',
   '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
 };
 
 let t: TestDb;
@@ -36,6 +37,15 @@ let page: Page;
 /** Same origin: static build + reverse proxy of /api, /auth and /health to the API (what production needs). */
 /** Where the proxy sends API requests; a test can point it at a new API process (restart). */
 let apiBase = '';
+
+/** The headers the production proxy sends: the CSP tested here on every page is the one that gets deployed. */
+const PRODUCTION_HEADERS: Record<string, string> = Object.fromEntries(
+  [
+    ...readFileSync('deploy/nginx/security-headers.conf', 'utf8').matchAll(
+      /^add_header (\S+) "([^"]*)" always;$/gm,
+    ),
+  ].map((m) => [m[1]!, m[2]!]),
+);
 
 function serve(): Server {
   return createServer((req, res) => {
@@ -60,9 +70,12 @@ function serve(): Server {
     }
     const file = join(DIST, path);
     const target = existsSync(file) && extname(file) ? file : join(DIST, 'index.html');
-    res.writeHead(200, { 'Content-Type': TYPES[extname(target)] ?? 'application/octet-stream' });
+    res.writeHead(200, {
+      'Content-Type': TYPES[extname(target)] ?? 'application/octet-stream',
+      ...PRODUCTION_HEADERS,
+    });
     res.end(readFileSync(target));
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
 }
 
 before(async () => {
@@ -83,6 +96,13 @@ after(async () => {
 });
 
 const settled = `document.querySelector('main') && !document.querySelector('[role=status]')?.textContent?.includes('Cargando')`;
+
+/**
+ * `settled` is true as soon as `<main>` has content, which at «/» can be before the guard's redirect to the role's home
+ * ends: that redirect closes an open menu (a real behaviour, see shell.ts). A test that goes on to open one waits for
+ * it: the cause of the intermittent focus failures measured in the 2026-11 series (13/40 rounds, on main too).
+ */
+const landed = `(${settled}) && location.pathname !== '/'`;
 
 /** Ends any session (server and local copy) on the app's origin. */
 async function logoutAll(): Promise<void> {
@@ -118,21 +138,24 @@ async function check(path: string, width: number, who: string, home: string): Pr
     toggle: boolean;
     clipped: number;
     english: string | null;
+    crest: boolean;
   }>(`({
     path: location.pathname,
     overflow: document.documentElement.scrollWidth - window.innerWidth,
     alerts: [...document.querySelectorAll('.alert.error')].map((e) => e.textContent.trim()),
     toggle: !!document.querySelector('.menu-toggle')?.offsetParent,
     clipped: [...document.querySelectorAll('.kpi, .card')].filter((e) => e.scrollWidth > e.clientWidth + 1).length,
+    crest: [...document.querySelectorAll('img[src$="CHCH23logo.webp"]')].some((i) => i.complete && i.naturalWidth > 0),
     english: (document.querySelector('main').innerText.match(/\\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Apr|May|Aug|Dec)\\b/) ?? [])[0] ?? null,
   })`);
-  // «Inicio» (/) takes coaches and tutors to their own panel (AuthService.homeUrl).
+  // '/' takes each session to its main page: Tablero, coach panel or portal (AuthService.homeUrl).
   if (state.path !== path && !(path === '/' && state.path === home))
     problems.push(`redirigió a ${state.path}`);
   if (state.overflow > 1) problems.push(`scroll horizontal de ${state.overflow}px`);
   if (state.alerts.length) problems.push(`error: ${state.alerts.join(' | ')}`);
   if (state.clipped) problems.push(`${state.clipped} tarjeta(s) con texto desbordado`);
   if (state.english) problems.push(`texto en inglés: «${state.english}»`);
+  if (!state.crest) problems.push('el escudo no se cargó');
   if (width === 375 && !state.toggle) problems.push('el menú no se colapsa');
   if (width === 1280 && state.toggle) problems.push('botón de menú visible en escritorio');
   const errors = page.errors();
@@ -146,8 +169,8 @@ async function check(path: string, width: number, who: string, home: string): Pr
 }
 
 const ROLES: [string, string][] = [
-  ['admin@example.com', '/'],
-  ['secretaria@example.com', '/'],
+  ['admin@example.com', '/admin/dashboard'],
+  ['secretaria@example.com', '/admin/dashboard'],
   ['coach@example.com', '/coach'],
   ['tutor@example.com', '/portal'],
   ['marta@example.com', '/coach'],
@@ -193,6 +216,17 @@ test('HU-004.3 / HU-002.4: an account deactivated on the server is sent to the l
   await page.goto(`${app}/coach`);
   await page.until(`location.pathname === '/login' && location.search.includes('expired=1')`);
   await t.ok(t.call(admin, 'UserService', 'setActive', 6, true));
+  page.errors();
+});
+
+test('skip link: away from Inicio it focuses <main> on the same page (with <base href="/">, #main meant /#main)', async () => {
+  await login('admin@example.com');
+  await page.goto(`${app}/account/password`);
+  await page.until(settled);
+  await page.eval(`document.querySelector('.skip-link').click()`);
+  await new Promise((resolve) => setTimeout(resolve, 500)); // a navigation to /#main would have happened by now
+  assert.equal(await page.eval<string>('location.pathname + location.hash'), '/account/password');
+  assert.equal(await page.eval<string>('document.activeElement?.id'), 'main');
   page.errors();
 });
 
@@ -340,7 +374,7 @@ test('persistence: a player created and edited in the UI survives a page reload 
 
   // 4) A new API process: its own pool and an empty memory, same MariaDB. The session cookie is still valid.
   const pool = createPool({ ...process.env, DB_NAME: t.name });
-  const restarted = createApp(pool, { secureCookie: false }).listen(0);
+  const restarted = createApp(pool, { secureCookie: false }).listen(0, '127.0.0.1');
   await new Promise((resolve) => restarted.once('listening', resolve));
   const previous = apiBase;
   apiBase = `http://127.0.0.1:${(restarted.address() as AddressInfo).port}`;
@@ -356,4 +390,473 @@ test('persistence: a player created and edited in the UI survives a page reload 
     await pool.end();
   }
   assert.deepEqual(page.errors(), []);
+});
+
+test('user menu: its button opens it, Escape closes it back on its button, an outside click closes it', async () => {
+  await login('admin@example.com');
+  const open = () => page.eval<boolean>(`document.querySelector('.user-menu').open`);
+  // Escape as a DOM keydown event: this harness (e2e/browser.ts) has no real key presses.
+  const escape = `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`;
+  for (const width of [1280, 375]) {
+    await page.size(width, 900);
+    await page.goto(`${app}/`);
+    await page.until(landed);
+    await page.eval(`document.querySelector('.user-menu summary').click()`);
+    await page.until(`document.querySelector('.user-menu').open`);
+    assert.deepEqual(
+      await page.eval<string[]>(
+        `[...document.querySelectorAll('.user-menu .menu a, .user-menu .menu button')].filter((e) => e.offsetParent).map((e) => e.textContent.trim())`,
+      ),
+      ['Cambiar contraseña', 'Salir'],
+    );
+    if (SHOTS) writeFileSync(join(SHOTS, `user_menu_${width}.png`), await page.screenshot());
+    await page.eval(`document.querySelector('.user-menu .menu a').focus()`);
+    await page.eval(escape);
+    assert.equal(await open(), false, `@${width}: Escape closes it`);
+    assert.equal(
+      await page.eval<boolean>(
+        `document.activeElement === document.querySelector('.user-menu summary')`,
+      ),
+      true,
+      'focus back on the button',
+    );
+    await page.eval(`document.querySelector('.user-menu summary').click()`);
+    await page.until(`document.querySelector('.user-menu').open`);
+    await page.eval(`document.querySelector('main h1').click()`);
+    assert.equal(await open(), false, `@${width}: an outside click closes it`);
+  }
+  assert.deepEqual(page.errors(), []);
+});
+
+test('Tablero: six indicators in full rows (3 × 2 desktop, 2 × 3 tablet/phone), charts with text, quick tasks, a large amount fits, phone menu closes on Escape', async () => {
+  await login('admin@example.com');
+  for (const [width, perRow] of [
+    [1280, 3],
+    [768, 2],
+    [375, 2],
+  ] as const) {
+    await page.size(width, 2600); // tall: the screenshot shows the whole Tablero
+    await page.goto(`${app}/`); // the old Inicio leads to the Tablero
+    await page.until(`location.pathname === '/admin/dashboard'`);
+    await page.until(
+      `document.querySelectorAll('.kpis.six .kpi').length === 6 && document.querySelector('.bars li')`,
+    );
+    if (SHOTS) writeFileSync(join(SHOTS, `tablero_full_${width}.png`), await page.screenshot());
+    const rows = await page.eval<number[]>(
+      `Object.values([...document.querySelectorAll('.kpis.six .kpi')].reduce((r, k) => ((r[k.offsetTop] = (r[k.offsetTop] ?? 0) + 1), r), {}))`,
+    );
+    assert.deepEqual(rows, Array(6 / perRow).fill(perRow), `@${width}: rows of ${perRow}`);
+    assert.equal(
+      await page.eval<number>('document.documentElement.scrollWidth - window.innerWidth'),
+      0,
+      `@${width}: no horizontal scroll`,
+    );
+    // Charts: an accessible donut and lists of bars whose figures are text; nothing of «Otros módulos» left.
+    assert.match(
+      await page.eval<string>(`document.querySelector('.donut svg').getAttribute('aria-label')`),
+      /\d+ jugadores: Activo \d+/,
+    );
+    assert.ok(
+      (await page.eval<number>(`document.querySelectorAll('ul.bars[aria-label]').length`)) >= 2,
+      'collection and occupancy bars',
+    );
+    // Income follows the real clock here: bars, or the explicit «no payments» message — never a blank.
+    await page.until(
+      `(() => { const s = document.querySelector('#income-title').closest('section'); return s.querySelector('ul.bars') || /No hay pagos registrados/.test(s.textContent); })()`,
+    );
+    assert.equal(await page.eval<number>(`document.querySelectorAll('.module-row').length`), 0);
+    assert.equal(
+      await page.eval<number>(`document.querySelectorAll('.cards.quick .card').length`),
+      7,
+    );
+    // The period runs from the 1st of the month to today (real clock): on the 1st it is one day, «el 1 de … de …».
+    assert.match(
+      await page.eval<string>(`document.querySelector('.kpis.six').innerText`),
+      /(del \d+ (de \w+ )?al|el) \d+ de \w+ de \d{4}/,
+    );
+    // Display-only probe (no data changes): the widest amount the school could plausibly reach still fits.
+    const clipped = await page.eval<number>(`(() => {
+      const s = document.querySelector('.kpis.six .kpi strong');
+      s.textContent = '$9,999,999.99';
+      return s.scrollWidth - s.clientWidth;
+    })()`);
+    assert.ok(clipped <= 0, `@${width}: amount clipped by ${clipped}px`);
+  }
+  await page.size(375, 900);
+  // Phone: «Menú» opens the menu, Escape inside it closes it and focus returns to «Menú» (DOM event, as in the user
+  // menu test).
+  await page.goto(`${app}/`);
+  await page.until(landed);
+  await page.eval(`document.querySelector('.menu-toggle').click()`);
+  await page.until(`document.querySelector('#nav-links a')?.offsetParent`);
+  await page.eval(
+    `document.querySelector('#nav-links a').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`,
+  );
+  await page.until(`!document.querySelector('#nav-links a').offsetParent`);
+  assert.equal(
+    await page.eval<boolean>(`document.activeElement === document.querySelector('.menu-toggle')`),
+    true,
+  );
+  if (SHOTS) writeFileSync(join(SHOTS, 'tablero_menu_closed_375.png'), await page.screenshot());
+  assert.deepEqual(page.errors(), []);
+});
+
+test('side menu: compact mode on desktop (remembered) and tablet, tooltips, collapsible areas, accessible phone panel', async () => {
+  await login('admin@example.com');
+  const width = (sel: string) =>
+    page.eval<number>(`Math.round(document.querySelector('${sel}').getBoundingClientRect().width)`);
+  const visibleLinks = () =>
+    page.eval<number>(
+      `[...document.querySelectorAll('#nav-links a')].filter((a) => a.offsetParent).length`,
+    );
+
+  // Desktop: expanded by default; the header hamburger makes it compact and the choice survives a reload (D3).
+  await page.size(1280, 900);
+  await page.eval(`localStorage.removeItem('charales.nav.rail')`);
+  await page.goto(`${app}/sports/categories`);
+  await page.until(settled);
+  assert.equal(await width('.sidenav'), 240);
+  assert.equal(
+    await page.eval<string>(
+      `document.querySelector('.nav-group.current .nav-section').getAttribute('aria-expanded')`,
+    ),
+    'true',
+    'the active page’s area is open',
+  );
+  await page.eval(`document.querySelector('.rail-toggle').click()`);
+  await page.until(`document.querySelector('.layout.rail')`);
+  assert.equal(await width('.sidenav'), 72);
+  assert.equal(await visibleLinks(), 0, 'compact: the areas are buttons, no loose link');
+  // Tooltip on keyboard focus too, and every area button keeps its accessible name.
+  await page.focusEmulation();
+  await page.eval(`document.querySelector('.nav-group.current .nav-section').focus()`);
+  assert.match(
+    await page.eval<string>(
+      `getComputedStyle(document.querySelector('.nav-group.current .nav-section'), '::after').content`,
+    ),
+    /Gestión deportiva/,
+  );
+  await page.focusEmulation(false);
+  assert.deepEqual(
+    await page.eval<string[]>(
+      `[...document.querySelectorAll('.nav-section')].filter((b) => !b.innerText.trim() && !b.textContent.trim()).map((b) => b.outerHTML)`,
+    ),
+    [],
+  );
+  if (SHOTS) writeFileSync(join(SHOTS, 'nav_rail_1280.png'), await page.screenshot());
+  await page.goto(`${app}/sports/categories`);
+  await page.until(settled);
+  assert.equal(await width('.sidenav'), 72, 'desktop remembers the compact menu');
+  // An area button expands the menu, opens that area and focuses its first link (D2).
+  await page.eval(
+    `[...document.querySelectorAll('.nav-section')].find((b) => b.textContent.includes('Cobranza')).click()`,
+  );
+  await page.until(`!document.querySelector('.layout.rail')`);
+  assert.equal(
+    await page.eval<string>(`document.activeElement.getAttribute('href')`),
+    '/admin/billing/concepts',
+  );
+  await page.eval(`localStorage.removeItem('charales.nav.rail')`);
+
+  // Tablet: always starts compact.
+  await page.size(768, 900);
+  await page.goto(`${app}/`);
+  await page.until(landed);
+  assert.equal(await width('.sidenav'), 72);
+  if (SHOTS) writeFileSync(join(SHOTS, 'nav_rail_768.png'), await page.screenshot());
+
+  // Phone: hamburger → panel with focus on «Cerrar menú» and the page inert; backdrop, Escape and a link close it.
+  await page.size(375, 900);
+  await page.goto(`${app}/`);
+  await page.until(landed);
+  const isOpen = () =>
+    page.eval<boolean>(`document.querySelector('.sidenav').classList.contains('open')`);
+  const openPanel = async () => {
+    await page.eval(`document.querySelector('.menu-toggle').click()`);
+    await page.until(`document.activeElement === document.querySelector('.drawer-close')`);
+  };
+  await openPanel();
+  assert.equal(await page.eval<boolean>(`document.querySelector('main').inert`), true);
+  assert.equal(await page.eval<boolean>(`document.querySelector('.topbar').inert`), true);
+  if (SHOTS) {
+    await new Promise((resolve) => setTimeout(resolve, 300)); // after the 0.2 s slide-in
+    writeFileSync(join(SHOTS, 'nav_panel_375.png'), await page.screenshot());
+  }
+  await page.eval(`document.querySelector('.nav-backdrop').click()`);
+  assert.equal(await isOpen(), false, 'backdrop closes it');
+  assert.equal(
+    await page.eval<boolean>(`document.activeElement === document.querySelector('.menu-toggle')`),
+    true,
+  );
+  assert.equal(await page.eval<boolean>(`document.querySelector('main').inert`), false);
+  await openPanel();
+  await page.eval(
+    `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`,
+  );
+  assert.equal(await isOpen(), false, 'Escape closes it');
+  await openPanel();
+  await page.eval(
+    `[...document.querySelectorAll('.nav-section')].find((b) => b.textContent.includes('Personas')).click()`,
+  );
+  assert.equal(await isOpen(), true, 'an area button keeps it open');
+  await page.eval(`document.querySelector('#nav-links a[href="/admin/players"]').click()`);
+  await page.until(`location.pathname === '/admin/players'`);
+  assert.equal(await isOpen(), false, 'choosing a page closes it');
+  assert.deepEqual(page.errors(), []);
+});
+
+test('HU-045 through the UI: a partial payment of $100 to an overdue charge is stored, applied and gets its receipt', async () => {
+  // Its own Chrome, like HU-010: confirm() in a long-lived headless tab may be dismissed before it is answered.
+  const shared = page;
+  page = await openBrowser();
+  try {
+    await partialPaymentFlow();
+  } finally {
+    await page.close();
+    page = shared;
+  }
+});
+
+test('HU-045 through the UI: a transfer needs its reference — refused next to the field, then stored in MariaDB and shown on the receipt', async () => {
+  const shared = page;
+  page = await openBrowser();
+  try {
+    await transferReferenceFlow();
+  } finally {
+    await page.close();
+    page = shared;
+  }
+});
+
+async function transferReferenceFlow(): Promise<void> {
+  await login('secretaria@example.com');
+  await page.goto(`${app}/admin/billing/payments/new`);
+  await page.until(`document.querySelector('select[name=player] option:nth-child(2)')`);
+  await page.eval(`(() => {
+    const s = document.querySelector('select[name=player]');
+    s.selectedIndex = [...s.options].findIndex((o) => o.text.includes('Lucía Hernández'));
+    s.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  const overdue = `[...document.querySelectorAll('label.check')].find((l) => l.textContent.includes('Mensualidad') && l.textContent.includes('Vencido'))`;
+  await page.until(overdue);
+  const before = await t.count('SELECT COUNT(*) AS n FROM pagos WHERE jugador_id = 2');
+  page.dialogs(true);
+  await page.eval(`(() => {
+    ${overdue}.querySelector('input').click();
+    const a = document.querySelector('input[name=amount]'); a.value = '50'; a.dispatchEvent(new Event('input', { bubbles: true }));
+    const m = document.querySelector('select[name=method]'); m.value = 'TRANSFERENCIA'; m.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await page.until(`document.querySelector('input[name=reference]')`);
+  // blank reference: refused next to its field, no confirmation asked, nothing written
+  await page.eval(`(() => {
+    const r = document.querySelector('input[name=reference]'); r.value = '   '; r.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('form button[type=submit]').click();
+  })()`);
+  await page.until(
+    `document.querySelector('#reference-error')?.textContent.includes('Falta la referencia del comprobante')`,
+  );
+  assert.equal(
+    await page.eval<string | null>(
+      `document.querySelector('input[name=reference]').getAttribute('aria-invalid')`,
+    ),
+    'true',
+  );
+  assert.deepEqual(page.dialogs(true), [], 'no confirm() before the form is valid');
+  assert.equal(await t.count('SELECT COUNT(*) AS n FROM pagos WHERE jugador_id = 2'), before);
+  // with a reference: stored trimmed
+  await page.eval(`(() => {
+    const r = document.querySelector('input[name=reference]'); r.value = '  SPEI-E2E-1  '; r.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('form button[type=submit]').click();
+  })()`);
+  await page.until(`document.querySelector('.alert.ok')?.textContent.includes('folio')`, 8000);
+  const folio = (await page.eval<string>(`document.querySelector('.alert.ok').textContent`)).match(
+    /folio (\S+)\./,
+  )![1]!;
+  const [paid] = await t.db.query(
+    'SELECT id, forma_pago, referencia, importe FROM pagos WHERE folio = ?',
+    [folio],
+  );
+  assert.deepEqual(
+    { method: paid.forma_pago, reference: paid.referencia, amount: Number(paid.importe) },
+    { method: 'TRANSFERENCIA', reference: 'SPEI-E2E-1', amount: 50 },
+  );
+  await page.goto(`${app}/admin/billing/receipts/${paid.id}`);
+  await page.until(`document.querySelector('main dl')?.textContent.includes('SPEI-E2E-1')`);
+  assert.deepEqual(page.errors(), []);
+}
+
+async function partialPaymentFlow(): Promise<void> {
+  await login('secretaria@example.com');
+  await page.goto(`${app}/admin/billing/payments/new`);
+  await page.until(`document.querySelector('select[name=player] option:nth-child(2)')`);
+  // By the option's text, not a fixed id: Lucía's «Mensualidad» of 2026-09 is overdue (due 2026-09-10).
+  await page.eval(`(() => {
+    const s = document.querySelector('select[name=player]');
+    s.selectedIndex = [...s.options].findIndex((o) => o.text.includes('Lucía Hernández'));
+    s.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  const overdue = `[...document.querySelectorAll('label.check')].find((l) => l.textContent.includes('Mensualidad') && l.textContent.includes('Vencido'))`;
+  await page.until(overdue);
+  const before = await t.count('SELECT COUNT(*) AS n FROM pagos WHERE jugador_id = 2');
+  page.dialogs(true);
+  await page.eval(`(() => {
+    ${overdue}.querySelector('input').click();
+    const a = document.querySelector('input[name=amount]'); a.value = '100'; a.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await page.until(`document.querySelector('dl.summary')?.textContent.includes('$100.00')`);
+  await page.eval(`document.querySelector('form button[type=submit]').click()`);
+  await page.until(`document.querySelector('.alert.ok')?.textContent.includes('folio')`, 8000);
+  assert.match(page.dialogs(true).join(), /¿Registrar el pago por \$100\?/);
+
+  const folio = (await page.eval<string>(`document.querySelector('.alert.ok').textContent`)).match(
+    /folio (\S+)\./,
+  )![1]!;
+  const [paid] = await t.db.query(
+    'SELECT id, importe, estado FROM pagos WHERE jugador_id = 2 AND folio = ?',
+    [folio],
+  );
+  assert.equal(await t.count('SELECT COUNT(*) AS n FROM pagos WHERE jugador_id = 2'), before + 1);
+  assert.equal(Number(paid.importe), 100);
+  assert.equal(paid.estado, 'APLICADO');
+  assert.deepEqual(
+    (
+      await t.db.query('SELECT cargo_id, importe_aplicado FROM pago_aplicacion WHERE pago_id = ?', [
+        paid.id,
+      ])
+    ).map((r: { cargo_id: unknown; importe_aplicado: string }) => [
+      Number(r.cargo_id),
+      Number(r.importe_aplicado),
+    ]),
+    [[2, 100]],
+  );
+  assert.equal(
+    await page.eval<string>(
+      `[...document.querySelectorAll('main a')].find((a) => a.textContent.includes('imprimir recibo')).getAttribute('href')`,
+    ),
+    `/admin/billing/receipts/${paid.id}`,
+  );
+
+  await page.goto(`${app}/admin/billing/receipts`);
+  await page.until(`document.querySelector('tbody tr')`);
+  assert.equal(
+    await page.eval<boolean>(
+      `[...document.querySelectorAll('tbody tr')].some((r) => r.textContent.includes(${JSON.stringify(folio)}) && r.textContent.includes('$100.00'))`,
+    ),
+    true,
+    'the payment is listed in «Pagos y recibos»',
+  );
+  assert.deepEqual(page.errors(), []);
+}
+
+test('the production headers are really applied here, and the app works under its CSP', async () => {
+  assert.match(PRODUCTION_HEADERS['Content-Security-Policy'] ?? '', /script-src 'self'/);
+  const res = await fetch(`${app}/login`);
+  assert.equal(res.headers.get('x-frame-options'), 'DENY');
+  assert.equal(res.headers.get('referrer-policy'), 'no-referrer');
+  assert.match(res.headers.get('content-security-policy') ?? '', /frame-ancestors 'none'/);
+  page.errors();
+  await login('admin@example.com');
+  await page.goto(`${app}/admin/players`);
+  await page.until(settled);
+  assert.deepEqual(page.errors(), []);
+});
+
+test('HU-005 through the UI: forgot password, the link in the e-mail, a new password, the old one no longer works', async () => {
+  const email = 'secretaria@example.com';
+  const [{ password_hash: original }] = await t.db.query(
+    'SELECT password_hash FROM usuarios WHERE email = ?',
+    [email],
+  );
+  try {
+    await logoutAll();
+    await page.goto(`${app}/forgot-password`);
+    await page.until(`document.querySelector('input[type=email]')`);
+    const sent = t.mail.length;
+    await page.eval(`(() => {
+      const i = document.querySelector('input[type=email]');
+      i.value = ${JSON.stringify(email)};
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+      document.querySelector('button[type=submit]').click();
+    })()`);
+    await page.until(`document.querySelector('main, app-root')?.innerText.length > 0`);
+    for (let i = 0; i < 50 && t.mail.length === sent; i++)
+      await new Promise((r) => setTimeout(r, 100));
+    const message = t.mail.at(-1)!;
+    assert.equal(message.to, email);
+    const token = /token=([\w-]+)/.exec(message.text)![1]!;
+    await page.goto(`${app}/reset-password?token=${token}`);
+    await page.until(`document.querySelectorAll('input[type=password]').length === 2`);
+    await page.eval(`(() => {
+      for (const i of document.querySelectorAll('input[type=password]')) {
+        i.value = 'Recuperada-2847';
+        i.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      document.querySelector('button[type=submit]').click();
+    })()`);
+    const tryLogin = (password: string) =>
+      fetch(`${t.base}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      }).then((r) => r.status);
+    for (let i = 0; i < 50; i++) {
+      const [row] = await t.db.query('SELECT password_hash FROM usuarios WHERE email = ?', [email]);
+      if (row.password_hash !== original) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.equal(await tryLogin('Recuperada-2847'), 200);
+    assert.equal(await tryLogin('demo1234'), 401);
+  } finally {
+    await t.db.query('UPDATE usuarios SET password_hash = ? WHERE email = ?', [original, email]);
+    await t.db.query('DELETE FROM limite_acceso');
+  }
+});
+
+test('stored markup is shown as text: a notice with a script runs nothing, in a real browser', async () => {
+  const admin = await t.login('admin@example.com');
+  const payload = `<img src=x onerror="window.__xss=1"><script>window.__xss=1</script>`;
+  await t.ok(
+    t.call(admin, 'NoticeService', 'save', {
+      title: payload,
+      message: payload,
+      startsAt: '2020-01-01T00:00:00',
+      endsAt: '2099-12-31T23:59:59',
+      published: true,
+      categoryIds: [],
+      tutorIds: [],
+      coachIds: [],
+    }),
+  );
+  await login('admin@example.com');
+  await page.goto(`${app}/admin/notices`);
+  await page.until(settled);
+  await page.until(`document.querySelector('main').innerText.includes('onerror')`);
+  assert.equal(
+    await page.eval<boolean>(`document.querySelector('main img[src="x"]') !== null`),
+    false,
+  );
+  assert.equal(await page.eval<unknown>(`window.__xss ?? null`), null);
+});
+
+test('the login form tells the limit without saying whether the account exists', async () => {
+  await t.db.query('DELETE FROM limite_acceso');
+  await logoutAll();
+  await page.size(1280, 900);
+  await page.goto(`${app}/login`);
+  await page.until(`document.querySelector('input[type=email]')`);
+  const attempt = async () => {
+    await page.eval(`(() => {
+      const set = (sel, v) => { const i = document.querySelector(sel); i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })); };
+      set('input[type=email]', 'nadie.aqui@example.com');
+      set('input[type=password]', 'incorrecta-1');
+      document.querySelector('button[type=submit]').click();
+    })()`);
+    await new Promise((r) => setTimeout(r, 300));
+    return page.eval<string>(`document.querySelector('form').innerText`);
+  };
+  let text = '';
+  for (let i = 0; i < 6; i++) text = await attempt();
+  assert.match(text, /Demasiados intentos/);
+  assert.doesNotMatch(text, /nadie\.aqui|no existe/);
+  await t.db.query('DELETE FROM limite_acceso');
 });

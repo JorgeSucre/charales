@@ -165,7 +165,7 @@ describe('MockDb integrity checker', () => {
         db.update(db.charges, 1, { status: 'CANCELADO' });
         db.get(db.players, 12345, 'Jugador'); // invalid: missing FK target → throws
       }),
-    ).toThrow('Jugador no encontrado.');
+    ).toThrow('Jugador inexistente');
     expect(JSON.stringify(db)).toBe(before);
     expect(integrityViolations(db)).toEqual([]);
   });

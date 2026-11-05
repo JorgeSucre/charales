@@ -59,12 +59,14 @@ test('HU-043: concepts — name, suggested amount, recurring, status; used ones 
   );
   await t.ok(t.call(secretaria, 'BillingService', 'setConceptActive', 1, true));
   await t.refused(
-    t.call(secretaria, 'BillingService', 'saveConcept', {
-      name: 'Torneo',
-      suggestedAmountCents: 1,
-      recurring: false,
-    }),
+    () =>
+      t.call(secretaria, 'BillingService', 'saveConcept', {
+        name: 'Torneo',
+        suggestedAmountCents: 1,
+        recurring: false,
+      }),
     400,
+    /^Ya existe un concepto con ese nombre\.$/,
   );
 });
 
@@ -114,14 +116,16 @@ test('HU-044: monthly fees — one per player/concept/period, amount and due dat
     1,
   );
   await t.refused(
-    t.call(secretaria, 'BillingService', 'generateMonthlyFees', {
-      conceptId: 1,
-      period: '2026-12',
-      dueDate: '2026-12-10',
-      excludedPlayerIds: [1],
-      exclusionReason: '',
-    }),
+    () =>
+      t.call(secretaria, 'BillingService', 'generateMonthlyFees', {
+        conceptId: 1,
+        period: '2026-12',
+        dueDate: '2026-12-10',
+        excludedPlayerIds: [1],
+        exclusionReason: '',
+      }),
     400,
+    /^Indica la regla autorizada para excluir jugadores\.$/,
   );
   const [overdue] = await t.db.query('SELECT estado FROM cargos WHERE id = 2');
   assert.equal(overdue.estado, 'VENCIDO', '3) overdue status');
@@ -134,6 +138,7 @@ test('HU-045: payment — payer, concept, date, amount, method; partial; balance
       tutorId: 1,
       amountCents: 25_000,
       method: 'TRANSFERENCIA',
+      reference: 'SPEI-HU045',
       chargeIds: [5],
       paidAt: '2026-10-12T18:30:00',
     }),
@@ -163,14 +168,16 @@ test('HU-045: payment — payer, concept, date, amount, method; partial; balance
   );
   assert.equal(st.totals.balanceCents, 60_000 - 25_000 + 35_000 + 65_000);
   await t.refused(
-    t.call(secretaria, 'BillingService', 'registerPayment', {
-      playerId: 2,
-      tutorId: 1,
-      amountCents: 25_000,
-      method: 'EFECTIVO',
-      paidAt: '2099-01-01T00:00:00',
-    }),
+    () =>
+      t.call(secretaria, 'BillingService', 'registerPayment', {
+        playerId: 2,
+        tutorId: 1,
+        amountCents: 25_000,
+        method: 'EFECTIVO',
+        paidAt: '2099-01-01T00:00:00',
+      }),
     400,
+    /^La fecha de pago no puede ser futura\.$/,
   );
 });
 
@@ -185,6 +192,7 @@ test('HU-046/047: statement — charges and payments, balance, overdue, filters;
   const filtered = await t.ok<{ charges: { conceptId: number }[] }>(
     t.call(secretaria, 'BillingService', 'statement', 3, { conceptId: 2 }),
   );
+  assert.ok(filtered.charges.length > 0, '4) the concept filter keeps that concept'); // else .every() is vacuous
   assert.ok(
     filtered.charges.every((c) => c.conceptId === 2),
     '4) filter by concept',
@@ -193,15 +201,21 @@ test('HU-046/047: statement — charges and payments, balance, overdue, filters;
     t.call(tutor, 'PortalService', 'child', 2),
   );
   assert.ok(child.statement.totals.balanceCents > 0, 'HU-047.2');
-  await t.refused(t.call(tutor, 'BillingService', 'statement', 3), 403);
   await t.refused(
-    t.call(tutor, 'BillingService', 'registerPayment', {
-      playerId: 1,
-      tutorId: 1,
-      amountCents: 1,
-      method: 'EFECTIVO',
-    }),
+    () => t.call(tutor, 'BillingService', 'statement', 3),
     403,
+    /^No tienes acceso a la información de este jugador\.$/,
+  );
+  await t.refused(
+    () =>
+      t.call(tutor, 'BillingService', 'registerPayment', {
+        playerId: 1,
+        tutorId: 1,
+        amountCents: 1,
+        method: 'EFECTIVO',
+      }),
+    403,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
 });
 
@@ -225,8 +239,16 @@ test('HU-048: receipt — folio, date, player, concept, amount, method; by folio
 
 test('HU-049: cancel a payment — admin only, reason, reverts balance, kept as CANCELADO with audit', async () => {
   const before = (await t.db.query('SELECT estado FROM cargos WHERE id = 3'))[0].estado;
-  await t.refused(t.call(secretaria, 'BillingService', 'cancelPayment', 2, 'x'), 403);
-  await t.refused(t.call(admin, 'BillingService', 'cancelPayment', 2, ''), 400);
+  await t.refused(
+    () => t.call(secretaria, 'BillingService', 'cancelPayment', 2, 'x'),
+    403,
+    /^No tienes permiso para realizar esta acción\.$/,
+  );
+  await t.refused(
+    () => t.call(admin, 'BillingService', 'cancelPayment', 2, ''),
+    400,
+    /^Falta el motivo de cancelación\. Es un dato obligatorio\.$/,
+  );
   await t.ok(t.call(admin, 'BillingService', 'cancelPayment', 2, 'Cheque devuelto'));
   const [p] = await t.db.query('SELECT estado, motivo_cancelacion FROM pagos WHERE id = 2');
   assert.deepEqual({ ...p }, { estado: 'CANCELADO', motivo_cancelacion: 'Cheque devuelto' });
@@ -295,13 +317,15 @@ test('HU-050: debts — period/category filters, primary tutor and contact, over
 
 test('HU-051: discounts — type and reason, original and final kept, authorized users only', async () => {
   await t.refused(
-    t.call(secretaria, 'BillingService', 'addDiscount', {
-      chargeId: 2,
-      type: 'DESCUENTO',
-      reason: 'x',
-      adjustmentCents: 100,
-    }),
+    () =>
+      t.call(secretaria, 'BillingService', 'addDiscount', {
+        chargeId: 2,
+        type: 'DESCUENTO',
+        reason: 'x',
+        adjustmentCents: 100,
+      }),
     403,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
   await t.ok(
     t.call(admin, 'BillingService', 'addDiscount', {
@@ -331,13 +355,15 @@ test('HU-051: discounts — type and reason, original and final kept, authorized
     '2) original kept',
   );
   await t.refused(
-    t.call(admin, 'BillingService', 'addDiscount', {
-      chargeId: 2,
-      type: 'BECA',
-      reason: 'Demasiado',
-      adjustmentCents: 10_000_000,
-    }),
+    () =>
+      t.call(admin, 'BillingService', 'addDiscount', {
+        chargeId: 2,
+        type: 'BECA',
+        reason: 'Demasiado',
+        adjustmentCents: 10_000_000,
+      }),
     400,
+    /^El descuento no puede ser mayor al saldo pendiente\.$/,
   );
   await t.ok(t.call(secretaria, 'BillingService', 'discounts'));
 });
@@ -364,12 +390,14 @@ test('HU-052: uniform catalog — product with sizes and price, status, used pro
     }),
   );
   await t.refused(
-    t.call(secretaria, 'UniformService', 'saveVariant', {
-      productId: p.id,
-      size: 'CH',
-      priceCents: 1,
-    }),
+    () =>
+      t.call(secretaria, 'UniformService', 'saveVariant', {
+        productId: p.id,
+        size: 'CH',
+        priceCents: 1,
+      }),
     400,
+    /^Esa talla ya existe para el producto\.$/,
   );
   assert.equal(
     await t.count('SELECT COUNT(*) AS n FROM variantes_uniforme WHERE producto_id = ?', [p.id]),
@@ -428,7 +456,11 @@ test('HU-053/054/055: orders — price snapshot, charge = total, paid from the b
     2 * 35_000 + 15_000,
     'HU-054.1/4 charge = total',
   );
-  await t.refused(t.call(secretaria, 'UniformService', 'deliver', 9999, 'x'), 400);
+  await t.refused(
+    () => t.call(secretaria, 'UniformService', 'deliver', 9999, 'x'),
+    400,
+    /^Pedido inexistente: actualiza la página e inténtalo de nuevo\.$/,
+  );
   await t.ok(
     t.call(secretaria, 'BillingService', 'registerPayment', {
       playerId: 1,
@@ -464,7 +496,11 @@ test('HU-053/054/055: orders — price snapshot, charge = total, paid from the b
     (await t.db.query('SELECT estado FROM cargos WHERE id = ?', [other.chargeId]))[0].estado,
     'CANCELADO',
   );
-  await t.refused(t.call(secretaria, 'UniformService', 'deliver', other.id, 'x'), 400, undefined);
+  await t.refused(
+    () => t.call(secretaria, 'UniformService', 'deliver', other.id, 'x'),
+    400,
+    /^El pedido está cancelado\.$/,
+  );
 });
 
 test('HU-056: family uniforms — own children only, product/size/quantity, status, read-only', async () => {
@@ -475,10 +511,15 @@ test('HU-056: family uniforms — own children only, product/size/quantity, stat
     child.uniforms.length >= 1 &&
       child.uniforms[0]!.lines.every((l) => l.product && l.size && l.quantity > 0),
   );
-  await t.refused(t.call(tutor, 'UniformService', 'orders', {}), 403);
   await t.refused(
-    t.call(tutor, 'UniformService', 'createOrder', 1, [{ variantId: 1, quantity: 1 }], 3),
+    () => t.call(tutor, 'UniformService', 'orders', {}),
     403,
+    /^No tienes permiso para realizar esta acción\.$/,
+  );
+  await t.refused(
+    () => t.call(tutor, 'UniformService', 'createOrder', 1, [{ variantId: 1, quantity: 1 }], 3),
+    403,
+    /^No tienes permiso para realizar esta acción\.$/,
   );
 });
 
@@ -509,5 +550,131 @@ test('D5 / HU-044.3: the daily job marks unpaid charges past their due date VENC
   assert.deepEqual(
     { ...event },
     { EVENT_NAME: 'ev_cargos_vencidos', INTERVAL_VALUE: '1', INTERVAL_FIELD: 'DAY' },
+  );
+});
+
+test('HU-046.1/4: statement date filter — inclusive from/to on the charge date and the local payment date', async () => {
+  // Own player and rows, so the expected sets are exact. Charges dated on both sides of September 2026 (charge date =
+  // cargos.fecha_cargo, set with SQL: the API dates new charges today). Payments through the API at the edges of the
+  // school's local day (pagos.fecha_pago is a local DATETIME: a UTC shift would move them across the boundary).
+  const player = await t.ok<{ id: number }>(
+    t.call(secretaria, 'PlayerService', 'create', {
+      firstName: 'Periodo',
+      lastName1: 'Filtro',
+      lastName2: null,
+      birthDate: '2016-04-04',
+      sex: 'M',
+      phone: null,
+      email: null,
+      address: null,
+    }),
+  );
+  const [a, b] = (await t.db.query(
+    'SELECT id FROM conceptos_cobro WHERE activo = 1 ORDER BY id LIMIT 2',
+  )) as { id: number }[];
+  assert.ok(a && b, 'fixture: two active concepts');
+  const charge: Record<string, number> = {};
+  for (const [day, concept] of [
+    ['2026-08-31', a.id],
+    ['2026-09-01', a.id],
+    ['2026-09-15', b.id],
+    ['2026-09-30', a.id],
+    ['2026-10-01', a.id],
+  ] as const) {
+    const r = await t.db.query(
+      `INSERT INTO cargos (jugador_id, concepto_id, fecha_cargo, monto_original, estado)
+       VALUES (?, ?, ?, 100.00, 'PENDIENTE')`,
+      [player.id, concept, day],
+    );
+    charge[day] = Number(r.insertId);
+  }
+  // A write outside the API must bump the data version, or the bridge keeps its cached tables (docs/API.md).
+  await t.db.query('UPDATE version_datos SET version = version + 1 WHERE id = 1');
+  const payment: Record<string, number> = {};
+  for (const [paidAt, day] of [
+    ['2026-08-31T23:59:59', '2026-08-31'],
+    ['2026-09-01T00:00:00', '2026-09-01'],
+    ['2026-09-30T23:59:59', '2026-09-30'],
+    ['2026-10-01T00:00:00', '2026-10-01'],
+  ] as const) {
+    const p = await t.ok<{ id: number }>(
+      t.call(secretaria, 'BillingService', 'registerPayment', {
+        playerId: player.id,
+        tutorId: null,
+        amountCents: 1_000,
+        method: 'EFECTIVO',
+        chargeIds: [charge[day]],
+        paidAt,
+      }),
+    );
+    payment[paidAt] = p.id;
+  }
+
+  type Statement = {
+    charges: { id: number; balanceCents: number }[];
+    payments: { id: number }[];
+    totals: { chargedCents: number; paidCents: number; balanceCents: number };
+  };
+  const statement = (filter: object) =>
+    t.ok<Statement>(t.call(secretaria, 'BillingService', 'statement', player.id, filter));
+  const ids = (s: Statement) => ({
+    charges: s.charges.map((c) => c.id).sort((x, y) => x - y),
+    payments: s.payments.map((p) => p.id).sort((x, y) => x - y),
+  });
+  const expect = (days: string[], paidAts: string[]) => ({
+    charges: days.map((d) => charge[d]!).sort((x, y) => x - y),
+    payments: paidAts.map((p) => payment[p]!).sort((x, y) => x - y),
+  });
+
+  // No dates: everything of the player (the behaviour without filters is unchanged).
+  assert.deepEqual(
+    ids(await statement({})),
+    expect(Object.keys(charge), Object.keys(payment)),
+    'no filter',
+  );
+  // September: both edges included, 08-31 (even at 23:59:59) and 10-01 (even at 00:00:00) excluded.
+  const september = await statement({ from: '2026-09-01', to: '2026-09-30' });
+  assert.deepEqual(
+    ids(september),
+    expect(
+      ['2026-09-01', '2026-09-15', '2026-09-30'],
+      ['2026-09-01T00:00:00', '2026-09-30T23:59:59'],
+    ),
+    'from and to, inclusive',
+  );
+  // 2) the balance is the one of the listed charges: 3 × 100.00 charged, 2 × 10.00 paid.
+  assert.deepEqual(
+    {
+      charged: september.totals.chargedCents,
+      paid: september.totals.paidCents,
+      balance: september.totals.balanceCents,
+    },
+    { charged: 30_000, paid: 2_000, balance: 28_000 },
+  );
+  assert.equal(
+    september.totals.balanceCents,
+    september.charges.reduce((s, c) => s + c.balanceCents, 0),
+  );
+  // Only `from`, only `to`, and a single day (from = to).
+  assert.deepEqual(
+    ids(await statement({ from: '2026-09-30' })),
+    expect(['2026-09-30', '2026-10-01'], ['2026-09-30T23:59:59', '2026-10-01T00:00:00']),
+    'only from',
+  );
+  assert.deepEqual(
+    ids(await statement({ to: '2026-09-01' })),
+    expect(['2026-08-31', '2026-09-01'], ['2026-08-31T23:59:59', '2026-09-01T00:00:00']),
+    'only to',
+  );
+  assert.deepEqual(
+    ids(await statement({ from: '2026-09-30', to: '2026-09-30' })),
+    expect(['2026-09-30'], ['2026-09-30T23:59:59']),
+    'a single day',
+  );
+  // 4) date and concept together: only the September charge of concept b.
+  assert.deepEqual(
+    ids(await statement({ from: '2026-09-01', to: '2026-09-30', conceptId: b.id })).charges,
+    [charge['2026-09-15']],
+    'date + concept',
   );
 });

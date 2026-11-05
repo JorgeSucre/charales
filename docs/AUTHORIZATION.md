@@ -1,6 +1,6 @@
 # Autorización — contrato por operación
 
-Estado: rama `jorgesucre/api-express` (2026-10-13). Esta autorización **corre en la API** (decisión D13): los
+Estado: `main` (verificado el 2026-10-29). Esta autorización **corre en la API** (decisión D13): los
 servicios de dominio se ejecutan en el servidor con el `AuthUser` de la cookie, así que las barreras 2 y 3 son el
 mismo código y el navegador no puede saltarlas.
 
@@ -187,6 +187,7 @@ exige motivo y queda en `auditoria`; revertir un **pago** (`pagos.cancelar`, HU-
 | TutorService          | list                     | `tutores.consultar` o `avisos.crear` o `avisos.editar`                                                                          |
 | TutorService          | get                      | `tutores.consultar`                                                                                                             |
 | TutorService          | save                     | `tutores.crear` (alta) / `tutores.editar` (edición)                                                                             |
+| TutorService          | setPrimary               | `tutores.editar`                                                                                                                |
 | TutorService          | linkAccount              | `tutores.editar`                                                                                                                |
 | TutorService          | unlinkAccount            | `tutores.editar`                                                                                                                |
 | TutorService          | updateContact            | `tutores.editar`, o el propio tutor con `portal.editar` (sólo su `tutor_id`)                                                    |

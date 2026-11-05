@@ -53,4 +53,9 @@
 - Dinero en centavos enteros; fechas locales con `today()` (`shared/dates.ts`). Detalle en `DATA_CONTRACT.md` § 1.
 - Componentes standalone, templates inline, signals, `resource()`, formularios reactivos con `FieldError` y
   `Submission`. OnPush es el default en Angular 22.
+- Mensajes de validación y error: una sola redacción por tipo ([`DEVELOPMENT.md` § 5.1](docs/DEVELOPMENT.md));
+  textos compartidos en `shared/validate.ts`; en formularios, `FieldError` + `FieldA11y` junto al campo.
+- Pantallas CRUD: la lista es la vista principal y el formulario de alta/edición se abre bajo demanda con
+  `FormPanel` ([`DEVELOPMENT.md` § 5.2](docs/DEVELOPMENT.md)). Nombres de personas y de catálogos: R21
+  ([`DOMAIN_RULES.md`](docs/DOMAIN_RULES.md)).
 - Estilos globales en `src/styles.css`. Código en inglés, UI en español.

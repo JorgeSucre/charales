@@ -1,0 +1,168 @@
+{
+  "code": "/Users/jorgesucre/Projects/6A/ingenieria_software/charales/charales-wt/auditoria-integral-cierre",
+  "label": "final",
+  "at": "2026-11-05T22:43:03.195Z",
+  "node": "v26.13.0",
+  "fuerza": {
+    "prefijos_150": {
+      "statuses": {
+        "401": 10,
+        "429": 140
+      },
+      "first429": 11,
+      "median_401_ms": 27.5,
+      "median_429_ms": 0.6,
+      "total_ms": 383
+    },
+    "prefijos_150_de_un_48": {
+      "statuses": {
+        "401": 8,
+        "429": 142
+      },
+      "first429": 9,
+      "median_401_ms": 27.3,
+      "median_429_ms": 0.5
+    },
+    "un_64_150": {
+      "statuses": {
+        "401": 5,
+        "429": 145
+      },
+      "first429": 6,
+      "median_401_ms": 25.7,
+      "median_429_ms": 0.5
+    },
+    "ipv4_60": {
+      "statuses": {
+        "401": 8,
+        "429": 52
+      },
+      "first429": 9,
+      "median_401_ms": 23.9,
+      "median_429_ms": 0.5
+    },
+    "mapeadas_9": {
+      "statuses": {
+        "401": 5,
+        "429": 4
+      },
+      "first429": 6,
+      "median_401_ms": 27.3,
+      "median_429_ms": 0.7
+    },
+    "concurrentes_60": {
+      "statuses": {
+        "401": 10,
+        "429": 50
+      },
+      "first429": 11,
+      "median_401_ms": 105.6,
+      "median_429_ms": 96.1,
+      "conexiones_pico": 11
+    },
+    "dos_procesos_150": {
+      "statuses": {
+        "401": 10,
+        "429": 140
+      },
+      "first429": 11,
+      "median_401_ms": 24.9,
+      "median_429_ms": 0.5
+    },
+    "reinicio": {
+      "antes": {
+        "401": 8
+      },
+      "despues": {
+        "401": 2,
+        "429": 38
+      }
+    },
+    "conexiones_cortadas": {
+      "cortadas": 11,
+      "antes": {
+        "401": 6
+      },
+      "despues": {
+        "401": 4,
+        "429": 36
+      }
+    },
+    "varias_cuentas": {
+      "coach@example.com": {
+        "401": 10,
+        "429": 30
+      },
+      "tutor@example.com": {
+        "401": 10,
+        "429": 30
+      },
+      "secretaria@example.com": {
+        "401": 10,
+        "429": 30
+      },
+      "admin@example.com": {
+        "401": 10,
+        "429": 30
+      },
+      "nadie.aqui@example.com": {
+        "401": 10,
+        "429": 30
+      }
+    },
+    "db": "ef_cier26_final_fb_5fa2a4",
+    "seconds": 11
+  },
+  "dia": {
+    "pasos": 96,
+    "intentos_por_paso": 25,
+    "adivinanzas_verificadas_24h": 57,
+    "rechazadas_24h": 2343,
+    "primera_hora_por_paso": [10, 0, 1, 0],
+    "db": "ef_cier26_final_dia_cf833e",
+    "seconds": 43
+  },
+  "dueno": {
+    "login_inicial": 200,
+    "cookies_del_navegador": ["charales_disp_<hash>"],
+    "ataque": {
+      "401": 10,
+      "429": 50
+    },
+    "mismo_navegador_misma_red": 200,
+    "mismo_navegador_red_nueva": 200,
+    "navegador_nuevo_red_conocida": 429,
+    "navegador_nuevo_red_nueva": 429,
+    "atacante_con_contrasena_correcta_red_nueva": 429,
+    "mismo_navegador_otra_instancia": 200,
+    "un_origen_intentos_verificados_por_ronda": [8, 0, 0, 0],
+    "un_origen_navegador_nuevo_red_nueva": 200,
+    "dueno_durante_ataque_concurrente": {
+      "200": 15,
+      "mediana_ms": 26
+    },
+    "red_agotada": {
+      "401": 50,
+      "429": 10
+    },
+    "red_agotada_mismo_navegador": 200,
+    "red_agotada_navegador_nuevo": 429,
+    "minutos_hasta_entrar_tras_el_ataque": 30,
+    "cookie_robada_12_adivinanzas": [401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 401],
+    "cookie_de_otra_cuenta_contra_coach": {
+      "401": 1
+    },
+    "recuperacion_antes": 429,
+    "recuperacion_solicitud": 204,
+    "recuperacion_confirmacion": 204,
+    "recuperacion_despues_misma_red": 200,
+    "recuperacion_despues_otra_red_mismo_navegador": 200,
+    "db": "ef_cier26_final_dn_618743",
+    "seconds": 12
+  },
+  "databases": [
+    "ef_cier26_final_fb_5fa2a4",
+    "ef_cier26_final_dia_cf833e",
+    "ef_cier26_final_dn_618743"
+  ]
+}

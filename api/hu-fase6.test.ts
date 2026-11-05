@@ -21,14 +21,14 @@ before(async () => {
 });
 after(() => t?.close());
 
-type Kpi = { label: string; value: number; source: string; link: string };
+type Kpi = { label: string; value: number; hint: string; link: string };
 
 test('HU-065: dashboard — KPIs with source and link, straight from the database, period filter', async () => {
   const d1 = await t.ok<{ kpis: Kpi[]; upcoming: unknown[]; categories: unknown[] }>(
     t.call(secretaria, 'ReportService', 'dashboard', '2026-10-01', '2026-10-31'),
   );
   assert.ok(
-    d1.kpis.length >= 4 && d1.kpis.every((k) => k.source && k.link),
+    d1.kpis.length >= 4 && d1.kpis.every((k) => k.hint && k.link),
     '1/4) KPIs with source and link',
   );
   const active = (d: { kpis: Kpi[] }) => d.kpis.find((k) => /activos/i.test(k.label))!.value;
@@ -46,7 +46,12 @@ test('HU-065: dashboard — KPIs with source and link, straight from the databas
     t.call(secretaria, 'ReportService', 'dashboard', '2026-09-01', '2026-09-30'),
   );
   assert.ok(sept.kpis.length === d2.kpis.length, '3) period filter');
-  await t.refused(t.call(await t.login('tutor@example.com'), 'ReportService', 'dashboard'), 403);
+  const tutorCookie = await t.login('tutor@example.com'); // before: a login writes its audit row
+  await t.refused(
+    () => t.call(tutorCookie, 'ReportService', 'dashboard'),
+    403,
+    /^No tienes permiso para realizar esta acción\.$/,
+  );
 });
 
 test('HU-066: players by category — category/status filters, primary tutor and contact, totals', async () => {
@@ -193,12 +198,23 @@ test('HU-074: the critical flows on MariaDB — login, registration + enrollment
   );
   // 5) tutor restricted to own children
   const tutor = await t.login('tutor@example.com');
-  await t.refused(t.call(tutor, 'PortalService', 'child', p.id), 403);
-  await t.refused(t.call(tutor, 'PlayerService', 'search', {}), 403);
+  await t.refused(
+    () => t.call(tutor, 'PortalService', 'child', p.id),
+    403,
+    /^No tienes acceso a la información de este jugador\.$/,
+  );
+  await t.refused(
+    () => t.call(tutor, 'PlayerService', 'search', {}),
+    403,
+    /^No tienes permiso para realizar esta acción\.$/,
+  );
 });
 
 test('D13 cache: what the API keeps in memory always equals MariaDB, also across two API instances', async () => {
-  const other = createApp(t.db, { secureCookie: false, mailer: () => undefined }).listen(0);
+  const other = createApp(t.db, { secureCookie: false, mailer: () => undefined }).listen(
+    0,
+    '127.0.0.1',
+  );
   await new Promise((resolve) => other.once('listening', resolve));
   const url2 = `http://127.0.0.1:${(other.address() as AddressInfo).port}`;
   try {

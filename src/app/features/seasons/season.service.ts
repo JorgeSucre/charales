@@ -4,7 +4,7 @@ import { MockDb } from '../../core/data/mock-db';
 import { Id, Season } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
 import { isISODate, nowDateTime } from '../../shared/dates';
-import { required } from '../../shared/validate';
+import { catalogName, flag } from '../../shared/validate';
 
 export type SeasonDraft = Pick<Season, 'name' | 'startDate' | 'endDate' | 'active' | 'isCurrent'>;
 
@@ -46,9 +46,11 @@ export class SeasonService {
   /** Marking a season current unmarks the previous one in the same transaction (the DB requires that order). */
   async save(draft: SeasonDraft & { id?: Id }): Promise<Season> {
     this.authz.require(draft.id ? 'temporadas.editar' : 'temporadas.crear');
-    const name = required(draft.name, 'El nombre', 100);
+    flag(draft.active, 'Valor de «activa» inválido.');
+    flag(draft.isCurrent, 'Valor de «actual» inválido.');
+    const name = catalogName(draft.name, 'El nombre', 100);
     if (!isISODate(draft.startDate) || !isISODate(draft.endDate))
-      throw new Error('Fechas inválidas.');
+      throw new Error('Ingresa fechas de inicio y fin válidas.');
     if (draft.endDate < draft.startDate)
       throw new Error('La fecha de fin no puede ser anterior al inicio.');
     if (draft.isCurrent && !draft.active) throw new Error('La temporada actual debe estar activa.');

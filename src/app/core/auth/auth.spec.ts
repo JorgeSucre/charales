@@ -45,7 +45,7 @@ describe('auth, sessions & RBAC', () => {
       await expect(auth.login(email, pwd)).rejects.toThrow('Correo o contraseña incorrectos.');
     const user = await auth.login(' Secretaria@Example.com ', PASSWORD);
     expect(user).toMatchObject({ roles: ['SECRETARIA'], isStaff: true });
-    expect(auth.homeUrl()).toBe('/');
+    expect(auth.homeUrl()).toBe('/admin/dashboard'); // staff land on the Tablero
   });
 
   it('records the access with date/time (sesiones + auditoría LOGIN) and closes it on logout (HU-001.3)', async () => {
@@ -113,7 +113,9 @@ describe('auth, sessions & RBAC', () => {
     const row = db.users.find((u) => u.id === 1)!;
     expect(row.passwordHash).not.toContain('Nueva1234');
     expect(await verifyPassword('Nueva1234', row.passwordHash)).toBe(true);
-    expect(passwordProblem('abc12345')).toBeNull();
+    expect(passwordProblem('zorro-2847')).toBeNull();
+    expect(passwordProblem('abc12345')).toMatch(/común/);
+    expect(passwordProblem('Admin1234')).toMatch(/común/);
   });
 
   it('reset token works once, expires, and closes open sessions (HU-005.3)', async () => {

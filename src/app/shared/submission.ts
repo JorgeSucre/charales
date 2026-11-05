@@ -1,4 +1,5 @@
 import { signal } from '@angular/core';
+import { UNEXPECTED_MESSAGE } from './validate';
 
 /** Busy + result state for a form submit or action. Errors thrown by services become the message. */
 export class Submission {
@@ -16,7 +17,7 @@ export class Submission {
       this.result.set({ ok: true, text: typeof success === 'string' ? success : success(result) });
       return true;
     } catch (e) {
-      this.result.set({ ok: false, text: e instanceof Error ? e.message : 'Ocurrió un error.' });
+      this.result.set({ ok: false, text: e instanceof Error ? e.message : UNEXPECTED_MESSAGE });
       return false;
     } finally {
       this.busy.set(false);

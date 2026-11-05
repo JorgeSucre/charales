@@ -11,4 +11,4 @@ response:
   body:
     type: json
     content: |-
-      { "error": "Sesión no iniciada o expirada." }
+      { "error": "Tu sesión no está iniciada o ya expiró. Inicia sesión de nuevo." }

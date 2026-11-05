@@ -11,51 +11,48 @@
 import { randomBytes } from 'node:crypto';
 import type { Pool, PoolConnection } from 'mariadb';
 import {
-  MAX_FAILURES,
+  BUSY,
   NO_SESSION,
   audit,
   clearCookie,
   currentSession,
   hashPassword,
   localDateTime,
-  recentFailures,
   sha256,
   verifyPassword,
 } from './auth.ts';
+import { issueDevice, revokeDevices } from './device-trust.ts';
+import {
+  clearPasswordChange,
+  releasePasswordChange,
+  reservePasswordChange,
+  reserveResetRequest,
+} from './login-limit.ts';
+import {
+  RESET_TOKEN_MINUTES,
+  accessMailText,
+  deliverMail,
+  enqueueMail,
+  type Mailer,
+} from './mail.ts';
 import type { Ctx, Reply } from './server.ts';
-
-export const RESET_TOKEN_MINUTES = 60;
-/** Recovery requests per e-mail and IP in the attempt window (counted whether the account exists or not). */
-const MAX_RESET_REQUESTS = 5;
 
 const INVALID_LINK = 'El enlace no es válido o ya expiró.';
 const WRONG_CURRENT = 'La contraseña actual no es correcta.';
 const TOO_MANY = 'Demasiados intentos. Intenta de nuevo más tarde.';
+const RESET_SUBJECT = 'Recupera tu contraseña';
 const UNAVAILABLE = 'La recuperación de contraseña no está disponible.';
+const CHANGE_UNAVAILABLE = 'No se pudo cambiar la contraseña. Intenta de nuevo en unos minutos.';
 
-/** Sends one e-mail. Never receives a password; the recovery link (raw token) only goes through here. */
-export type Mailer = (to: string, subject: string, text: string) => Promise<void> | void;
+export { RESET_TOKEN_MINUTES, mailerFromEnv, withAppUrl } from './mail.ts';
+export type { Mailer } from './mail.ts';
 
-/**
- * Dev-only transport (D4a): prints the e-mail to the API console. Enabled only with MAIL_CONSOLE=true and never with
- * NODE_ENV=production; null otherwise, which makes recovery answer 503 (D4b). No real provider yet (D4c).
- */
-export function mailerFromEnv(env: Record<string, string | undefined>): Mailer | null {
-  if (env['NODE_ENV'] === 'production' || env['MAIL_CONSOLE'] !== 'true') return null;
-  const console_: Mailer = (to, subject, text) =>
-    console.info(`[correo de desarrollo] para ${to}: ${subject}\n${text}`);
-  return withAppUrl(console_, env['APP_URL'] ?? 'http://localhost:4200');
-}
-
-/**
- * The services write app links as paths (`/reset-password?token=…`); an e-mail needs them absolute. APP_URL is where
- * the app is served (dev: http://localhost:4200). Any transport added later goes through this too.
- */
-export function withAppUrl(mailer: Mailer, appUrl: string): Mailer {
-  const base = appUrl.replace(/\/+$/, '');
-  return (to, subject, text) =>
-    mailer(to, subject, text.replace(/(^|\s)\/reset-password\?/g, `$1${base}/reset-password?`));
-}
+/** What guessers try first, among those that meet the length and letter-and-digit rules (F5-16). */
+const COMMON_PASSWORDS = new Set(
+  'password1 password12 password123 contraseña1 contrasena1 contrasena123 qwerty123 qwerty1234 abc12345 abcd1234 a1234567 12345678a 1234567a admin123 admin1234 administrador1 charales1 charales123 futbol123 futbol1234 mexico123 mexico1234 test1234 prueba123 usuario1 usuario123 hola1234 iloveyou1 letmein1 welcome1 bienvenido1'.split(
+    ' ',
+  ),
+);
 
 /** HU-005.2 — same policy as the frontend (`core/auth/password.ts` → passwordProblem). */
 export function passwordProblem(password: string): string | null {
@@ -63,6 +60,8 @@ export function passwordProblem(password: string): string | null {
   if (password.length > 200) return 'La contraseña es demasiado larga.';
   if (!/[A-Za-zÀ-ÿ]/.test(password) || !/\d/.test(password))
     return 'La contraseña debe incluir letras y números.';
+  if (COMMON_PASSWORDS.has(password.toLowerCase()))
+    return 'Esa contraseña es demasiado común. Elige otra.';
   return null;
 }
 
@@ -74,26 +73,39 @@ export async function changePassword(ctx: Ctx, db: Pool): Promise<Reply> {
   if (typeof currentPassword !== 'string' || typeof newPassword !== 'string' || !currentPassword)
     return { status: 400, body: { error: 'La contraseña actual y la nueva son obligatorias.' } };
 
-  const key = `password|${s.user.id}`;
-  // C1: reserve the attempt BEFORE the (slow) verification, synchronously with the check, so parallel requests
-  // can't all pass the check first. A correct current password gives the reservation back.
-  const attempts = recentFailures(key);
-  if (attempts.length >= MAX_FAILURES) return { status: 429, body: { error: TOO_MANY } };
-  const attempt = Date.now() + Math.random();
-  attempts.push(attempt);
-  // 400, not 401: a typo in the current password must not look like an expired session to the client.
-  if (
-    currentPassword.length > 200 ||
-    !(await verifyPassword(currentPassword, s.user.password_hash))
-  )
-    return { status: 400, body: { error: WRONG_CURRENT } };
-  release(key, attempt);
+  // S-02: what needs no Argon2id is checked first (the client knows both passwords: nothing is revealed).
   if (currentPassword === newPassword)
     return { status: 400, body: { error: 'La nueva contraseña debe ser distinta a la actual.' } };
   const problem = passwordProblem(newPassword);
   if (problem) return { status: 400, body: { error: problem } };
 
-  const hash = await hashPassword(newPassword);
+  // C1: reserve the attempt BEFORE the (slow) verification, shared by every process, so parallel requests can't all
+  // pass the check first. A correct current password gives the reservation back. If it can't be reserved, nothing runs.
+  let reserved: boolean;
+  try {
+    reserved = await reservePasswordChange(ctx.limiterDb, s.user.id);
+  } catch (e) {
+    console.error('Límite de intentos no disponible:', (e as Error).message);
+    return { status: 503, body: { error: CHANGE_UNAVAILABLE } };
+  }
+  if (!reserved) return { status: 429, body: { error: TOO_MANY } };
+  // 400, not 401: a typo in the current password must not look like an expired session to the client.
+  if (currentPassword.length > 200) return { status: 400, body: { error: WRONG_CURRENT } };
+  // S-02: verification and new hash in ONE slot of the Argon2id gate (no release in between). None in time: 503 and
+  // the C1 reservation is given back — nothing was checked.
+  const turn = await ctx.argon2.run(async () =>
+    (await verifyPassword(currentPassword, s.user.password_hash))
+      ? hashPassword(newPassword)
+      : null,
+  );
+  if (turn.busy) {
+    await releasePasswordChange(ctx.limiterDb, s.user.id);
+    return { status: 503, body: { error: BUSY } };
+  }
+  if (turn.value === null) return { status: 400, body: { error: WRONG_CURRENT } };
+  await releasePasswordChange(ctx.limiterDb, s.user.id);
+  const hash = turn.value;
+  let device = '';
   const outcome = await transaction(db, async (tx) => {
     // R1: lock order usuarios → sesiones (same as recovery). Re-check under the lock what was read before: the
     // session is still open and the password is still the one just verified (no concurrent change or reset).
@@ -109,6 +121,13 @@ export async function changePassword(ctx: Ctx, db: Pool): Promise<Reply> {
     if (user?.password_hash !== s.user.password_hash) return 'password-changed';
     const now = localDateTime(); // after the locks: a request that waited stamps the time it actually applied
     await tx.query('UPDATE usuarios SET password_hash = ? WHERE id = ?', [hash, s.user.id]);
+    await revokeDevices(tx, s.user.id); // whoever knew the old password may have trusted a browser
+    // And any live link of the account: one asked for before the change would set the password again (audit IND3-06).
+    await tx.query(
+      'UPDATE tokens_recuperacion SET usado_en = ? WHERE usuario_id = ? AND usado_en IS NULL',
+      [now, s.user.id],
+    );
+    device = await issueDevice(tx, s.user.id, s.user.email, null, ctx.secureCookie);
     await tx.query(
       'UPDATE sesiones SET cerrada_en = ? WHERE usuario_id = ? AND cerrada_en IS NULL AND id <> ?',
       [now, s.user.id, s.sessionId],
@@ -129,15 +148,8 @@ export async function changePassword(ctx: Ctx, db: Pool): Promise<Reply> {
   if (outcome === 'session-closed') return { status: 401, body: { error: NO_SESSION } };
   // Not a guess (the password was right when read), so it doesn't count toward the limit.
   if (outcome === 'password-changed') return { status: 400, body: { error: WRONG_CURRENT } };
-  recentFailures(key).length = 0;
-  return { status: 204 };
-}
-
-/** Gives back one reserved attempt (C1). */
-function release(key: string, attempt: number): void {
-  const list = recentFailures(key);
-  const i = list.indexOf(attempt);
-  if (i >= 0) list.splice(i, 1);
+  await clearPasswordChange(ctx.limiterDb, s.user.id);
+  return { status: 204, cookie: device };
 }
 
 /** POST /auth/password-reset/request { email } — always 204 (or 503 / 429), whatever the account (HU-001.2, D7). */
@@ -148,57 +160,72 @@ export async function requestPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
     return { status: 400, body: { error: 'El correo es obligatorio.' } };
 
   const normalized = email.trim().toLowerCase();
-  const attempts = recentFailures(`reset|${ctx.ip}|${normalized}`);
-  if (attempts.length >= MAX_RESET_REQUESTS) return { status: 429, body: { error: TOO_MANY } };
-  attempts.push(Date.now());
+  try {
+    const verdict = await reserveResetRequest(ctx.limiterDb, ctx.ip, normalized);
+    if (verdict === 'refused') return { status: 429, body: { error: TOO_MANY } };
+    if (verdict === 'quiet') return { status: 204 };
+  } catch (e) {
+    console.error('Límite de intentos no disponible:', (e as Error).message);
+    return { status: 503, body: { error: UNAVAILABLE } };
+  }
 
+  // After the answer: nothing an account changes (a lookup, a transaction, the provider) can show in its timing, so the
+  // answer says nothing about whether it exists (S-06). The limits above were already applied either way.
+  const mailer = ctx.mailer;
+  const work = issueRecovery(db, mailer, normalized)
+    .catch(() => console.error('No se pudo emitir el token de recuperación.'))
+    .finally(() => recoveries.delete(work));
+  recoveries.add(work);
+  return { status: 204 };
+}
+
+/** Recovery work still running after its answer, at most what the limits admitted. */
+const recoveries = new Set<Promise<void>>();
+/** Test seam: resolves when what was requested so far has been done. */
+export const recoveriesSettled = () => Promise.all(recoveries);
+
+async function issueRecovery(db: Pool, mailer: Mailer, normalized: string): Promise<void> {
   const [user]: { id: number; email: string }[] = await db.query(
     'SELECT id, email FROM usuarios WHERE email = ? AND activo',
     [normalized],
   );
-  if (user) {
-    const token = randomBytes(32).toString('base64url');
-    let issued = false;
-    try {
-      issued = await transaction(db, async (tx) => {
-        // R2: lock the account row first (order usuarios → tokens_recuperacion, as in confirm), so concurrent
-        // requests for one account run one after the other instead of deadlocking on the token index gap.
-        const [locked]: { id: number }[] = await tx.query(
-          'SELECT id FROM usuarios WHERE id = ? AND activo FOR UPDATE',
-          [user.id],
-        );
-        if (!locked) return false;
-        const now = localDateTime();
-        // D3b/D3d: revoke the earlier live recovery tokens, keeping the rows; invitations are another purpose (D3e).
-        await tx.query(
-          `UPDATE tokens_recuperacion SET usado_en = ?
-          WHERE usuario_id = ? AND finalidad = 'RECUPERACION' AND usado_en IS NULL AND expira_en > ?`,
-          [now, user.id, now],
-        );
-        await tx.query(
-          `INSERT INTO tokens_recuperacion (usuario_id, finalidad, token_hash, creado_en, expira_en)
-           VALUES (?, 'RECUPERACION', ?, ?, ?)`,
-          [user.id, sha256(token), now, localDateTime(Date.now() + RESET_TOKEN_MINUTES * 60_000)],
-        );
-        return true;
-      });
-    } catch {
-      // Same answer either way (D7): a failure here happens only for existing accounts, so it must not become a 500.
-      console.error('No se pudo emitir el token de recuperación.');
-    }
-    if (issued)
-      try {
-        await ctx.mailer(
-          user.email,
-          'Recupera tu contraseña',
-          `Abre este enlace para definir tu contraseña (válido ${RESET_TOKEN_MINUTES} min): /reset-password?token=${token}`,
-        );
-      } catch {
-        // Same answer either way: a delivery failure must not reveal that the account exists.
-        console.error('No se pudo enviar el correo de recuperación.');
-      }
-  }
-  return { status: 204 };
+  if (!user) return;
+  const token = randomBytes(32).toString('base64url');
+  let address = user.email;
+  const mailId = await transaction(db, async (tx) => {
+    // R2: lock the account row first (order usuarios → tokens_recuperacion, as in confirm), so concurrent
+    // requests for one account run one after the other instead of deadlocking on the token index gap.
+    // What matters is the address the account has NOW, under its lock: it may have changed since the read above (IND2-03).
+    const [locked]: { id: number; email: string }[] = await tx.query(
+      'SELECT id, email FROM usuarios WHERE id = ? AND activo FOR UPDATE',
+      [user.id],
+    );
+    if (locked?.email.toLowerCase() !== normalized) return null;
+    address = locked.email;
+    const now = localDateTime();
+    // D3b/D3d: revoke the earlier live recovery tokens, keeping the rows; invitations are another purpose (D3e).
+    await tx.query(
+      `UPDATE tokens_recuperacion SET usado_en = ?
+        WHERE usuario_id = ? AND finalidad = 'RECUPERACION' AND usado_en IS NULL AND expira_en > ?`,
+      [now, user.id, now],
+    );
+    await tx.query(
+      `INSERT INTO tokens_recuperacion (usuario_id, finalidad, token_hash, creado_en, expira_en)
+       VALUES (?, 'RECUPERACION', ?, ?, ?)`,
+      [user.id, sha256(token), now, localDateTime(Date.now() + RESET_TOKEN_MINUTES * 60_000)],
+    );
+    return enqueueMail(tx, address, RESET_SUBJECT, sha256(token));
+  });
+  // deliverMail never throws; a failure stays in correo_saliente for the worker.
+  if (mailId !== null)
+    await deliverMail(
+      db,
+      mailer,
+      mailId,
+      address,
+      RESET_SUBJECT,
+      accessMailText('RECUPERACION', token),
+    );
 }
 
 /** POST /auth/password-reset/confirm { token, newPassword } — HU-005.3: single use; closes every session (D8). */
@@ -211,28 +238,45 @@ export async function confirmPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
   if (typeof token !== 'string' || !token || token.length > 200)
     return { status: 400, body: { error: INVALID_LINK } };
 
-  const hash = await hashPassword(newPassword);
   // Find the account outside the transaction: with MariaDB's snapshot isolation (innodb_snapshot_isolation, on by
   // default since 11.6) a plain read inside it would fix a snapshot, and the locking reads below would then fail
   // with «Record has changed since last read» if a concurrent confirmation committed first.
-  const [ref]: { usuario_id: number }[] = await db.query(
-    'SELECT usuario_id FROM tokens_recuperacion WHERE token_hash = ?',
-    [sha256(token)],
-  );
-  if (!ref) return { status: 400, body: { error: INVALID_LINK } };
+  // S-02: an unknown, used or expired token is refused HERE, before any Argon2id. This read only spares the work;
+  // the transaction below checks the token again under its lock, so two confirmations can't both use it.
+  const [ref]: { usuario_id: number; expira_en: string; usado_en: string | null }[] =
+    await db.query(
+      'SELECT usuario_id, expira_en, usado_en FROM tokens_recuperacion WHERE token_hash = ?',
+      [sha256(token)],
+    );
+  if (!ref || ref.usado_en || ref.expira_en <= localDateTime())
+    return { status: 400, body: { error: INVALID_LINK } };
+  const turn = await ctx.argon2.run(() => hashPassword(newPassword));
+  if (turn.busy) return { status: 503, body: { error: BUSY } }; // the token is untouched
+  const hash = turn.value;
+  let device = '';
   const done = await transaction(db, async (tx) => {
     // Lock order usuarios → tokens_recuperacion → sesiones, the same as change and request (R1/R2); only locking
     // reads in here, and the token is re-checked under the lock.
-    await tx.query('SELECT id FROM usuarios WHERE id = ? FOR UPDATE', [ref.usuario_id]);
+    const [owner]: { id: number; email: string; activo: number }[] = await tx.query(
+      'SELECT id, email, activo FROM usuarios WHERE id = ? FOR UPDATE',
+      [ref.usuario_id],
+    );
     const [row]: { id: number; usuario_id: number; expira_en: string; usado_en: string | null }[] =
       await tx.query(
         'SELECT id, usuario_id, expira_en, usado_en FROM tokens_recuperacion WHERE token_hash = ? FOR UPDATE',
         [sha256(token)],
       );
     const now = localDateTime();
-    if (!row || row.usado_en || row.expira_en <= now) return false;
+    if (!row || row.usado_en || row.expira_en <= now || !owner?.activo) return false;
     await tx.query('UPDATE tokens_recuperacion SET usado_en = ? WHERE id = ?', [now, row.id]);
     await tx.query('UPDATE usuarios SET password_hash = ? WHERE id = ?', [hash, row.usuario_id]);
+    await revokeDevices(tx, row.usuario_id);
+    // The account's other live links too: the password was just set, and they may have gone elsewhere (audit IND2-08).
+    await tx.query(
+      'UPDATE tokens_recuperacion SET usado_en = ? WHERE usuario_id = ? AND usado_en IS NULL',
+      [now, row.usuario_id],
+    );
+    device = await issueDevice(tx, row.usuario_id, owner!.email, null, ctx.secureCookie);
     await tx.query(
       'UPDATE sesiones SET cerrada_en = ? WHERE usuario_id = ? AND cerrada_en IS NULL',
       [now, row.usuario_id],
@@ -249,18 +293,23 @@ export async function confirmPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
     );
     return true;
   });
-  return done
-    ? { status: 204, cookie: clearCookie(ctx.secureCookie) }
-    : { status: 400, body: { error: INVALID_LINK } };
+  if (!done) return { status: 400, body: { error: INVALID_LINK } };
+  // The link proved the account: this browser is trusted from now on, so an attack can't keep this person out.
+  return { status: 204, cookie: [clearCookie(ctx.secureCookie), device] };
 }
 
-/** Runs `work` in one transaction: commit on return, rollback on throw. */
+/**
+ * Runs `work` in one transaction: commit on return, rollback on throw. `isolation` applies to this transaction only
+ * (the login limiter uses READ COMMITTED: no gap locks on the counters it doesn't find).
+ */
 export async function transaction<T>(
   db: Pool,
   work: (tx: PoolConnection) => Promise<T>,
+  isolation?: 'READ COMMITTED',
 ): Promise<T> {
   const tx = await db.getConnection();
   try {
+    if (isolation) await tx.query(`SET TRANSACTION ISOLATION LEVEL ${isolation}`);
     await tx.beginTransaction();
     const result = await work(tx);
     await tx.commit();

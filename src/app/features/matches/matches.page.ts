@@ -1,10 +1,12 @@
 import { Component, computed, inject, resource, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { Id, MatchStatus } from '../../core/models';
 import { CompetitionService } from '../../core/services/competition.service';
 import { addDays, today } from '../../shared/dates';
+import { FormPanel } from '../../shared/form-panel';
 import { LoadState } from '../../shared/load-state';
 import { Submission } from '../../shared/submission';
 import { SubmissionAlert, idOrNull } from '../../shared/ui';
@@ -18,67 +20,108 @@ type Action = { kind: 'reschedule' | 'result' | 'cancel'; match: MatchView };
   selector: 'app-matches-page',
   imports: [FormsModule, LoadState, SubmissionAlert, DatePipe],
   template: `
-    <h1>Partidos</h1>
+    <div class="page-head">
+      <h1>Partidos</h1>
+      @if (auth.can('partidos.crear')) {
+        <div class="actions">
+          <button
+            type="button"
+            class="secondary"
+            (click)="openOpponent()"
+            [attr.aria-expanded]="opponentPanel.open()"
+            aria-controls="opponent-form"
+          >
+            Nuevo rival
+          </button>
+          <button
+            type="button"
+            (click)="openSchedule()"
+            [attr.aria-expanded]="schedulePanel.open()"
+            aria-controls="schedule-form"
+          >
+            Programar partido
+          </button>
+        </div>
+      }
+    </div>
     <app-submission-alert [submission]="submission" />
-    @if (auth.can('partidos.crear')) {
-      <div class="two-col">
-        <form class="grid-form" (ngSubmit)="schedule()" novalidate>
-          <h2>Programar partido</h2>
-          <label
-            >Competencia · categoría inscrita
-            <select name="cc" [(ngModel)]="draft.competitionCategoryId">
-              <option [ngValue]="null">Selecciona…</option>
-              @for (p of participations(); track p.id) {
-                <option [ngValue]="p.id">{{ p.competitionName }} · {{ p.categoryName }}</option>
-              }
-            </select>
-          </label>
-          <label
-            >Rival
-            <select name="opp" [(ngModel)]="draft.opponentId">
-              <option [ngValue]="null">Selecciona…</option>
-              @for (o of opponents.value() ?? []; track o.id) {
-                <option [ngValue]="o.id">{{ o.name }}</option>
-              }
-            </select>
-          </label>
-          <div class="two-col">
-            <label>Fecha <input type="date" name="date" [(ngModel)]="draft.date" /></label>
-            <label>Hora <input type="time" name="time" [(ngModel)]="draft.time" /></label>
-          </div>
-          <label
-            >Sede
-            <select name="venue" [(ngModel)]="draft.venueId">
-              <option [ngValue]="null">Por definir</option>
-              @for (v of venues.value() ?? []; track v.id) {
-                <option [ngValue]="v.id">{{ v.name }}</option>
-              }
-            </select>
-          </label>
-          <label
-            >Condición
-            <select name="ha" [(ngModel)]="draft.homeAway">
-              <option value="LOCAL">Local</option>
-              <option value="VISITANTE">Visitante</option>
-            </select>
-          </label>
+    @if (schedulePanel.open()) {
+      <form
+        id="schedule-form"
+        class="grid-form"
+        (ngSubmit)="schedule()"
+        (keydown.escape)="closeSchedule()"
+        novalidate
+      >
+        <h2>Programar partido</h2>
+        <label
+          >Competencia · categoría inscrita
+          <select name="cc" [(ngModel)]="draft.competitionCategoryId">
+            <option [ngValue]="null">Selecciona…</option>
+            @for (p of participations(); track p.id) {
+              <option [ngValue]="p.id">{{ p.competitionName }} · {{ p.categoryName }}</option>
+            }
+          </select>
+        </label>
+        <label
+          >Rival
+          <select name="opp" [(ngModel)]="draft.opponentId">
+            <option [ngValue]="null">Selecciona…</option>
+            @for (o of opponents.value() ?? []; track o.id) {
+              <option [ngValue]="o.id">{{ o.name }}</option>
+            }
+          </select>
+        </label>
+        <div class="two-col">
+          <label>Fecha <input type="date" name="date" [(ngModel)]="draft.date" /></label>
+          <label>Hora <input type="time" name="time" [(ngModel)]="draft.time" /></label>
+        </div>
+        <label
+          >Sede
+          <select name="venue" [(ngModel)]="draft.venueId">
+            <option [ngValue]="null">Por definir</option>
+            @for (v of venues.value() ?? []; track v.id) {
+              <option [ngValue]="v.id">{{ v.name }}</option>
+            }
+          </select>
+        </label>
+        <label
+          >Condición
+          <select name="ha" [(ngModel)]="draft.homeAway">
+            <option value="LOCAL">Local</option>
+            <option value="VISITANTE">Visitante</option>
+          </select>
+        </label>
+        <div class="actions">
           <button
             type="submit"
             [disabled]="submission.busy() || !draft.competitionCategoryId || !draft.opponentId"
           >
             Programar
           </button>
-        </form>
-        <form class="grid-form" (ngSubmit)="addOpponent()" novalidate>
-          <h2>Rivales</h2>
-          <label>Nombre <input name="oname" [(ngModel)]="opponentName" /></label>
-          <label>Contacto <input name="ocontact" [(ngModel)]="opponentContact" /></label>
+          <button type="button" class="secondary" (click)="closeSchedule()">Cancelar</button>
+        </div>
+      </form>
+    }
+    @if (opponentPanel.open()) {
+      <form
+        id="opponent-form"
+        class="grid-form"
+        (ngSubmit)="addOpponent()"
+        (keydown.escape)="closeOpponent()"
+        novalidate
+      >
+        <h2>Rivales</h2>
+        <label>Nombre <input name="oname" [(ngModel)]="opponentName" /></label>
+        <label>Contacto <input name="ocontact" [(ngModel)]="opponentContact" /></label>
+        <p class="muted">{{ (opponents.value() ?? []).length }} rivales registrados.</p>
+        <div class="actions">
           <button type="submit" [disabled]="submission.busy() || !opponentName">
             Agregar rival
           </button>
-          <p class="muted">{{ (opponents.value() ?? []).length }} rivales registrados.</p>
-        </form>
-      </div>
+          <button type="button" class="secondary" (click)="closeOpponent()">Cancelar</button>
+        </div>
+      </form>
     }
 
     @if (action(); as a) {
@@ -222,6 +265,10 @@ export class MatchesPage {
   private competitionService = inject(CompetitionService);
   private venueService = inject(VenueService);
   protected auth = inject(AuthService);
+  /** `?nuevo=1` (a quick task of the Tablero) opens the create form at once, if the role may create. */
+  private openOnArrival = inject(ActivatedRoute).snapshot.queryParamMap.has('nuevo')
+    ? setTimeout(() => this.auth.can('partidos.crear') && this.openSchedule())
+    : null;
   protected idOrNull = idOrNull;
   protected todayDate = today();
   protected labels = MATCH_STATUS_LABELS;
@@ -260,6 +307,43 @@ export class MatchesPage {
     text: '',
   };
 
+  private opened = '';
+  protected schedulePanel = new FormPanel(
+    'schedule-form',
+    () => JSON.stringify(this.draft) !== this.opened,
+  );
+  protected opponentPanel = new FormPanel(
+    'opponent-form',
+    () => !!(this.opponentName || this.opponentContact),
+  );
+
+  /** One form at a time: opening one closes the other (asking first if it has unsaved changes). */
+  private closeForms(): boolean {
+    if (!this.schedulePanel.close() || !this.opponentPanel.close()) return false;
+    this.draft = this.blank();
+    this.opponentName = this.opponentContact = '';
+    this.submission.result.set(null);
+    return true;
+  }
+
+  openSchedule(): void {
+    if (!this.closeForms()) return;
+    this.opened = JSON.stringify(this.draft);
+    this.schedulePanel.show();
+  }
+
+  openOpponent(): void {
+    if (this.closeForms()) this.opponentPanel.show();
+  }
+
+  closeSchedule(): void {
+    if (this.schedulePanel.close()) this.draft = this.blank();
+  }
+
+  closeOpponent(): void {
+    if (this.opponentPanel.close()) this.opponentName = this.opponentContact = '';
+  }
+
   private blank() {
     return {
       competitionCategoryId: null as Id | null,
@@ -280,6 +364,7 @@ export class MatchesPage {
         'Partido programado.',
       )
     ) {
+      this.schedulePanel.done();
       this.draft = this.blank();
       this.matches.reload();
     }
@@ -296,6 +381,7 @@ export class MatchesPage {
       'Rival agregado.',
     );
     if (ok) {
+      this.opponentPanel.done();
       this.opponentName = this.opponentContact = '';
       this.opponents.reload();
     }

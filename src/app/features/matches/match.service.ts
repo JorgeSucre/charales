@@ -12,7 +12,7 @@ import {
 } from '../../core/models';
 import { AuditService } from '../../core/services/audit.service';
 import { isISODate, isTime, nowDateTime, today } from '../../shared/dates';
-import { optional, required } from '../../shared/validate';
+import { DATE_MESSAGE, catalogName, optional, required } from '../../shared/validate';
 
 export interface MatchView extends Match {
   competitionId: Id;
@@ -200,7 +200,7 @@ export class MatchService {
   ): Promise<Opponent> {
     this.authz.require(draft.id ? 'partidos.editar' : 'partidos.crear');
     const data = {
-      name: required(draft.name, 'El nombre', 150),
+      name: catalogName(draft.name, 'El nombre', 150),
       contact: optional(draft.contact, 'El contacto', 150),
       notes: optional(draft.notes, 'Las observaciones'),
     };
@@ -244,8 +244,8 @@ export class MatchService {
     this.db.get(this.db.opponents, draft.opponentId, 'Rival');
     if (draft.venueId !== null && !this.db.get(this.db.venues, draft.venueId, 'Sede').active)
       throw new Error('La sede está inactiva.');
-    if (!isISODate(draft.date)) throw new Error('Fecha inválida.');
-    if (!isTime(draft.time)) throw new Error('Hora inválida.');
+    if (!isISODate(draft.date)) throw new Error(DATE_MESSAGE);
+    if (!isTime(draft.time)) throw new Error('Ingresa una hora válida (HH:MM).');
     if (draft.homeAway !== 'LOCAL' && draft.homeAway !== 'VISITANTE')
       throw new Error('Indica si es local o visitante.');
   }

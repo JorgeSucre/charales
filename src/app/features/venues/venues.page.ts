@@ -2,7 +2,10 @@ import { Component, inject, resource, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AuthService } from '../../core/auth/auth.service';
 import { Id } from '../../core/models';
-import { FieldError } from '../../shared/field-error';
+import { catalogNameValidator } from '../../shared/validate';
+import { FormPanel } from '../../shared/form-panel';
+import { focusFirstInvalid } from '../../shared/focus';
+import { FieldA11y, FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
 import { Submission } from '../../shared/submission';
 import { SubmissionAlert } from '../../shared/ui';
@@ -11,11 +14,31 @@ import { VenueService, VenueView } from './venue.service';
 /** HU-069: venues/pitches reused by schedules, sessions and matches; deactivated, never deleted. */
 @Component({
   selector: 'app-venues-page',
-  imports: [ReactiveFormsModule, FieldError, LoadState, SubmissionAlert],
+  imports: [ReactiveFormsModule, FieldError, FieldA11y, LoadState, SubmissionAlert],
   template: `
-    <h1>Sedes y canchas</h1>
-    @if (auth.can('sedes.crear') || editingId()) {
-      <form [formGroup]="form" (ngSubmit)="submit()" novalidate class="grid-form">
+    <div class="page-head">
+      <h1>Sedes y canchas</h1>
+      @if (auth.can('sedes.crear')) {
+        <button
+          type="button"
+          (click)="create()"
+          [attr.aria-expanded]="panel.open() && !editingId()"
+          aria-controls="venue-form"
+        >
+          Nueva sede
+        </button>
+      }
+    </div>
+    <app-submission-alert [submission]="submission" />
+    @if (panel.open()) {
+      <form
+        id="venue-form"
+        [formGroup]="form"
+        (ngSubmit)="submit()"
+        novalidate
+        class="grid-form"
+        (keydown.escape)="cancel()"
+      >
         <h2>{{ editingId() ? 'Editar sede' : 'Nueva sede' }}</h2>
         <label>Nombre <input formControlName="name" /></label>
         <app-field-error [control]="form.controls.name" />
@@ -24,12 +47,9 @@ import { VenueService, VenueView } from './venue.service';
           >Referencia
           <input formControlName="reference" placeholder="Cancha 2, junto al estacionamiento…"
         /></label>
-        <app-submission-alert [submission]="submission" />
         <div class="actions">
           <button type="submit" [disabled]="submission.busy()">Guardar</button>
-          @if (editingId()) {
-            <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
-          }
+          <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
         </div>
       </form>
     }
@@ -83,30 +103,55 @@ export class VenuesPage {
   protected submission = new Submission();
   protected editingId = signal<Id | null>(null);
   protected form = inject(FormBuilder).nonNullable.group({
-    name: ['', Validators.required],
+    name: ['', [Validators.required, catalogNameValidator]],
     location: [''],
     reference: [''],
   });
 
+  protected panel = new FormPanel('venue-form', () => this.form.dirty);
+
   edit(v: VenueView): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.submission.result.set(null);
     this.editingId.set(v.id);
     this.form.setValue({ name: v.name, location: v.location ?? '', reference: v.reference ?? '' });
+    this.form.markAsPristine();
+    this.panel.show();
   }
 
+  /** Opens an empty form (asks first if the open one has unsaved changes). */
+  create(): void {
+    if (!this.panel.close()) return;
+    this.reset();
+    this.submission.result.set(null);
+    this.panel.show();
+  }
+
+  /** Closes the form without saving (asks first if it has unsaved changes); the record is untouched. */
   cancel(): void {
+    if (this.panel.close()) this.reset();
+  }
+
+  private reset(): void {
     this.editingId.set(null);
     this.form.reset();
   }
 
   async submit(): Promise<void> {
-    if (this.form.invalid) return this.form.markAllAsTouched();
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      setTimeout(() => focusFirstInvalid(document.getElementById('venue-form')!));
+      return;
+    }
     if (
       await this.submission.run(
         () => this.service.save({ ...this.form.getRawValue(), id: this.editingId() ?? undefined }),
         'Sede guardada.',
       )
     ) {
-      this.cancel();
+      this.panel.done();
+      this.reset();
       this.venues.reload();
     }
   }

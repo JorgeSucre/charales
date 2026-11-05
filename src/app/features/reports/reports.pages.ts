@@ -1,72 +1,150 @@
 import { sumCents } from '../../shared/money';
-import { Component, computed, inject, resource, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { Component, LOCALE_ID, computed, inject, resource, signal } from '@angular/core';
+import { DatePipe, formatDate } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Id, PlayerStatus } from '../../core/models';
 import { CategoryService } from '../../core/services/category.service';
 import { STATUS_LABELS } from '../../core/services/player.service';
-import { WEEKDAYS, addDays, addMonths, monthGrid, today } from '../../shared/dates';
+import {
+  WEEKDAYS,
+  addDays,
+  addMonths,
+  dateRangeLabel,
+  isISODate,
+  monthGrid,
+  today,
+} from '../../shared/dates';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
 import { idOrNull } from '../../shared/ui';
 import { CoachService } from '../coaches/coach.service';
-import { ReportService } from './report.service';
+import { AuthService } from '../../core/auth/auth.service';
+import { QUICK_TASKS } from '../../layout/nav';
+import { Bar, BarChart, ChartTone, DonutChart, DonutSegment } from '../../shared/charts';
+import { CHARGE_STATUS_LABELS } from '../billing/billing.service';
+import { OpenChargeStatus, ReportService } from './report.service';
 
-/** HU-065: KPIs with their source, period filter and links to the modules. */
+/**
+ * HU-065 · Tablero, the main page of the office: today's indicators, the income of a period, four charts from the API
+ * and a few quick tasks. Only the income depends on the period; everything else is a snapshot of today and is not
+ * reloaded when the period changes. Colours keep one meaning (docs/DEVELOPMENT.md § 5.3).
+ */
 @Component({
   selector: 'app-dashboard-page',
-  imports: [FormsModule, RouterLink, LoadState, MoneyPipe, DatePipe],
+  imports: [FormsModule, RouterLink, LoadState, MoneyPipe, DatePipe, DonutChart, BarChart],
   template: `
-    <h1>Tablero</h1>
-    <div class="filters">
-      <label
-        >Ingresos desde <input type="date" [ngModel]="from()" (ngModelChange)="from.set($event)"
-      /></label>
-      <label>hasta <input type="date" [ngModel]="to()" (ngModelChange)="to.set($event)" /></label>
+    <div class="page-head">
+      <div>
+        <h1>Tablero</h1>
+        <p class="muted">Datos al {{ todayDate | date: 'fullDate' }}.</p>
+      </div>
     </div>
-    <app-load-state [res]="data"
+
+    <app-load-state [res]="overview"
       ><ng-template>
-        @if (data.value(); as d) {
-          <div class="kpis">
-            @for (k of d.kpis; track k.label) {
-              <a class="kpi" [routerLink]="k.link" [title]="'Fuente: ' + k.source">
-                <span>{{ k.label }}</span>
-                <strong>{{ k.money ? (k.value | money) : k.value }}</strong>
-                <small class="muted">{{ k.source }}</small>
+        @if (overview.value(); as d) {
+          <section aria-labelledby="kpi-title">
+            <h2 id="kpi-title" class="sr-only">Indicadores</h2>
+            <div class="kpis six">
+              @for (k of todayKpis(); track k.key) {
+                <a class="kpi" [routerLink]="k.link">
+                  <span>{{ k.label }}</span>
+                  <strong>{{ k.money ? (k.value | money) : k.value }}</strong>
+                  <small class="muted">{{ k.hint }}</small>
+                </a>
+              }
+              <a class="kpi" routerLink="/admin/reports/income">
+                <span>Ingresos del periodo</span>
+                <strong>
+                  @if (income.hasValue()) {
+                    {{ incomeTotal() | money }}
+                  } @else if (income.error()) {
+                    <span class="kpi-error">No disponible</span>
+                  } @else {
+                    …
+                  }
+                </strong>
+                <small class="muted">{{ periodText() }}; los pagos cancelados no cuentan.</small>
               </a>
+            </div>
+          </section>
+
+          <section class="panel" aria-labelledby="income-title">
+            <div class="page-head">
+              <h2 id="income-title">Ingresos por mes</h2>
+              <div class="actions">
+                <button type="button" class="secondary" (click)="setMonth()">Mes actual</button>
+                <button type="button" class="secondary" (click)="setLastMonths(6)">
+                  Últimos 6 meses
+                </button>
+              </div>
+            </div>
+            <div class="filters">
+              <label
+                >Desde <input type="date" [ngModel]="from()" (ngModelChange)="from.set($event)"
+              /></label>
+              <label
+                >Hasta <input type="date" [ngModel]="to()" (ngModelChange)="to.set($event)"
+              /></label>
+            </div>
+            @if (validPeriod()) {
+              <p class="muted">Pagos registrados {{ periodText() }}, por mes.</p>
+              <app-load-state [res]="income" emptyText="No hay pagos registrados en el periodo."
+                ><ng-template>
+                  <app-bars
+                    [rows]="incomeBars()"
+                    label="Ingresos por mes"
+                    empty="No hay pagos registrados en el periodo."
+                  /> </ng-template
+              ></app-load-state>
+            } @else {
+              <p class="alert error" role="status">
+                Ingresa un periodo válido: la fecha final no puede ser anterior a la inicial.
+              </p>
             }
-          </div>
-          <div class="two-col">
-            <section>
-              <h2>Ocupación por categoría</h2>
-              <ul class="list">
-                @for (c of d.categories; track c.id) {
-                  <li>
-                    <a [routerLink]="['/sports/categories', c.id]">{{ c.name }}</a> ·
-                    {{ c.occupancy }} / {{ c.capacity ?? '∞' }}
-                    @if (c.capacity) {
-                      <meter
-                        [value]="c.occupancy"
-                        min="0"
-                        [max]="c.capacity"
-                        [high]="c.capacity - 0.5"
-                      ></meter>
-                    }
-                  </li>
-                }
-              </ul>
+          </section>
+
+          <div class="chart-grid">
+            <section class="panel" aria-labelledby="status-title">
+              <h2 id="status-title">Jugadores por estatus</h2>
+              <app-donut [segments]="statusSegments()" unit="jugadores" empty="No hay jugadores." />
             </section>
-            <section>
-              <h2>Próximos partidos</h2>
+
+            <section class="panel" aria-labelledby="charges-title">
+              <h2 id="charges-title">Estado de cobranza</h2>
+              <p class="muted">Todos los cargos no cancelados, por estado.</p>
+              <app-bars
+                [rows]="chargeBars()"
+                label="Cargos por estado"
+                empty="No hay cargos registrados."
+              />
+            </section>
+
+            <section class="panel" aria-labelledby="occupancy-title">
+              <h2 id="occupancy-title">Ocupación por categoría</h2>
+              <p class="muted">
+                Categorías activas de la temporada actual: integrantes con inscripción vigente
+                frente a su cupo.
+              </p>
+              <app-bars
+                [rows]="occupancyBars()"
+                label="Ocupación por categoría"
+                [hideZeros]="false"
+                empty="No hay categorías activas en la temporada actual."
+              />
+            </section>
+
+            <section class="panel" aria-labelledby="matches-title">
+              <h2 id="matches-title">Próximos partidos (14 días)</h2>
               <ul class="list">
                 @for (m of d.upcoming; track $index) {
                   <li>
-                    {{ m.date | date: 'EEE d MMM' }} {{ m.time }} · {{ m.title }} ·
-                    {{ m.venueName ?? '—' }}
+                    <strong>{{ m.date | date: 'EEE d MMM' }} {{ m.time }}</strong> · {{ m.title }} ·
+                    {{ m.venueName ?? 'Sede por definir' }}
                   </li>
                 } @empty {
-                  <li class="muted">Sin partidos en 14 días.</li>
+                  <li class="muted">No hay partidos programados en los próximos 14 días.</li>
                 }
               </ul>
             </section>
@@ -74,17 +152,138 @@ import { ReportService } from './report.service';
         }
       </ng-template></app-load-state
     >
+
+    @if (tasks().length) {
+      <section aria-labelledby="tasks-title">
+        <h2 id="tasks-title">Accesos rápidos</h2>
+        <div class="cards quick">
+          @for (t of tasks(); track t.label) {
+            <a class="card module" [routerLink]="t.path" [queryParams]="t.query">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path [attr.d]="t.icon" />
+              </svg>
+              <strong>{{ t.label }}</strong>
+            </a>
+          }
+        </div>
+      </section>
+    }
   `,
 })
 export class DashboardPage {
   private service = inject(ReportService);
+  private auth = inject(AuthService);
+  private locale = inject(LOCALE_ID);
+  private money = new MoneyPipe();
+  protected todayDate = today();
+  /** Default period as before: the current month up to today (inclusive). */
   protected from = signal(`${today().slice(0, 7)}-01`);
   protected to = signal(today());
-  protected data = resource({
-    params: () => ({ from: this.from(), to: this.to() }),
-    loader: ({ params }) => this.service.dashboard(params.from, params.to),
+  protected validPeriod = computed(
+    () => isISODate(this.from()) && isISODate(this.to()) && this.from() <= this.to(),
+  );
+  protected periodText = computed(
+    () => (this.validPeriod() && dateRangeLabel(this.from(), this.to())) || 'en el periodo elegido',
+  );
+  /** Snapshot of today: loaded once, never with the period. */
+  protected overview = resource({ loader: () => this.service.dashboard() });
+  /** The only data that follows the period (HU-067's query: APLICADO payments, by month and concept). */
+  protected income = resource({
+    params: () => (this.validPeriod() ? { from: this.from(), to: this.to() } : undefined),
+    loader: ({ params }) => this.service.income(params.from, params.to),
   });
+  protected tasks = computed(() =>
+    QUICK_TASKS.filter((t) => t.permissions.every((p) => this.auth.can(p))),
+  );
+  protected todayKpis = computed(() =>
+    (this.overview.value()?.kpis ?? []).filter((k) => k.key !== 'income'),
+  );
+  protected incomeTotal = computed(() =>
+    sumCents((this.income.value() ?? []).map((r) => r.totalCents)),
+  );
+
+  /** Every month of the period, with $0 where nothing was paid (a real zero, so months stay comparable). */
+  protected incomeBars = computed<Bar[]>(() => {
+    const byMonth = new Map<string, number>();
+    for (const r of this.income.value() ?? [])
+      byMonth.set(r.month, (byMonth.get(r.month) ?? 0) + r.totalCents);
+    const months: string[] = [];
+    for (let m = this.from().slice(0, 7); m <= this.to().slice(0, 7); m = addMonths(m, 1))
+      months.push(m);
+    return months.map((m) => {
+      const value = byMonth.get(m) ?? 0;
+      return {
+        label: formatDate(`${m}-01T12:00:00`, 'MMMM y', this.locale),
+        value,
+        text: this.money.transform(value),
+        tone: 'brand',
+      };
+    });
+  });
+
+  protected statusSegments = computed<DonutSegment[]>(() =>
+    (this.overview.value()?.playersByStatus ?? []).map((s) => ({
+      label: STATUS_LABELS[s.status],
+      value: s.count,
+      tone: STATUS_CHART_TONE[s.status],
+      link: { path: '/admin/players', query: { status: s.status } },
+    })),
+  );
+
+  protected chargeBars = computed<Bar[]>(() =>
+    (this.overview.value()?.chargesByStatus ?? []).map((c) => ({
+      label: CHARGE_STATUS_LABELS[c.status],
+      value: c.count,
+      text:
+        `${c.count} ${c.count === 1 ? 'cargo' : 'cargos'} · ` +
+        (c.status === 'PAGADO'
+          ? `${this.money.transform(c.netCents)} cubiertos`
+          : `saldo ${this.money.transform(c.balanceCents)}`),
+      tone: CHARGE_CHART_TONE[c.status],
+      link: { path: '/admin/billing/charges', query: { status: c.status } },
+    })),
+  );
+
+  /** No capacity (null) = no limit; capacity 0 is told apart (full from the start). Full or over → amber. */
+  protected occupancyBars = computed<Bar[]>(() =>
+    (this.overview.value()?.categories ?? []).map((c) => ({
+      label: c.name,
+      value: c.occupancy,
+      max: c.capacity ?? undefined,
+      text:
+        c.capacity === null
+          ? `${c.occupancy} · sin límite de cupo`
+          : c.capacity === 0
+            ? `${c.occupancy} · cupo 0`
+            : `${c.occupancy} de ${c.capacity}`,
+      tone: c.capacity === null ? 'neutral' : c.occupancy >= c.capacity ? 'warn' : 'brand',
+      link: { path: `/sports/categories/${c.id}` },
+    })),
+  );
+
+  setMonth(): void {
+    this.from.set(`${today().slice(0, 7)}-01`);
+    this.to.set(today());
+  }
+
+  setLastMonths(n: number): void {
+    this.from.set(`${addMonths(today().slice(0, 7), -(n - 1))}-01`);
+    this.to.set(today());
+  }
 }
+
+const STATUS_CHART_TONE: Record<PlayerStatus, ChartTone> = {
+  ACTIVO: 'ok',
+  BAJA_TEMPORAL: 'warn',
+  BAJA_DEFINITIVA: 'danger',
+};
+
+const CHARGE_CHART_TONE: Record<OpenChargeStatus, ChartTone> = {
+  PENDIENTE: 'warn',
+  PARCIAL: 'warnSoft',
+  VENCIDO: 'danger',
+  PAGADO: 'ok',
+};
 
 /** HU-066: players by category with primary tutor and contact, totals per category, printable. */
 @Component({
