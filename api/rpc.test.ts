@@ -454,7 +454,7 @@ test('audit: session cookie attributes — HttpOnly, SameSite=Strict, Path=/, 8 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'admin@example.com', password: 'demo1234' }),
   });
-  const cookie = res.headers.get('set-cookie')!;
+  const cookie = res.headers.getSetCookie()[0]!;
   assert.match(
     cookie,
     /^charales_sid=[\w-]{40,}; HttpOnly; SameSite=Strict; Path=\/; Max-Age=28800$/,
@@ -467,7 +467,7 @@ test('audit: session cookie attributes — HttpOnly, SameSite=Strict, Path=/, 8 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'admin@example.com', password: 'demo1234' }),
     });
-    assert.match(r.headers.get('set-cookie')!, /; Secure$/);
+    assert.match(r.headers.getSetCookie()[0]!, /; Secure$/);
   } finally {
     secure.close();
   }

@@ -290,14 +290,17 @@ export async function missingSchema(db: {
   const rows = (await db.query(
     `SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS
       WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME IN ('version_datos', 'limite_acceso', 'origen_conocido', 'correo_saliente', 'pagos')`,
+        AND TABLE_NAME IN ('version_datos', 'limite_acceso', 'dispositivo_confiable', 'correo_saliente', 'pagos')`,
   )) as { t: string; c: string }[];
   const has = (t: string, c?: string) => rows.some((r) => r.t === t && (!c || r.c === c));
   return [
-    ...['version_datos', 'limite_acceso', 'origen_conocido', 'correo_saliente'].filter(
+    ...['version_datos', 'limite_acceso', 'dispositivo_confiable', 'correo_saliente'].filter(
       (t) => !has(t),
     ),
     ...(has('pagos', 'referencia') ? [] : ['pagos.referencia']),
+    ...(has('correo_saliente') && !has('correo_saliente', 'cerrado_en')
+      ? ['correo_saliente.cerrado_en']
+      : []),
   ];
 }
 

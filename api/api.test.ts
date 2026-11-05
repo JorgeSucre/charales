@@ -89,7 +89,7 @@ test('wrong password, unknown e-mail and disabled account → same 401, no cooki
 test('valid login → AuthUser + HttpOnly cookie; only the token hash is stored', async () => {
   const res = await login('ADMIN@example.com');
   assert.equal(res.status, 200);
-  const setCookie = res.headers.get('set-cookie') ?? '';
+  const setCookie = res.headers.getSetCookie()[0] ?? '';
   assert.match(
     setCookie,
     /^charales_sid=[\w-]{43}; HttpOnly; SameSite=Strict; Path=\/; Max-Age=28800$/,

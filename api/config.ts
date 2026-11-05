@@ -4,6 +4,7 @@
  * plain HTTP). Outside production they only warn.
  */
 import { trustedProxies, trustedProxiesFromEnv } from './client-ip.ts';
+import { mailRetentionFrom } from './mail.ts';
 
 export interface EnvironmentReport {
   errors: string[];
@@ -20,6 +21,11 @@ export function checkEnvironment(env: Record<string, string | undefined>): Envir
   // A bad list always stops the start, whatever the environment.
   try {
     trustedProxies(trustedProxiesFromEnv(env['TRUSTED_PROXIES']));
+  } catch (e) {
+    errors.push((e as Error).message);
+  }
+  try {
+    mailRetentionFrom(env);
   } catch (e) {
     errors.push((e as Error).message);
   }

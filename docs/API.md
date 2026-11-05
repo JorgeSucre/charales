@@ -117,18 +117,28 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
   - **Red, no dirección (R-1, `api/client-ip.ts`):** los límites cuentan una dirección IPv4 o el **/64** de una IPv6, en
     forma canónica (una dirección IPv4 mapeada cuenta como IPv4; todas las escrituras de una IPv6 son la misma). Un
     cliente suele tener un /64 completo, así que contar direcciones no limitaría nada.
-  - **Límite por cuenta (R-1):** 20 intentos en 15 min, sumando todas las redes, sólo para las redes **desde las que la
-    cuenta no ha entrado** en los últimos 90 días (`origen_conocido`, migración 007). Una red conocida no lo usa ni lo
-    sufre, así que un atacante no puede bloquear a la persona desde donde suele entrar (H-2). El precio: durante un
-    ataque, la persona en una red **nueva** recibe 429 aunque su contraseña sea correcta, hasta que acabe la ventana o
-    recupere la contraseña por correo; recuperarla demuestra la cuenta y hace conocida esa red.
+  - **Límite por cuenta (R-1):** un presupuesto de **10 intentos que recupera 1 cada 30 min**, sumando todas las redes y
+    procesos (MariaDB). Son 58 adivinanzas como máximo el primer día y 48 los siguientes, frente a las 1 920 de antes
+    (medido). Se recarga solo, así que nunca bloquea para siempre: cuando el ataque termina, un intento cabe en 30 min como
+    máximo. Una contraseña correcta devuelve su intento, sin reiniciar el ataque.
+  - **Navegador de confianza (`api/device-trust.ts`, migración 008):** el navegador desde el que una cuenta ya entró guarda un
+    secreto en una cookie `HttpOnly; SameSite=Strict; Path=/auth`, y `Secure` en producción. MariaDB sólo guarda su SHA-256,
+    ligado a la cuenta. Ese navegador no gasta los límites compartidos, en ninguna red, así que un atacante no puede
+    bloquear a la persona desde donde suele entrar (H-2).
+    - **Nunca evita la contraseña.** Cada intento reserva 1 de 5 de forma atómica, antes de Argon2id; 5 errores seguidos y
+      deja de valer. Una cookie robada vale 5 adivinanzas como máximo.
+    - Cada inicio de sesión correcto reemplaza el secreto (una copia antigua deja de funcionar) y renueva los 90 días.
+    - Un cambio o una recuperación de contraseña **revocan todos**; como máximo 10 por cuenta. Revocar a mano:
+      `DELETE FROM dispositivo_confiable WHERE usuario_id = ?`.
   - **Riesgos residuales:**
-    - **Ataque distribuido:** un máximo de 20 intentos por cuenta cada 15 min (unos 1 920 al día) desde redes desconocidas.
-      No lo detiene por completo: depende también de la calidad de las contraseñas.
-    - **Red compartida:** un atacante en la misma red que la persona comparte su contador de red y de cuenta + red.
+    - **Ataque distribuido:** 48 adivinanzas al día por cuenta, unas 17 500 al año. Depende también de la calidad de las
+      contraseñas. Reduce mucho el riesgo; no lo elimina.
+    - **Navegador nuevo durante un ataque sostenido:** recibe 429 aunque la contraseña sea correcta, porque verificarla ahí
+      permitiría probar contraseñas sin límite. Compite por cada intento que se recarga, o recupera la contraseña por correo,
+      que además hace de confianza ese navegador. **Sin correo real en producción, esa vía no existe.**
+    - **Red compartida:** sin navegador de confianza, un atacante en la misma red comparte el contador de red.
     - **Disponibilidad:** el pool de 2 conexiones puede dejar el login en 503 ante una avalancha desde muchas redes; hay
       que limitarlo también en el proxy (`deploy/nginx/charales.conf`).
-    - **Bloqueo en redes nuevas:** ver arriba. Sin correo en producción, esa persona sólo puede esperar la ventana.
     - **Memoria de rechazos:** un rechazo recordado puede durar hasta 10 s más que la ventana.
     - **Seudónimos, no anónimos:** los hashes se revierten con un diccionario de correos o enumerando las IPv4.
 
@@ -229,6 +239,12 @@ Código: [`api/password.ts`](../api/password.ts). Responsable de la historia: Bo
     menos una vez»: si el proveedor aceptó pero la respuesta se perdió, llegan dos correos y sólo funciona el último.
   - Un error permanente (`HTTP_4xx`), una cuenta inactiva, un enlace ya usado o vencido cierran la fila como `FALLIDO`, con
     un código en `ultimo_error`. Quien no recibió una invitación puede pedir un enlace por «¿Olvidaste tu contraseña?».
+- **Retención de `correo_saliente` (migración 008):** lo pendiente o en proceso no se toca. Un mensaje cerrado (enviado o
+  fallido para siempre) pierde dirección, usuario, token y referencia del proveedor a los **30 días**
+  (`CORREO_RETENCION_DIAS`, de 1 a 365; **no es un plazo legal**, sino un valor inicial hasta que la escuela defina su política),
+  y sus metadatos se borran al año. Uno vencido que nadie procesó se cierra como `ABANDONADO` a los 7 días. Corre cada hora y
+  con `npm run db:mail-purge`, por lotes y sin esperar filas bloqueadas; repetirla o interrumpirla es seguro. **Los respaldos
+  conservan las direcciones mientras se conserven.**
 - **Finalidad del token (D3e, migración 001):** `RECUPERACION` (esta solicitud, 60 min) o `INVITACION` (acceso
   inicial de una cuenta nueva o ligada: HU-004, HU-012, HU-022; 24 h, D3c). Una solicitud de recuperación sólo revoca
   tokens de recuperación; `confirm` acepta ambas finalidades, una sola vez.

@@ -17,7 +17,7 @@ import {
   type TrustedProxies,
 } from './client-ip.ts';
 import { checkEnvironment, isProduction } from './config.ts';
-import { startMailWorker } from './mail.ts';
+import { mailRetentionFrom, startMailRetention, startMailWorker } from './mail.ts';
 import { missingSchema } from './schema.ts';
 
 /** Any failure without a message meant for the user: never a stack trace, SQL or internal detail (logged instead). */
@@ -28,6 +28,8 @@ export interface Ctx {
   body: unknown;
   /** Value of the session cookie, if any. */
   token: string | null;
+  /** Value of any other cookie. */
+  cookie(name: string): string | null;
   ip: string;
   userAgent: string | null;
   secureCookie: boolean;
@@ -41,7 +43,7 @@ export interface Ctx {
 export interface Reply {
   status: number;
   body?: unknown;
-  cookie?: string;
+  cookie?: string | string[];
 }
 type Handler = (ctx: Ctx, db: Pool) => Promise<Reply>;
 
@@ -128,6 +130,7 @@ export function createApp(
             {
               body: await readJson(req, path === '/api/rpc' ? MAX_RPC_BODY_BYTES : MAX_BODY_BYTES),
               token: cookieValue(req.headers.cookie, auth.COOKIE),
+              cookie: (name) => cookieValue(req.headers.cookie, name),
               ip: clientIp(req, trusted),
               userAgent: req.headers['user-agent']?.slice(0, 500) ?? null,
               secureCookie: options.secureCookie,
@@ -290,7 +293,10 @@ if (import.meta.main) {
   const secureCookie = production || env['COOKIE_SECURE'] === 'true';
   const limiterDb = createLimiterPool(env);
   const mailer = password.mailerFromEnv(env);
-  if (mailer && !missing.length) startMailWorker(db, mailer);
+  if (!missing.length) {
+    startMailRetention(db, mailRetentionFrom(env));
+    if (mailer) startMailWorker(db, mailer);
+  }
   createApp(db, {
     secureCookie,
     mailer,

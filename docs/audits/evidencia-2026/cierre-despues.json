@@ -1,0 +1,157 @@
+{
+  "code": "/Users/jorgesucre/Projects/6A/ingenieria_software/charales/charales-wt/auditoria-integral-cierre",
+  "label": "despues",
+  "at": "2026-11-05T16:35:41.373Z",
+  "node": "v26.13.0",
+  "fuerza": {
+    "prefijos_150": {
+      "statuses": {
+        "401": 10,
+        "429": 140
+      },
+      "first429": 11,
+      "median_401_ms": 24.3,
+      "median_429_ms": 0.6,
+      "total_ms": 349
+    },
+    "un_64_150": {
+      "statuses": {
+        "401": 5,
+        "429": 145
+      },
+      "first429": 6,
+      "median_401_ms": 23.6,
+      "median_429_ms": 0.5
+    },
+    "ipv4_60": {
+      "statuses": {
+        "401": 10,
+        "429": 50
+      },
+      "first429": 11,
+      "median_401_ms": 23.9,
+      "median_429_ms": 0.5
+    },
+    "mapeadas_9": {
+      "statuses": {
+        "401": 5,
+        "429": 4
+      },
+      "first429": 6,
+      "median_401_ms": 23.4,
+      "median_429_ms": 0.8
+    },
+    "concurrentes_60": {
+      "statuses": {
+        "401": 10,
+        "429": 50
+      },
+      "first429": 2,
+      "median_401_ms": 72.3,
+      "median_429_ms": 43.6,
+      "conexiones_pico": 11
+    },
+    "dos_procesos_150": {
+      "statuses": {
+        "401": 10,
+        "429": 140
+      },
+      "first429": 11,
+      "median_401_ms": 23.5,
+      "median_429_ms": 0.5
+    },
+    "reinicio": {
+      "antes": {
+        "401": 8
+      },
+      "despues": {
+        "401": 2,
+        "429": 38
+      }
+    },
+    "conexiones_cortadas": {
+      "cortadas": 10,
+      "antes": {
+        "401": 6
+      },
+      "despues": {
+        "401": 4,
+        "429": 36
+      }
+    },
+    "varias_cuentas": {
+      "coach@example.com": {
+        "401": 10,
+        "429": 30
+      },
+      "tutor@example.com": {
+        "401": 10,
+        "429": 30
+      },
+      "secretaria@example.com": {
+        "401": 10,
+        "429": 30
+      },
+      "admin@example.com": {
+        "401": 10,
+        "429": 30
+      },
+      "nadie.aqui@example.com": {
+        "401": 10,
+        "429": 30
+      }
+    },
+    "db": "ef_cier26_despues_fb_12ad33",
+    "seconds": 10
+  },
+  "dia": {
+    "pasos": 96,
+    "intentos_por_paso": 25,
+    "adivinanzas_verificadas_24h": 57,
+    "rechazadas_24h": 2343,
+    "primera_hora_por_paso": [10, 0, 1, 0],
+    "db": "ef_cier26_despues_dia_6d0ee9",
+    "seconds": 44
+  },
+  "dueno": {
+    "login_inicial": 200,
+    "cookies_del_navegador": ["charales_disp_<hash>"],
+    "ataque": {
+      "401": 10,
+      "429": 50
+    },
+    "mismo_navegador_misma_red": 200,
+    "mismo_navegador_red_nueva": 200,
+    "navegador_nuevo_red_conocida": 429,
+    "navegador_nuevo_red_nueva": 429,
+    "atacante_con_contrasena_correcta_red_nueva": 429,
+    "mismo_navegador_otra_instancia": 200,
+    "dueno_durante_ataque_concurrente": {
+      "200": 15,
+      "mediana_ms": 27.1
+    },
+    "red_agotada": {
+      "401": 50,
+      "429": 10
+    },
+    "red_agotada_mismo_navegador": 200,
+    "red_agotada_navegador_nuevo": 429,
+    "minutos_hasta_entrar_tras_el_ataque": 30,
+    "cookie_robada_12_adivinanzas": [401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 401],
+    "cookie_de_otra_cuenta_contra_coach": {
+      "401": 1
+    },
+    "recuperacion_antes": 429,
+    "recuperacion_solicitud": 204,
+    "recuperacion_confirmacion": 204,
+    "recuperacion_despues_misma_red": 200,
+    "recuperacion_despues_otra_red_mismo_navegador": 200,
+    "db": "ef_cier26_despues_dn_61bb11",
+    "seconds": 9
+  },
+  "databases": [
+    "ef_cier26_despues_fb_12ad33",
+    "ef_cier26_despues_dia_6d0ee9",
+    "ef_cier26_despues_dn_61bb11"
+  ]
+}

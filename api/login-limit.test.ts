@@ -59,18 +59,29 @@ after(async () => {
 beforeEach(async () => {
   forgetRefusals();
   await t.db.query('DELETE FROM limite_acceso');
-  await t.db.query('DELETE FROM origen_conocido');
+  await t.db.query('DELETE FROM dispositivo_confiable');
 });
 
-const login = (email: string, password: string, from?: { base?: string; client?: string }) =>
+const login = (
+  email: string,
+  password: string,
+  from?: { base?: string; client?: string; cookie?: string },
+) =>
   fetch(`${from?.base ?? s01Base}/auth/login`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(from?.client ? { 'X-Forwarded-For': from.client } : {}),
+      ...(from?.cookie ? { Cookie: from.cookie } : {}),
     },
     body: JSON.stringify({ email, password }),
   });
+/** The trusted browser's cookie a successful login left, as a request would send it. */
+const deviceCookie = (res: Response) =>
+  res.headers
+    .getSetCookie()
+    .find((c) => c.startsWith('charales_disp_'))!
+    .split(';')[0]!;
 const statuses = (responses: Response[]) =>
   responses.reduce<Record<number, number>>(
     (n, r) => ({ ...n, [r.status]: (n[r.status] ?? 0) + 1 }),
@@ -108,7 +119,8 @@ test('S-01: five simultaneous wrong passwords use the whole allowance; a sixth g
   const [sixth, m] = await verified(() => login('marta@example.com', 'demo1234')); // even the right password
   assert.equal(sixth.status, 429);
   assert.deepEqual(await sixth.json(), {
-    error: 'Demasiados intentos. Intenta de nuevo más tarde.',
+    error:
+      'Demasiados intentos. Intenta de nuevo más tarde o recupera tu contraseña con «¿Olvidaste tu contraseña?».',
   });
   assert.equal(m, 0, 'a refused attempt never verifies');
 });
@@ -150,7 +162,7 @@ test('S-01: a successful login clears the account counter of that address and gi
   assert.deepEqual(await counters('127.0.0.1', 'marta@example.com'), {
     IP: 9,
     CUENTA_IP: 5,
-    CUENTA: 4,
+    CUENTA: 9,
   });
 });
 
@@ -188,7 +200,8 @@ test('S-01: the window expires — after 15 minutes the account can be tried aga
   await login('otra@example.com', WRONG); // an admitted attempt purges what has expired
   await t.advance(LOGIN_WINDOW_MS);
   await login('nadie@example.com', WRONG);
-  assert.equal(await rowCount(), 3, 'only the counters of the last attempt are left');
+  // network and pair rows of the expired attempts are gone; an account's budget row stays until it is whole again
+  assert.equal(await rowCount(), 5, 'the 3 accounts and the last network + pair');
 });
 
 // ------------------------------------------------------------------ H-1: one identity per account, as MariaDB sees it
@@ -275,13 +288,14 @@ test('H-1: no enumeration — an unknown account and its variants behave exactly
 
 // ------------------------------------------------------------------ H-2: nobody can lock another user out
 
-test('H-2 / R-1: 10 attacking addresses × 5 wrong passwords do not stop the owner logging in from their own address', async () => {
-  // The owner has logged in from here before: a known network is not subject to the account-wide counter.
+test('H-2 / R-1: 10 attacking addresses × 5 wrong passwords do not stop the owner logging in from their own browser', async () => {
+  // The owner has logged in before: that browser is not subject to the shared limits (api/device-trust.ts).
   const usual = await login('secretaria@example.com', 'demo1234', {
     base: proxiedBase,
     client: '203.0.113.50',
   });
   assert.equal(usual.status, 200);
+  const browser = deviceCookie(usual);
   const attackers = Array.from({ length: 10 }, (_, i) => `198.51.100.${i + 1}`);
   const [responses, n] = await verified(() =>
     Promise.all(
@@ -292,9 +306,12 @@ test('H-2 / R-1: 10 attacking addresses × 5 wrong passwords do not stop the own
       ),
     ),
   );
-  // R-1: the account takes 20 guesses from unknown networks, however many addresses share them out
-  assert.deepEqual(statuses(responses), { 401: 20, 429: 30 });
-  assert.equal(n, 20);
+  // R-1: the account takes its budget of guesses, however many addresses share them out
+  assert.deepEqual(statuses(responses), {
+    401: LOGIN_LIMITS.CUENTA,
+    429: 50 - LOGIN_LIMITS.CUENTA,
+  });
+  assert.equal(n, LOGIN_LIMITS.CUENTA);
   // the failed attempts are still limited: each attacking address is out of guesses for this account
   for (const client of attackers.slice(0, 3)) {
     const [again, m] = await verified(() =>
@@ -303,13 +320,17 @@ test('H-2 / R-1: 10 attacking addresses × 5 wrong passwords do not stop the own
     assert.equal(again.status, 429);
     assert.equal(m, 0);
   }
-  // the owner, from an address of their own, is not affected
+  // the owner, from their browser, is not affected
   const [owner, k] = await verified(() =>
-    login('secretaria@example.com', 'demo1234', { base: proxiedBase, client: '203.0.113.50' }),
+    login('secretaria@example.com', 'demo1234', {
+      base: proxiedBase,
+      client: '203.0.113.50',
+      cookie: browser,
+    }),
   );
   assert.equal(owner.status, 200);
   assert.equal(k, 1);
-  // The documented price of R-1: during the attack, the right password from a NEW network is refused unverified.
+  // The documented price of R-1: during the attack, the right password from a NEW browser is refused unverified.
   const [stranger, s] = await verified(() =>
     login('secretaria@example.com', 'demo1234', { base: proxiedBase, client: '203.0.113.51' }),
   );
@@ -317,16 +338,20 @@ test('H-2 / R-1: 10 attacking addresses × 5 wrong passwords do not stop the own
   assert.equal(s, 0);
 });
 
-test('H-2: an attacker who keeps trying across windows never locks the owner out', async () => {
+test('H-2: an attacker who keeps trying across windows never locks the owner out of their browser', async () => {
+  let browser = deviceCookie(
+    await login('marta@example.com', 'demo1234', { base: proxiedBase, client: '203.0.113.9' }),
+  );
   for (let w = 0; w < 3; w++) {
     for (let i = 0; i < 6; i++)
       await login('marta@example.com', WRONG, { base: proxiedBase, client: '198.51.100.77' });
-    assert.equal(
-      (await login('marta@example.com', 'demo1234', { base: proxiedBase, client: '203.0.113.9' }))
-        .status,
-      200,
-      `window ${w}`,
-    );
+    const res = await login('marta@example.com', 'demo1234', {
+      base: proxiedBase,
+      client: '203.0.113.9',
+      cookie: browser,
+    });
+    assert.equal(res.status, 200, `window ${w}`);
+    browser = deviceCookie(res);
     await t.advance(LOGIN_WINDOW_MS);
   }
 });

@@ -148,10 +148,11 @@ test('F5-06 / F5-17: a database without the migrations: said by name, never to t
     const db = createPool(env);
     try {
       assert.deepEqual(await missingSchema(db), []);
-      await db.query('DROP TABLE correo_saliente, origen_conocido');
+      await db.query('DROP TABLE limite_acceso, correo_saliente, dispositivo_confiable');
       await db.query('ALTER TABLE pagos DROP COLUMN referencia');
       assert.deepEqual(await missingSchema(db), [
-        'origen_conocido',
+        'limite_acceso',
+        'dispositivo_confiable',
         'correo_saliente',
         'pagos.referencia',
       ]);

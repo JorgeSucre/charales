@@ -60,7 +60,7 @@ Antes de usarlo, lee el dictamen vigente en [`AUDITORIA_FINAL_CIERRE_2026.md`](.
 1. La CI de la PR está en verde y `main` tiene la versión que se va a desplegar.
 2. **Respaldo** inmediato, con prueba de que se puede abrir (§ 8).
 3. Anota el SHA actual: es el destino de una marcha atrás.
-4. Lee las migraciones nuevas. ¿Son aditivas? Todas las de 001 a 007 lo son.
+4. Lee las migraciones nuevas. ¿Son aditivas? De 001 a 007 lo son; 008 retira `origen_conocido`, que sólo creó 007 y nadie usa.
 
 ## 5. Desplegar
 
@@ -145,6 +145,20 @@ sh db/mariadb/scripts/verify-backup.sh escuela_futbol escuela_futbol_ensayo
 
 Un respaldo contiene datos de personas, también de menores. Nunca en el repositorio: `backups/` y `*.sql.gz` están en `.gitignore`, y `scripts/check-sensitive-files.sh` lo comprueba en CI.
 
+### Retención de datos de correo
+
+La API aplica la retención de `correo_saliente` al arrancar y cada hora (`docs/API.md`). Para una base sin API, o tras cambiar `CORREO_RETENCION_DIAS`:
+
+```sh
+npm run db:mail-purge   # por lotes; repetir o interrumpir es seguro; avisa si quedan más
+```
+
+Comprobar: `SELECT estado, COUNT(*), SUM(destinatario IS NOT NULL) FROM correo_saliente GROUP BY estado;`. Fija la retención de los respaldos y de `sesiones` y `auditoria` en la misma política: **esta purga no les alcanza.**
+
+### Navegadores de confianza
+
+Revocar los de una cuenta, por ejemplo si se pierde un teléfono: `DELETE FROM dispositivo_confiable WHERE usuario_id = ?;`. Un cambio o una recuperación de contraseña ya lo hacen.
+
 ## 9. Marcha atrás
 
 **Sólo código, si las migraciones nuevas son aditivas (hoy, todas):**
@@ -154,7 +168,7 @@ ln -sfn /srv/charales/releases/<sha-anterior> /srv/charales/current
 systemctl restart charales-api
 ```
 
-La versión anterior ignora las tablas y ámbitos nuevos. **Una API anterior a la 007** no entrega los correos pendientes de `correo_saliente`, y sus límites de recuperación vuelven a estar en memoria.
+La versión anterior ignora las tablas y ámbitos nuevos. **Una API anterior a la 007** no entrega los correos pendientes de `correo_saliente`, y sus límites de recuperación vuelven a estar en memoria. Una API de la 007 no puede volver sobre una base con 008, porque usa `origen_conocido`; pero 007 nunca salió de la rama de remediación.
 
 **Con pérdida de datos,** sólo si los datos están dañados y con decisión expresa de quien sea responsable: detén la API, restaura el último respaldo en una base nueva, verifícala, apunta `DB_NAME` a ella y arranca. Lo escrito después de ese respaldo se pierde.
 
@@ -162,16 +176,16 @@ La versión anterior ignora las tablas y ámbitos nuevos. **Una API anterior a l
 
 ## 10. Recuperación ante fallos
 
-| Síntoma                                     | Causa probable                             | Qué hacer                                                        |
-| ------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------- |
-| La API no arranca: `Error de configuración` | Variable obligatoria incorrecta            | Corrige `/etc/charales/api.env`; el log dice cuál                |
-| La API no arranca: `La base no está al día` | Falta una migración                        | Respaldo y `migrate.sh`                                          |
-| Todos reciben 429 al entrar                 | `TRUSTED_PROXIES` no incluye al proxy      | Revisa la IP real del proxy y el log `Llegó X-Forwarded-For`     |
-| Una cuenta recibe 429 desde una red nueva   | Ataque o muchos fallos (límite por cuenta) | Esperar 15 min o recuperar la contraseña por correo              |
-| Login 503                                   | MariaDB o el pool del limitador            | `/health`, estado de MariaDB; el login falla cerrado a propósito |
-| 503 «El servicio está ocupado»              | Semáforo de Argon2id saturado              | Tráfico anómalo; ajusta `limit_req` o el dimensionamiento        |
-| Invitaciones o recuperación 503             | `MAIL_PROVIDER=none`                       | Configura el proveedor                                           |
-| Correos en `PENDIENTE` sin salir            | Proveedor caído                            | Se reintentan solos, hasta 8 veces o hasta su vencimiento        |
+| Síntoma                                        | Causa probable                             | Qué hacer                                                                                                                        |
+| ---------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| La API no arranca: `Error de configuración`    | Variable obligatoria incorrecta            | Corrige `/etc/charales/api.env`; el log dice cuál                                                                                |
+| La API no arranca: `La base no está al día`    | Falta una migración                        | Respaldo y `migrate.sh`                                                                                                          |
+| Todos reciben 429 al entrar                    | `TRUSTED_PROXIES` no incluye al proxy      | Revisa la IP real del proxy y el log `Llegó X-Forwarded-For`                                                                     |
+| Una cuenta recibe 429 desde un navegador nuevo | Ataque o muchos fallos (límite por cuenta) | Desde un navegador donde ya entró funciona. Si no, esperar (recupera 1 intento cada 30 min) o recuperar la contraseña por correo |
+| Login 503                                      | MariaDB o el pool del limitador            | `/health`, estado de MariaDB; el login falla cerrado a propósito                                                                 |
+| 503 «El servicio está ocupado»                 | Semáforo de Argon2id saturado              | Tráfico anómalo; ajusta `limit_req` o el dimensionamiento                                                                        |
+| Invitaciones o recuperación 503                | `MAIL_PROVIDER=none`                       | Configura el proveedor                                                                                                           |
+| Correos en `PENDIENTE` sin salir               | Proveedor caído                            | Se reintentan solos, hasta 8 veces o hasta su vencimiento                                                                        |
 
 ## 11. Protección de GitHub
 

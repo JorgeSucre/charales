@@ -21,9 +21,9 @@ import {
   sha256,
   verifyPassword,
 } from './auth.ts';
+import { issueDevice, revokeDevices } from './device-trust.ts';
 import {
   clearPasswordChange,
-  markOriginKnown,
   releasePasswordChange,
   reservePasswordChange,
   reserveResetRequest,
@@ -120,6 +120,7 @@ export async function changePassword(ctx: Ctx, db: Pool): Promise<Reply> {
     if (user?.password_hash !== s.user.password_hash) return 'password-changed';
     const now = localDateTime(); // after the locks: a request that waited stamps the time it actually applied
     await tx.query('UPDATE usuarios SET password_hash = ? WHERE id = ?', [hash, s.user.id]);
+    await revokeDevices(tx, s.user.id); // whoever knew the old password may have trusted a browser
     await tx.query(
       'UPDATE sesiones SET cerrada_en = ? WHERE usuario_id = ? AND cerrada_en IS NULL AND id <> ?',
       [now, s.user.id, s.sessionId],
@@ -141,7 +142,8 @@ export async function changePassword(ctx: Ctx, db: Pool): Promise<Reply> {
   // Not a guess (the password was right when read), so it doesn't count toward the limit.
   if (outcome === 'password-changed') return { status: 400, body: { error: WRONG_CURRENT } };
   await clearPasswordChange(ctx.limiterDb, s.user.id);
-  return { status: 204 };
+  const device = await issueDevice(ctx.limiterDb, s.user.id, s.user.email, null, ctx.secureCookie);
+  return { status: 204, ...(device ? { cookie: device } : {}) };
 }
 
 /** POST /auth/password-reset/request { email } — always 204 (or 503 / 429), whatever the account (HU-001.2, D7). */
@@ -244,8 +246,8 @@ export async function confirmPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
   const done = await transaction(db, async (tx) => {
     // Lock order usuarios → tokens_recuperacion → sesiones, the same as change and request (R1/R2); only locking
     // reads in here, and the token is re-checked under the lock.
-    const [owner]: { email: string }[] = await tx.query(
-      'SELECT email FROM usuarios WHERE id = ? FOR UPDATE',
+    const [owner]: { id: number; email: string }[] = await tx.query(
+      'SELECT id, email FROM usuarios WHERE id = ? FOR UPDATE',
       [ref.usuario_id],
     );
     const [row]: { id: number; usuario_id: number; expira_en: string; usado_en: string | null }[] =
@@ -257,6 +259,7 @@ export async function confirmPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
     if (!row || row.usado_en || row.expira_en <= now) return false;
     await tx.query('UPDATE tokens_recuperacion SET usado_en = ? WHERE id = ?', [now, row.id]);
     await tx.query('UPDATE usuarios SET password_hash = ? WHERE id = ?', [hash, row.usuario_id]);
+    await revokeDevices(tx, row.usuario_id);
     await tx.query(
       'UPDATE sesiones SET cerrada_en = ? WHERE usuario_id = ? AND cerrada_en IS NULL',
       [now, row.usuario_id],
@@ -271,11 +274,12 @@ export async function confirmPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
       ctx.ip,
       'usuarios',
     );
-    return owner?.email ?? '';
+    return owner ?? false;
   });
   if (done === false) return { status: 400, body: { error: INVALID_LINK } };
-  await markOriginKnown(ctx.limiterDb, ctx.ip, done);
-  return { status: 204, cookie: clearCookie(ctx.secureCookie) };
+  // The link proved the account: this browser is trusted from now on, so an attack can't keep this person out.
+  const device = await issueDevice(ctx.limiterDb, done.id, done.email, null, ctx.secureCookie);
+  return { status: 204, cookie: [clearCookie(ctx.secureCookie), ...(device ? [device] : [])] };
 }
 
 /**

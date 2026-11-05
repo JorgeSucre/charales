@@ -174,9 +174,9 @@ export async function deliverMail(
   }
   try {
     await db.query(
-      `UPDATE correo_saliente SET estado = 'ENVIADO', intentos = intentos + 1, enviado_en = ?, proveedor_id = ?,
-              ultimo_error = NULL, bloqueado_hasta = NULL WHERE id = ?`,
-      [localDateTime(), receipt?.id ?? null, id],
+      `UPDATE correo_saliente SET estado = 'ENVIADO', intentos = intentos + 1, enviado_en = ?, cerrado_en = ?,
+              proveedor_id = ?, ultimo_error = NULL, bloqueado_hasta = NULL WHERE id = ?`,
+      [localDateTime(), localDateTime(), receipt?.id ?? null, id],
     );
   } catch {
     // Accepted by the provider but not recorded: the worker sends it again (at least once, see the header).
@@ -197,9 +197,17 @@ async function recordFailure(db: Pool, id: number, e: unknown): Promise<MailStat
     const attempts = Number(row?.intentos ?? 0) + 1;
     const state: MailState = permanent || attempts >= MAX_MAIL_ATTEMPTS ? 'FALLIDO' : 'PENDIENTE';
     await db.query(
-      `UPDATE correo_saliente SET estado = ?, intentos = ?, ultimo_error = ?, proximo_intento = ?, bloqueado_hasta = NULL
+      `UPDATE correo_saliente SET estado = ?, intentos = ?, ultimo_error = ?, proximo_intento = ?, cerrado_en = ?,
+              bloqueado_hasta = NULL
         WHERE id = ?`,
-      [state, attempts, code, localDateTime(Date.now() + backoffMs(attempts)), id],
+      [
+        state,
+        attempts,
+        code,
+        localDateTime(Date.now() + backoffMs(attempts)),
+        state === 'FALLIDO' ? localDateTime() : null,
+        id,
+      ],
     );
     return state;
   } catch {
@@ -261,8 +269,8 @@ export async function processMailQueue(db: Pool, mailer: Mailer, limit = 5): Pro
 async function reissue(db: Pool, row: QueuedMail): Promise<string | null> {
   const close = (tx: PoolConnection, reason: string) =>
     tx.query(
-      "UPDATE correo_saliente SET estado = 'FALLIDO', ultimo_error = ?, bloqueado_hasta = NULL WHERE id = ?",
-      [reason, row.id],
+      "UPDATE correo_saliente SET estado = 'FALLIDO', ultimo_error = ?, cerrado_en = ?, bloqueado_hasta = NULL WHERE id = ?",
+      [reason, localDateTime(), row.id],
     );
   return transaction(db, async (tx) => {
     // Lock order usuarios → tokens_recuperacion, the same as the password endpoints (R1/R2).
@@ -307,6 +315,129 @@ async function reissue(db: Pool, row: QueuedMail): Promise<string | null> {
     ]);
     return token;
   });
+}
+
+/**
+ * Retention (N-06). The address is only needed while a message may be sent, and for a while after to answer «did it go
+ * out?»: an access link lasts 24 h at most, and what happened to an account is in `auditoria`. 30 days by default, not a
+ * legal term: change it with CORREO_RETENCION_DIAS once the school defines its policy (F5-25).
+ *
+ * A message is closed when sent or failed for good. PENDIENTE (with its retries) and ENVIANDO under a live lease are never
+ * touched. One whose link expired long ago and that nobody processed (no worker running) can't be sent any more: it is closed
+ * as ABANDONADO and follows the same path. Past the retention the row loses all that identifies a person; its metadata
+ * (state, purpose, attempts, error code, dates) is kept a year for statistics, then the row goes.
+ *
+ * Small batches, each its own transaction with SKIP LOCKED: it never waits for a row in use, never holds locks long, and an
+ * interruption leaves finished batches done and the rest for the next run. Running it twice changes nothing. Note that
+ * backups keep the addresses for as long as they are kept.
+ */
+export const MAIL_RETENTION_DAYS = 30;
+const MAIL_METADATA_DAYS = 365;
+const ABANDON_GRACE_DAYS = 7;
+
+export function mailRetentionFrom(env: Record<string, string | undefined>): number {
+  const raw = env['CORREO_RETENCION_DIAS']?.trim();
+  if (!raw) return MAIL_RETENTION_DAYS;
+  const days = Number(raw);
+  if (!Number.isInteger(days) || days < 1 || days > MAIL_METADATA_DAYS)
+    throw new Error(
+      `CORREO_RETENCION_DIAS: «${raw}» no es un entero entre 1 y ${MAIL_METADATA_DAYS}.`,
+    );
+  return days;
+}
+
+export interface PurgeResult {
+  abandoned: number;
+  anonymized: number;
+  deleted: number;
+  /** The run stopped at its limit: there is more for the next one. */
+  more: boolean;
+}
+
+export async function purgeMailOutbox(
+  db: Pool,
+  options: { retentionDays?: number; batch?: number; maxBatches?: number } = {},
+): Promise<PurgeResult> {
+  const days = options.retentionDays ?? MAIL_RETENTION_DAYS;
+  const batch = options.batch ?? 500;
+  const maxBatches = options.maxBatches ?? 20;
+  const ago = (d: number) => localDateTime(Date.now() - d * 86_400_000);
+  const now = localDateTime();
+  /** Claims a batch and applies `change`, in one short transaction. How many rows it took. */
+  const inBatches = async (
+    hint: string,
+    select: string,
+    params: unknown[],
+    change: (tx: PoolConnection, ids: number[]) => Promise<unknown>,
+  ): Promise<[number, boolean]> => {
+    let total = 0;
+    for (let i = 0; i < maxBatches; i++) {
+      const n = await transaction(db, async (tx) => {
+        const rows: { id: number }[] = await tx.query(
+          `SELECT id FROM correo_saliente ${hint} WHERE ${select} LIMIT ${Number(batch)} FOR UPDATE SKIP LOCKED`,
+          params,
+        );
+        if (rows.length)
+          await change(
+            tx,
+            rows.map((r) => Number(r.id)),
+          );
+        return rows.length;
+      });
+      total += n;
+      if (n < batch) return [total, false];
+    }
+    return [total, true];
+  };
+  // The optimizer may prefer a full scan while few rows exist; on a table that has grown that would lock and read it all.
+  const retentionIndex = 'FORCE INDEX (ix_correo_saliente_anonimizado)';
+  const [abandoned, moreA] = await inBatches(
+    '',
+    `estado IN ('PENDIENTE', 'ENVIANDO') AND vence_en <= ? AND (estado = 'PENDIENTE' OR bloqueado_hasta <= ?)`,
+    [ago(ABANDON_GRACE_DAYS), now],
+    (tx, ids) =>
+      tx.query(
+        `UPDATE correo_saliente SET estado = 'FALLIDO', ultimo_error = 'ABANDONADO', cerrado_en = ?, bloqueado_hasta = NULL
+          WHERE id IN (?)`,
+        [now, ids],
+      ),
+  );
+  const [anonymized, moreB] = await inBatches(
+    retentionIndex,
+    `estado IN ('ENVIADO', 'FALLIDO') AND cerrado_en <= ? AND anonimizado_en IS NULL`,
+    [ago(days)],
+    (tx, ids) =>
+      tx.query(
+        `UPDATE correo_saliente
+            SET destinatario = NULL, usuario_id = NULL, token_id = NULL, proveedor_id = NULL, anonimizado_en = ?
+          WHERE id IN (?)`,
+        [now, ids],
+      ),
+  );
+  const [deleted, moreC] = await inBatches(
+    retentionIndex,
+    `anonimizado_en IS NOT NULL AND cerrado_en <= ?`,
+    [ago(MAIL_METADATA_DAYS)],
+    (tx, ids) => tx.query('DELETE FROM correo_saliente WHERE id IN (?)', [ids]),
+  );
+  return { abandoned, anonymized, deleted, more: moreA || moreB || moreC };
+}
+
+/** Applies the retention at the start and every hour, with or without a mail provider. `unref`: never keeps the process alive. */
+export function startMailRetention(db: Pool, days: number, everyMs = 3_600_000): () => void {
+  const run = () =>
+    purgeMailOutbox(db, { retentionDays: days })
+      .then((r) => {
+        if (r.abandoned || r.anonymized || r.deleted)
+          console.log(
+            `Retención de correo: ${r.abandoned} abandonados, ${r.anonymized} anonimizados, ${r.deleted} borrados.`,
+          );
+      })
+      .catch((e: { code?: string }) => console.error(`Retención de correo: ${e.code ?? 'ERROR'}.`));
+  void run();
+  const timer = setInterval(() => void run(), everyMs);
+  timer.unref();
+  return () => clearInterval(timer);
 }
 
 /** Runs the queue while the process lives. One pass at a time; `unref` so it never keeps the process alive. */

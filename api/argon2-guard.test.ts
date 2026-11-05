@@ -143,6 +143,7 @@ test('S-02: no slot → 503 without Argon2id and the S-01 attempt is given back;
   assert.deepEqual(await busy.json(), BUSY);
   assert.equal(n, 0, 'nothing verified');
   assert.deepEqual(await counters(), [
+    ['CUENTA', 0],
     ['CUENTA_IP', 0],
     ['IP', 0],
   ]);
@@ -229,6 +230,7 @@ test('S-01 × S-02 (defaults): a 503 does not spend an S-01 attempt, and a 429 n
   assert.deepEqual(statuses(busy), { 429: 5, 503: 5 });
   assert.equal(b, 0);
   assert.deepEqual(await counters(), [
+    ['CUENTA', 0],
     ['CUENTA_IP', 0],
     ['IP', 0],
   ]);

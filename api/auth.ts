@@ -6,6 +6,7 @@
 import crypto, { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Pool, PoolConnection } from 'mariadb';
 import type { Ctx, Reply } from './server.ts';
+import { deviceCookieName, issueDevice } from './device-trust.ts';
 import { reserveLogin, settleLogin, type Reservation } from './login-limit.ts';
 
 /** Session policy (HU-002), same values as the mock AuthService. */
@@ -18,7 +19,8 @@ const SCHOOL_TZ = 'America/Mexico_City';
 process.env.TZ = SCHOOL_TZ;
 
 const INVALID = 'Correo o contraseña incorrectos.';
-const TOO_MANY = 'Demasiados intentos. Intenta de nuevo más tarde.';
+const LOGIN_TOO_MANY =
+  'Demasiados intentos. Intenta de nuevo más tarde o recupera tu contraseña con «¿Olvidaste tu contraseña?».';
 export const BUSY = 'El servicio está ocupado. Intenta de nuevo en unos segundos.';
 const LOGIN_UNAVAILABLE =
   'El inicio de sesión no está disponible. Intenta de nuevo en unos minutos.';
@@ -104,14 +106,15 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
 
   // S-01: the attempt is reserved (shared, in MariaDB) before Argon2id runs; at the limit, nothing is verified.
   // If the limiter can't be reached the login is refused: it never runs unlimited.
+  const deviceSecret = ctx.cookie(deviceCookieName(email));
   let reservation: Reservation | null;
   try {
-    reservation = await reserveLogin(ctx.limiterDb, ctx.ip, email);
+    reservation = await reserveLogin(ctx.limiterDb, ctx.ip, email, deviceSecret);
   } catch (e) {
     console.error('Límite de intentos no disponible:', (e as Error).message);
     return { status: 503, body: { error: LOGIN_UNAVAILABLE } };
   }
-  if (!reservation) return { status: 429, body: { error: TOO_MANY } };
+  if (!reservation) return { status: 429, body: { error: LOGIN_TOO_MANY } };
 
   const [row]: UserRow[] = await db.query(
     'SELECT id, rol_id, nombre, apellido, email, password_hash, activo FROM usuarios WHERE email = ?',
@@ -145,6 +148,7 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
   const access = await accessOf(db, row);
   if (!access.roles.length) return { status: 403, body: { error: NO_ROLE } };
 
+  const device = await issueDevice(ctx.limiterDb, row.id, email, deviceSecret, ctx.secureCookie);
   const token = randomBytes(32).toString('base64url');
   const now = localDateTime();
   const expiresAt = localDateTime(Date.now() + SESSION_HOURS * 3_600_000);
@@ -172,7 +176,10 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
       expiresAt: toJson(expiresAt),
       lastUsedAt: toJson(now),
     },
-    cookie: sessionCookie(token, SESSION_HOURS * 3600, ctx.secureCookie),
+    cookie: [
+      sessionCookie(token, SESSION_HOURS * 3600, ctx.secureCookie),
+      ...(device ? [device] : []),
+    ],
   };
 }
 
