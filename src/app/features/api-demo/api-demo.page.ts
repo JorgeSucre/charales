@@ -139,8 +139,8 @@ import { SubmissionAlert } from '../../shared/ui';
           <form [formGroup]="form" (ngSubmit)="login()" novalidate class="grid-form">
             <h2>Iniciar sesión en la API</h2>
             <p class="muted">
-              No hay sesión de la API en este navegador. Usa una cuenta de desarrollo; la API responde
-              403 si la cuenta no tiene permiso.
+              No hay sesión de la API en este navegador. Usa una cuenta de desarrollo; la API
+              responde 403 si la cuenta no tiene permiso.
             </p>
             <label
               >Correo <input type="email" formControlName="email" autocomplete="username"

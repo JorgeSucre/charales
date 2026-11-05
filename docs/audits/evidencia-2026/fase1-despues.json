@@ -1,446 +1,401 @@
 {
- "code": "/Users/jorgesucre/Projects/6A/ingenieria_software/charales/charales-wt/auditoria-integral-cierre",
- "label": "after",
- "at": "2026-11-05T14:57:04.577Z",
- "node": "v26.13.0",
- "r1": {
-  "same64_150_sequential": {
-   "401": 5,
-   "429": 145
-  },
-  "first429_same64": 6,
-  "right_password_same64": 429,
-  "right_password_new_prefix": 200,
-  "distributed_150_prefixes": {
-   "401": 20,
-   "429": 130
-  },
-  "distributed_argon_runs_upper_bound": 20,
-  "ipv4_same_address_7": [
-   401,
-   401,
-   401,
-   401,
-   401,
-   429,
-   429
-  ],
-  "ipv4_60_addresses_one_account": {
-   "401": 20,
-   "429": 40
-  },
-  "ipv4_mapped_8_attempts": {
-   "401": 5,
-   "429": 3
-  },
-  "ipv6_text_variants_20_attempts": {
-   "401": 5,
-   "429": 15
-  },
-  "concurrent_same_pair_25": {
-   "401": 5,
-   "429": 20
-  },
-  "concurrent_same64_rotating_25": {
-   "401": 5,
-   "429": 20
-  },
-  "owner_first_login": 200,
-  "attack_on_owner_account": {
-   "401": 20,
-   "429": 40
-  },
-  "owner_during_attack_known_address": 200,
-  "owner_during_attack_new_address": 429,
-  "spoofed_xff_untrusted_peer_7": [
-   401,
-   401,
-   401,
-   401,
-   401,
-   429,
-   429
-  ],
-  "enum_status_existing": {
-   "401": 20,
-   "429": 10
-  },
-  "enum_status_unknown": {
-   "401": 30
-  },
-  "enum_median_ms": {
-   "existing": 23.1,
-   "unknown": 22.6
-  },
-  "db": "ef_rem26_after_r1_bcb447",
-  "seconds": 10
- },
- "proxies": {
-  "empty_dev": {
-   "exit": null,
-   "started": true,
-   "log": []
-  },
-  "unset_dev": {
-   "exit": null,
-   "started": true,
-   "log": []
-  },
-  "ip_valid": {
-   "exit": null,
-   "started": true,
-   "log": []
-  },
-  "cidr_v4": {
-   "exit": null,
-   "started": true,
-   "log": []
-  },
-  "cidr_v6": {
-   "exit": null,
-   "started": true,
-   "log": []
-  },
-  "invalid_name": {
-   "exit": 1,
-   "started": false,
-   "log": [
-    "Error de configuración: TRUSTED_PROXIES: «proxy.example.com» no es una dirección IP ni un rango CIDR válido (de /8 en adelante; sin nombres)."
-   ]
-  },
-  "invalid_cidr": {
-   "exit": 1,
-   "started": false,
-   "log": [
-    "Error de configuración: TRUSTED_PROXIES: «10.0.0.0/99» no es una dirección IP ni un rango CIDR válido (de /8 en adelante; sin nombres)."
-   ]
-  },
-  "all_internet_v4": {
-   "exit": 1,
-   "started": false,
-   "log": [
-    "Error de configuración: TRUSTED_PROXIES: «0.0.0.0/0» no es una dirección IP ni un rango CIDR válido (de /8 en adelante; sin nombres)."
-   ]
-  },
-  "empty_production": {
-   "exit": 1,
-   "started": false,
-   "log": [
-    "Error de configuración: TRUSTED_PROXIES es obligatorio en producción: las IP o rangos del proxy inverso, o «none» si no hay proxy. Vacío, todos los clientes detrás de un proxy comparten un solo límite"
-   ]
-  },
-  "none_production": {
-   "exit": null,
-   "started": true,
-   "log": [
-    "Aviso: TRUSTED_PROXIES=none: se cuenta la IP de la conexión. Correcto sólo si ningún proxy atiende a la API."
-   ]
-  },
-  "ip_production": {
-   "exit": null,
-   "started": true,
-   "log": []
-  },
-  "empty_60_failures": {
-   "401": 50,
-   "429": 10
-  },
-  "empty_first429": 51,
-  "empty_right_password_after": 429,
-  "empty_logged_warning": true,
-  "configured_ip": {
-   "attacker": {
-    "401": 50,
-    "429": 10
-   },
-   "other_client_right_password": 200
-  },
-  "configured_cidr": {
-   "attacker": {
-    "401": 50,
-    "429": 10
-   },
-   "other_client_right_password": 200
-  },
-  "hops_forged_left_rotating_7": [
-   401,
-   401,
-   401,
-   401,
-   401,
-   429,
-   429
-  ],
-  "db": "ef_rem26_after_tp_522f2f",
-  "seconds": 12
- },
- "reset": {
-  "rounds": [
-   {
-    "requests": 10000,
-    "ms": 1409,
-    "codes": {
-     "204": 20,
-     "429": 9980
+  "code": "/Users/jorgesucre/Projects/6A/ingenieria_software/charales/charales-wt/auditoria-integral-cierre",
+  "label": "after",
+  "at": "2026-11-05T14:57:04.577Z",
+  "node": "v26.13.0",
+  "r1": {
+    "same64_150_sequential": {
+      "401": 5,
+      "429": 145
     },
-    "rss_kb": 158096
-   },
-   {
-    "requests": 20000,
-    "ms": 1276,
-    "codes": {
-     "429": 10000
+    "first429_same64": 6,
+    "right_password_same64": 429,
+    "right_password_new_prefix": 200,
+    "distributed_150_prefixes": {
+      "401": 20,
+      "429": 130
     },
-    "rss_kb": 143600
-   },
-   {
-    "requests": 40000,
-    "ms": 1858,
-    "codes": {
-     "429": 20000
+    "distributed_argon_runs_upper_bound": 20,
+    "ipv4_same_address_7": [401, 401, 401, 401, 401, 429, 429],
+    "ipv4_60_addresses_one_account": {
+      "401": 20,
+      "429": 40
     },
-    "rss_kb": 142432
-   }
-  ],
-  "rss_start_kb": 175856,
-  "rss_peak_kb": 175856,
-  "rss_end_kb": 142432,
-  "same_account_same_ip_8": [
-   204,
-   204,
-   204,
-   204,
-   204,
-   429,
-   429,
-   429
-  ],
-  "same_account_30_ips": {
-   "204": 5,
-   "429": 25
+    "ipv4_mapped_8_attempts": {
+      "401": 5,
+      "429": 3
+    },
+    "ipv6_text_variants_20_attempts": {
+      "401": 5,
+      "429": 15
+    },
+    "concurrent_same_pair_25": {
+      "401": 5,
+      "429": 20
+    },
+    "concurrent_same64_rotating_25": {
+      "401": 5,
+      "429": 20
+    },
+    "owner_first_login": 200,
+    "attack_on_owner_account": {
+      "401": 20,
+      "429": 40
+    },
+    "owner_during_attack_known_address": 200,
+    "owner_during_attack_new_address": 429,
+    "spoofed_xff_untrusted_peer_7": [401, 401, 401, 401, 401, 429, 429],
+    "enum_status_existing": {
+      "401": 20,
+      "429": 10
+    },
+    "enum_status_unknown": {
+      "401": 30
+    },
+    "enum_median_ms": {
+      "existing": 23.1,
+      "unknown": 22.6
+    },
+    "db": "ef_rem26_after_r1_bcb447",
+    "seconds": 10
   },
-  "tokens_issued_for_victim": 5,
-  "mail_sent_to_victim": 5,
-  "reset_timing_ms": {
-   "existing_median": 4.8,
-   "unknown_median": 3,
-   "n": [
-    20,
-    20
-   ]
+  "proxies": {
+    "empty_dev": {
+      "exit": null,
+      "started": true,
+      "log": []
+    },
+    "unset_dev": {
+      "exit": null,
+      "started": true,
+      "log": []
+    },
+    "ip_valid": {
+      "exit": null,
+      "started": true,
+      "log": []
+    },
+    "cidr_v4": {
+      "exit": null,
+      "started": true,
+      "log": []
+    },
+    "cidr_v6": {
+      "exit": null,
+      "started": true,
+      "log": []
+    },
+    "invalid_name": {
+      "exit": 1,
+      "started": false,
+      "log": [
+        "Error de configuración: TRUSTED_PROXIES: «proxy.example.com» no es una dirección IP ni un rango CIDR válido (de /8 en adelante; sin nombres)."
+      ]
+    },
+    "invalid_cidr": {
+      "exit": 1,
+      "started": false,
+      "log": [
+        "Error de configuración: TRUSTED_PROXIES: «10.0.0.0/99» no es una dirección IP ni un rango CIDR válido (de /8 en adelante; sin nombres)."
+      ]
+    },
+    "all_internet_v4": {
+      "exit": 1,
+      "started": false,
+      "log": [
+        "Error de configuración: TRUSTED_PROXIES: «0.0.0.0/0» no es una dirección IP ni un rango CIDR válido (de /8 en adelante; sin nombres)."
+      ]
+    },
+    "empty_production": {
+      "exit": 1,
+      "started": false,
+      "log": [
+        "Error de configuración: TRUSTED_PROXIES es obligatorio en producción: las IP o rangos del proxy inverso, o «none» si no hay proxy. Vacío, todos los clientes detrás de un proxy comparten un solo límite"
+      ]
+    },
+    "none_production": {
+      "exit": null,
+      "started": true,
+      "log": [
+        "Aviso: TRUSTED_PROXIES=none: se cuenta la IP de la conexión. Correcto sólo si ningún proxy atiende a la API."
+      ]
+    },
+    "ip_production": {
+      "exit": null,
+      "started": true,
+      "log": []
+    },
+    "empty_60_failures": {
+      "401": 50,
+      "429": 10
+    },
+    "empty_first429": 51,
+    "empty_right_password_after": 429,
+    "empty_logged_warning": true,
+    "configured_ip": {
+      "attacker": {
+        "401": 50,
+        "429": 10
+      },
+      "other_client_right_password": 200
+    },
+    "configured_cidr": {
+      "attacker": {
+        "401": 50,
+        "429": 10
+      },
+      "other_client_right_password": 200
+    },
+    "hops_forged_left_rotating_7": [401, 401, 401, 401, 401, 429, 429],
+    "db": "ef_rem26_after_tp_522f2f",
+    "seconds": 12
   },
-  "db": "ef_rem26_after_rs_fe5da7",
-  "seconds": 18
- },
- "mail": {
-  "ok": {
-   "first": 200,
-   "first_body": "{\"result\":{\"roleId\":2,\"firstName\":\"Alta\",\"lastName\":\"ok\",\"email\":\"alta-ok@example.com\",\"roleKind\":\"SEGURIDAD\",\"active\":true,\"createdAt\":\"2026-11-05T08:57:46\",\"u",
-   "leaks_internal": false,
-   "account_created": true,
-   "second": 400,
-   "second_body": "{\"error\":\"Ya existe un usuario con ese correo.\"}",
-   "accounts": 1,
-   "invitation_tokens": 1,
-   "outbox": [
-    {
-     "estado": "ENVIADO",
-     "intentos": 1,
-     "error": null
-    }
-   ]
+  "reset": {
+    "rounds": [
+      {
+        "requests": 10000,
+        "ms": 1409,
+        "codes": {
+          "204": 20,
+          "429": 9980
+        },
+        "rss_kb": 158096
+      },
+      {
+        "requests": 20000,
+        "ms": 1276,
+        "codes": {
+          "429": 10000
+        },
+        "rss_kb": 143600
+      },
+      {
+        "requests": 40000,
+        "ms": 1858,
+        "codes": {
+          "429": 20000
+        },
+        "rss_kb": 142432
+      }
+    ],
+    "rss_start_kb": 175856,
+    "rss_peak_kb": 175856,
+    "rss_end_kb": 142432,
+    "same_account_same_ip_8": [204, 204, 204, 204, 204, 429, 429, 429],
+    "same_account_30_ips": {
+      "204": 5,
+      "429": 25
+    },
+    "tokens_issued_for_victim": 5,
+    "mail_sent_to_victim": 5,
+    "reset_timing_ms": {
+      "existing_median": 4.8,
+      "unknown_median": 3,
+      "n": [20, 20]
+    },
+    "db": "ef_rem26_after_rs_fe5da7",
+    "seconds": 18
   },
-  "rejected": {
-   "first": 200,
-   "first_body": "{\"result\":{\"roleId\":2,\"firstName\":\"Alta\",\"lastName\":\"rejected\",\"email\":\"alta-rejected@example.com\",\"roleKind\":\"SEGURIDAD\",\"active\":true,\"createdAt\":\"2026-11-05T",
-   "leaks_internal": false,
-   "account_created": true,
-   "second": 400,
-   "second_body": "{\"error\":\"Ya existe un usuario con ese correo.\"}",
-   "accounts": 1,
-   "invitation_tokens": 1,
-   "outbox": [
-    {
-     "estado": "PENDIENTE",
-     "intentos": 1,
-     "error": "ERROR"
-    }
-   ]
+  "mail": {
+    "ok": {
+      "first": 200,
+      "first_body": "{\"result\":{\"roleId\":2,\"firstName\":\"Alta\",\"lastName\":\"ok\",\"email\":\"alta-ok@example.com\",\"roleKind\":\"SEGURIDAD\",\"active\":true,\"createdAt\":\"2026-11-05T08:57:46\",\"u",
+      "leaks_internal": false,
+      "account_created": true,
+      "second": 400,
+      "second_body": "{\"error\":\"Ya existe un usuario con ese correo.\"}",
+      "accounts": 1,
+      "invitation_tokens": 1,
+      "outbox": [
+        {
+          "estado": "ENVIADO",
+          "intentos": 1,
+          "error": null
+        }
+      ]
+    },
+    "rejected": {
+      "first": 200,
+      "first_body": "{\"result\":{\"roleId\":2,\"firstName\":\"Alta\",\"lastName\":\"rejected\",\"email\":\"alta-rejected@example.com\",\"roleKind\":\"SEGURIDAD\",\"active\":true,\"createdAt\":\"2026-11-05T",
+      "leaks_internal": false,
+      "account_created": true,
+      "second": 400,
+      "second_body": "{\"error\":\"Ya existe un usuario con ese correo.\"}",
+      "accounts": 1,
+      "invitation_tokens": 1,
+      "outbox": [
+        {
+          "estado": "PENDIENTE",
+          "intentos": 1,
+          "error": "ERROR"
+        }
+      ]
+    },
+    "timeout": {
+      "first": 200,
+      "first_body": "{\"result\":{\"roleId\":2,\"firstName\":\"Alta\",\"lastName\":\"timeout\",\"email\":\"alta-timeout@example.com\",\"roleKind\":\"SEGURIDAD\",\"active\":true,\"createdAt\":\"2026-11-05T08",
+      "leaks_internal": false,
+      "account_created": true,
+      "second": 400,
+      "second_body": "{\"error\":\"Ya existe un usuario con ese correo.\"}",
+      "accounts": 1,
+      "invitation_tokens": 1,
+      "outbox": [
+        {
+          "estado": "PENDIENTE",
+          "intentos": 1,
+          "error": "ERROR"
+        }
+      ]
+    },
+    "connreset": {
+      "first": 200,
+      "first_body": "{\"result\":{\"roleId\":2,\"firstName\":\"Alta\",\"lastName\":\"connreset\",\"email\":\"alta-connreset@example.com\",\"roleKind\":\"SEGURIDAD\",\"active\":true,\"createdAt\":\"2026-11-0",
+      "leaks_internal": false,
+      "account_created": true,
+      "second": 400,
+      "second_body": "{\"error\":\"Ya existe un usuario con ese correo.\"}",
+      "accounts": 1,
+      "invitation_tokens": 1,
+      "outbox": [
+        {
+          "estado": "PENDIENTE",
+          "intentos": 1,
+          "error": "ERROR"
+        }
+      ]
+    },
+    "db": "ef_rem26_after_ml_751c80",
+    "seconds": 2
   },
-  "timeout": {
-   "first": 200,
-   "first_body": "{\"result\":{\"roleId\":2,\"firstName\":\"Alta\",\"lastName\":\"timeout\",\"email\":\"alta-timeout@example.com\",\"roleKind\":\"SEGURIDAD\",\"active\":true,\"createdAt\":\"2026-11-05T08",
-   "leaks_internal": false,
-   "account_created": true,
-   "second": 400,
-   "second_body": "{\"error\":\"Ya existe un usuario con ese correo.\"}",
-   "accounts": 1,
-   "invitation_tokens": 1,
-   "outbox": [
-    {
-     "estado": "PENDIENTE",
-     "intentos": 1,
-     "error": "ERROR"
-    }
-   ]
+  "surface": {
+    "unmigrated_started": true,
+    "unmigrated_start_log": [
+      "La base no está al día, falta: limite_acceso, origen_conocido, correo_saliente, pagos.referencia. Aplica las migraciones: npm run db:setup (docs/SETUP.md)."
+    ],
+    "unmigrated_login": 503,
+    "unmigrated_rpc": [
+      500,
+      "{\"error\":\"Ocurrió un error inesperado. Inténtalo de nuevo; si continúa, avisa al administrador.\"}"
+    ],
+    "headers_health": {
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "referrer-policy": "no-referrer",
+      "x-frame-options": null,
+      "strict-transport-security": null
+    },
+    "cookie_dev": "charales_sid=<v>; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800",
+    "dev_start_warns_insecure_cookie": true,
+    "production_started": true,
+    "cookie_production": "charales_sid=<v>; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800; Secure",
+    "lab_jugadores_production": 404,
+    "lab_categorias_production": 404,
+    "reset_production_no_mail": 503,
+    "production_http_app_url_started": false,
+    "production_mail_console_started": false,
+    "bundle_files_with_demo1234": 0,
+    "bundle_files_with_example_accounts": 1,
+    "bundle_files_with_zod": 0,
+    "db": ["ef_rem26_after_old_bd1baa", "ef_rem26_after_sf_2b8c79"],
+    "seconds": 6
   },
-  "connreset": {
-   "first": 200,
-   "first_body": "{\"result\":{\"roleId\":2,\"firstName\":\"Alta\",\"lastName\":\"connreset\",\"email\":\"alta-connreset@example.com\",\"roleKind\":\"SEGURIDAD\",\"active\":true,\"createdAt\":\"2026-11-0",
-   "leaks_internal": false,
-   "account_created": true,
-   "second": 400,
-   "second_body": "{\"error\":\"Ya existe un usuario con ese correo.\"}",
-   "accounts": 1,
-   "invitation_tokens": 1,
-   "outbox": [
-    {
-     "estado": "PENDIENTE",
-     "intentos": 1,
-     "error": "ERROR"
-    }
-   ]
+  "flood": {
+    "idle": {
+      "p50": 9.4,
+      "p95": 13.3,
+      "max": 22.9,
+      "codes": {
+        "200": 40
+      }
+    },
+    "during_flood": {
+      "p50": 12.2,
+      "p95": 17.6,
+      "max": 21.7,
+      "codes": {
+        "200": 40
+      }
+    },
+    "flood_codes": {
+      "200": 1126,
+      "429": 28100
+    },
+    "db": "ef_rem26_after_fl_cde4c1",
+    "seconds": 6
   },
-  "db": "ef_rem26_after_ml_751c80",
-  "seconds": 2
- },
- "surface": {
-  "unmigrated_started": true,
-  "unmigrated_start_log": [
-   "La base no está al día, falta: limite_acceso, origen_conocido, correo_saliente, pagos.referencia. Aplica las migraciones: npm run db:setup (docs/SETUP.md)."
-  ],
-  "unmigrated_login": 503,
-  "unmigrated_rpc": [
-   500,
-   "{\"error\":\"Ocurrió un error inesperado. Inténtalo de nuevo; si continúa, avisa al administrador.\"}"
-  ],
-  "headers_health": {
-   "cache-control": "no-store",
-   "x-content-type-options": "nosniff",
-   "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
-   "referrer-policy": "no-referrer",
-   "x-frame-options": null,
-   "strict-transport-security": null
+  "sweep": {
+    "methods": 126,
+    "anonymous": {
+      "401": 126
+    },
+    "not_allowlisted": {
+      "Object.constructor": 404,
+      "UserService.__proto__": 404,
+      "UserService.profileAccount": 404,
+      "AuthService.login": 404,
+      "PaymentsGatewayService.crearPreferencia": 404
+    },
+    "tutor": {
+      "ok": [
+        "BillingService.statement",
+        "PortalService.attendance",
+        "PortalService.child",
+        "PortalService.noticeList",
+        "PortalService.overview",
+        "PortalService.profile"
+      ],
+      "leak": [],
+      "err500": []
+    },
+    "coach": {
+      "ok": [
+        "CategoryService.get",
+        "CategoryService.members",
+        "CoachPanelService.categoryOptions",
+        "CoachPanelService.competitionOptions",
+        "CoachPanelService.myCategories",
+        "CoachPanelService.myCompetitions",
+        "CoachPanelService.myMatches",
+        "CoachPanelService.notices",
+        "CoachPanelService.sessions",
+        "CoachPanelService.weeklySchedule",
+        "TrainingService.get",
+        "TrainingService.saveNotes"
+      ],
+      "leak": [],
+      "err500": []
+    },
+    "s03_coach": {
+      "foreign_session": {
+        "s": 403,
+        "e": "No tienes acceso a esta sesión."
+      },
+      "missing_session": {
+        "s": 403,
+        "e": "No tienes acceso a esta sesión."
+      }
+    },
+    "sqli_login": 401,
+    "sqli_search": [200, 0],
+    "tables_after_sqli": 45,
+    "csrf_text_plain": 400,
+    "cors_preflight": [404, null],
+    "reuse_after_logout": 401,
+    "forged_cookie": 401,
+    "stderr_has_sql_params": false,
+    "db": "ef_rem26_after_sw_5d85ab",
+    "seconds": 7
   },
-  "cookie_dev": "charales_sid=<v>; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800",
-  "dev_start_warns_insecure_cookie": true,
-  "production_started": true,
-  "cookie_production": "charales_sid=<v>; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800; Secure",
-  "lab_jugadores_production": 404,
-  "lab_categorias_production": 404,
-  "reset_production_no_mail": 503,
-  "production_http_app_url_started": false,
-  "production_mail_console_started": false,
-  "bundle_files_with_demo1234": 0,
-  "bundle_files_with_example_accounts": 1,
-  "bundle_files_with_zod": 0,
-  "db": [
-   "ef_rem26_after_old_bd1baa",
-   "ef_rem26_after_sf_2b8c79"
-  ],
-  "seconds": 6
- },
- "flood": {
-  "idle": {
-   "p50": 9.4,
-   "p95": 13.3,
-   "max": 22.9,
-   "codes": {
-    "200": 40
-   }
-  },
-  "during_flood": {
-   "p50": 12.2,
-   "p95": 17.6,
-   "max": 21.7,
-   "codes": {
-    "200": 40
-   }
-  },
-  "flood_codes": {
-   "200": 1126,
-   "429": 28100
-  },
-  "db": "ef_rem26_after_fl_cde4c1",
-  "seconds": 6
- },
- "sweep": {
-  "methods": 126,
-  "anonymous": {
-   "401": 126
-  },
-  "not_allowlisted": {
-   "Object.constructor": 404,
-   "UserService.__proto__": 404,
-   "UserService.profileAccount": 404,
-   "AuthService.login": 404,
-   "PaymentsGatewayService.crearPreferencia": 404
-  },
-  "tutor": {
-   "ok": [
-    "BillingService.statement",
-    "PortalService.attendance",
-    "PortalService.child",
-    "PortalService.noticeList",
-    "PortalService.overview",
-    "PortalService.profile"
-   ],
-   "leak": [],
-   "err500": []
-  },
-  "coach": {
-   "ok": [
-    "CategoryService.get",
-    "CategoryService.members",
-    "CoachPanelService.categoryOptions",
-    "CoachPanelService.competitionOptions",
-    "CoachPanelService.myCategories",
-    "CoachPanelService.myCompetitions",
-    "CoachPanelService.myMatches",
-    "CoachPanelService.notices",
-    "CoachPanelService.sessions",
-    "CoachPanelService.weeklySchedule",
-    "TrainingService.get",
-    "TrainingService.saveNotes"
-   ],
-   "leak": [],
-   "err500": []
-  },
-  "s03_coach": {
-   "foreign_session": {
-    "s": 403,
-    "e": "No tienes acceso a esta sesión."
-   },
-   "missing_session": {
-    "s": 403,
-    "e": "No tienes acceso a esta sesión."
-   }
-  },
-  "sqli_login": 401,
-  "sqli_search": [
-   200,
-   0
-  ],
-  "tables_after_sqli": 45,
-  "csrf_text_plain": 400,
-  "cors_preflight": [
-   404,
-   null
-  ],
-  "reuse_after_logout": 401,
-  "forged_cookie": 401,
-  "stderr_has_sql_params": false,
-  "db": "ef_rem26_after_sw_5d85ab",
-  "seconds": 7
- },
- "databases": [
-  "ef_rem26_after_r1_bcb447",
-  "ef_rem26_after_tp_522f2f",
-  "ef_rem26_after_rs_fe5da7",
-  "ef_rem26_after_ml_751c80",
-  "ef_rem26_after_old_bd1baa",
-  "ef_rem26_after_sf_2b8c79",
-  "ef_rem26_after_fl_cde4c1",
-  "ef_rem26_after_sw_5d85ab"
- ]
+  "databases": [
+    "ef_rem26_after_r1_bcb447",
+    "ef_rem26_after_tp_522f2f",
+    "ef_rem26_after_rs_fe5da7",
+    "ef_rem26_after_ml_751c80",
+    "ef_rem26_after_old_bd1baa",
+    "ef_rem26_after_sf_2b8c79",
+    "ef_rem26_after_fl_cde4c1",
+    "ef_rem26_after_sw_5d85ab"
+  ]
 }

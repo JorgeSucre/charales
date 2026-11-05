@@ -1,65 +1,51 @@
 {
- "code": "/private/tmp/claude-501/-Users-jorgesucre-Projects-6A-ingenieria-software-charales-project/c16807e6-b80d-4f6b-ba11-9084c59dd6a1/scratchpad/rem/base",
- "label": "before2",
- "at": "2026-11-05T14:56:33.786Z",
- "node": "v26.13.0",
- "reset": {
-  "rounds": [
-   {
-    "requests": 50000,
-    "ms": 3911,
-    "codes": {
-     "204": 50000
+  "code": "/private/tmp/claude-501/-Users-jorgesucre-Projects-6A-ingenieria-software-charales-project/c16807e6-b80d-4f6b-ba11-9084c59dd6a1/scratchpad/rem/base",
+  "label": "before2",
+  "at": "2026-11-05T14:56:33.786Z",
+  "node": "v26.13.0",
+  "reset": {
+    "rounds": [
+      {
+        "requests": 50000,
+        "ms": 3911,
+        "codes": {
+          "204": 50000
+        },
+        "rss_kb": 196832
+      },
+      {
+        "requests": 100000,
+        "ms": 3441,
+        "codes": {
+          "204": 50000
+        },
+        "rss_kb": 182288
+      },
+      {
+        "requests": 200000,
+        "ms": 6222,
+        "codes": {
+          "204": 100000
+        },
+        "rss_kb": 233104
+      }
+    ],
+    "rss_start_kb": 170512,
+    "rss_peak_kb": 240592,
+    "rss_end_kb": 233104,
+    "same_account_same_ip_8": [204, 204, 204, 204, 204, 429, 429, 429],
+    "same_account_30_ips": {
+      "204": 30
     },
-    "rss_kb": 196832
-   },
-   {
-    "requests": 100000,
-    "ms": 3441,
-    "codes": {
-     "204": 50000
+    "tokens_issued_for_victim": 30,
+    "mail_sent_to_victim": 30,
+    "reset_timing_ms": {
+      "existing_median": 2.07,
+      "unknown_median": 0.54,
+      "n": [20, 20]
     },
-    "rss_kb": 182288
-   },
-   {
-    "requests": 200000,
-    "ms": 6222,
-    "codes": {
-     "204": 100000
-    },
-    "rss_kb": 233104
-   }
-  ],
-  "rss_start_kb": 170512,
-  "rss_peak_kb": 240592,
-  "rss_end_kb": 233104,
-  "same_account_same_ip_8": [
-   204,
-   204,
-   204,
-   204,
-   204,
-   429,
-   429,
-   429
-  ],
-  "same_account_30_ips": {
-   "204": 30
+    "db": "ef_rem26_before2_rs_1dcada",
+    "seconds": 27
   },
-  "tokens_issued_for_victim": 30,
-  "mail_sent_to_victim": 30,
-  "reset_timing_ms": {
-   "existing_median": 2.07,
-   "unknown_median": 0.54,
-   "n": [
-    20,
-    20
-   ]
-  },
-  "db": "ef_rem26_before2_rs_1dcada",
-  "seconds": 27
- },
- "databases": [
-  "ef_rem26_before2_rs_1dcada"
- ]
+  "databases": ["ef_rem26_before2_rs_1dcada"]
 }
