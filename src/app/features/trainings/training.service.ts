@@ -103,8 +103,7 @@ export class TrainingService {
 
   /** HU-029/HU-030: the session with its group (active members of the category on that date) and their attendance. */
   async get(id: Id): Promise<SessionDetail> {
-    const s = this.db.get(this.db.trainingSessions, id, 'Sesión');
-    if (!this.inScope(s)) throw new ForbiddenError('No tienes acceso a esta sesión.');
+    const s = this.sessionFor(id, (x) => this.inScope(x), 'No tienes acceso a esta sesión.');
     const recorded = new Map(
       this.db.attendance.filter((a) => a.sessionId === id).map((a) => [a.playerId, a]),
     );
@@ -251,11 +250,11 @@ export class TrainingService {
     id: Id,
     draft: { objective: string | null; notes: string | null },
   ): Promise<void> {
-    const before = this.db.get(this.db.trainingSessions, id, 'Sesión');
-    if (!this.canRecord(before))
-      throw new ForbiddenError(
-        'Sólo el entrenador asignado o un administrador pueden editar la sesión.',
-      );
+    const before = this.sessionFor(
+      id,
+      (s) => this.canRecord(s),
+      'Sólo el entrenador asignado o un administrador pueden editar la sesión.',
+    );
     const updated = this.db.update(this.db.trainingSessions, id, {
       objective: optional(draft.objective, 'El objetivo'),
       notes: optional(draft.notes, 'Las observaciones', 5000),
@@ -292,6 +291,19 @@ export class TrainingService {
    */
   inScope(s: TrainingSession): boolean {
     return this.authz.has('entrenamientos.consultar') || this.coachesSession(s);
+  }
+
+  /**
+   * The session `id` if `allowed` for the caller; otherwise ForbiddenError(`message`) — for a missing id too, so a
+   * refusal never tells whether the session exists (B-2, docs/AUTHORIZATION.md). Only a caller who may already read
+   * every session (entrenamientos.consultar) gets the usual «Sesión no encontrado.» for a missing id.
+   */
+  sessionFor(id: Id, allowed: (s: TrainingSession) => boolean, message: string): TrainingSession {
+    const s = this.db.trainingSessions.find((x) => x.id === id);
+    if (s && allowed(s)) return s;
+    if (!s && this.authz.has('entrenamientos.consultar'))
+      return this.db.get(this.db.trainingSessions, id, 'Sesión'); // throws the 400 «no encontrado»
+    throw new ForbiddenError(message);
   }
 
   /**
