@@ -3,8 +3,7 @@
  * inactive and wrong password; `sesiones` stores only the token hash; 8 h lifetime and 30 min idle timeout;
  * LOGIN/LOGOUT and failed attempts go to `auditoria`. The token travels only in an HttpOnly cookie (MARIADB.md § 8.3).
  */
-import { argon2, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { promisify } from 'node:util';
+import crypto, { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Pool, PoolConnection } from 'mariadb';
 import type { Ctx, Reply } from './server.ts';
 import { reserveLogin, settleLogin, type Reservation } from './login-limit.ts';
@@ -20,6 +19,7 @@ process.env.TZ = SCHOOL_TZ;
 
 const INVALID = 'Correo o contraseña incorrectos.';
 const TOO_MANY = 'Demasiados intentos. Intenta de nuevo más tarde.';
+export const BUSY = 'El servicio está ocupado. Intenta de nuevo en unos segundos.';
 const LOGIN_UNAVAILABLE =
   'El inicio de sesión no está disponible. Intenta de nuevo en unos minutos.';
 export const NO_SESSION = 'Tu sesión no está iniciada o ya expiró. Inicia sesión de nuevo.';
@@ -28,14 +28,28 @@ const FORBIDDEN = 'No tienes permiso para realizar esta acción.';
 
 // ---------------------------------------------------------------- passwords (argon2id, PHC string)
 
-const argon2Async = promisify(argon2);
 /** OWASP minimum for argon2id: 19 MiB, 2 passes, 1 lane. */
 const ARGON = { memory: 19456, passes: 2, parallelism: 1, tagLength: 32 };
 const b64 = (b: Buffer) => b.toString('base64').replace(/=+$/, '');
 
+/** Argon2id runs of this process: total, running now and the most at once (S-02 tests read them). */
+let runs = 0;
+let running = 0;
+let peak = 0;
+export const argon2Stats = () => ({ runs, running, peak });
+export const resetArgon2Peak = () => void (peak = running);
+/** `crypto.argon2` is read at call time (not bound at import) so a test can make it fail. */
+function argon2id(params: Parameters<typeof crypto.argon2>[1]): Promise<Buffer> {
+  runs++;
+  peak = Math.max(peak, ++running);
+  return new Promise<Buffer>((resolve, reject) =>
+    crypto.argon2('argon2id', params, (e, key) => (e ? reject(e) : resolve(key))),
+  ).finally(() => void running--);
+}
+
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
-  const hash = await argon2Async('argon2id', { message: password, nonce: salt, ...ARGON });
+  const hash = await argon2id({ message: password, nonce: salt, ...ARGON });
   return `$argon2id$v=19$m=${ARGON.memory},t=${ARGON.passes},p=${ARGON.parallelism}$${b64(salt)}$${b64(hash)}`;
 }
 
@@ -48,7 +62,7 @@ export async function verifyPassword(password: string, stored: string): Promise<
   const m = /^\$argon2id\$v=19\$m=(\d+),t=(\d+),p=(\d+)\$([^$]+)\$([^$]+)$/.exec(stored);
   if (!m) return false;
   const expected = Buffer.from(m[5]!, 'base64');
-  const actual = await argon2Async('argon2id', {
+  const actual = await argon2id({
     message: password,
     nonce: Buffer.from(m[4]!, 'base64'),
     memory: Number(m[1]),
@@ -120,7 +134,15 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
     'SELECT id, rol_id, nombre, apellido, email, password_hash, activo FROM usuarios WHERE email = ?',
     [email.trim()],
   );
-  const passwordOk = await verifyPassword(password, row?.password_hash ?? (await DUMMY_HASH));
+  // S-02: the verification holds a slot of this process's Argon2id gate. None in time: 503, nothing verified, and the
+  // S-01 reservation is given back — the attempt never happened.
+  const dummy = await DUMMY_HASH;
+  const turn = await ctx.argon2.run(() => verifyPassword(password, row?.password_hash ?? dummy));
+  if (turn.busy) {
+    await settleLogin(ctx.limiterDb, reservation, 'not-verified');
+    return { status: 503, body: { error: BUSY } };
+  }
+  const passwordOk = turn.value;
   if (!row || !passwordOk || !row.activo) {
     // A correct password on a disabled account isn't a guess: only wrong passwords keep their reservation.
     await settleLogin(ctx.limiterDb, reservation, passwordOk ? 'right-password' : 'failed');

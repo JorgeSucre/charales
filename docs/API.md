@@ -122,6 +122,49 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
     - **Memoria de rechazos:** un rechazo recordado puede durar hasta 10 s más que la ventana.
     - **Seudónimos, no anónimos:** los hashes se revierten con un diccionario de correos o enumerando las IPv4.
 
+- **Argon2id (S-02, `api/argon2-guard.ts`).** Las contraseñas siguen protegidas con Argon2id (m=19456 KiB, t=2, p=1).
+  Cada operación usa unos **19 MiB** y un hilo del pool de libuv durante decenas de milisegundos. Para que muchas
+  operaciones a la vez no agoten la memoria ni la CPU, cada verificación o hash de una solicitud pasa por un
+  **semáforo local del proceso**, sin MariaDB:
+
+  | Ruta                                | Argon2id                                   | Qué se comprueba antes, sin Argon2id                                                                         |
+  | ----------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+  | `POST /auth/login`                  | 1 verificación                             | Cuerpo y longitudes; límite de intentos de S-01 (un 429 nunca ocupa el semáforo)                             |
+  | `POST /auth/password`               | verificación + hash nuevo, en **un** turno | Sesión; contraseña nueva distinta y con política válida; límite C1; longitudes                               |
+  | `POST /auth/password-reset/confirm` | 1 hash                                     | Política; **token existente, vigente y sin usar**; después, la transacción vuelve a comprobarlo bajo bloqueo |
+  | `POST /auth/password-reset/request` | ninguno                                    | —                                                                                                            |
+  - **Límite por proceso:** `ARGON2_MAX_CONCURRENT` operaciones a la vez, por defecto **3** (unos 57 MiB). **No es un
+    límite global**: con varios procesos de la API, el máximo total es aproximadamente
+    `procesos × ARGON2_MAX_CONCURRENT`. Charales corre **un solo proceso** (`node api/server.ts`, sin cluster, PM2 ni
+    réplicas en el repositorio); si eso cambia, hay que dividir el presupuesto entre los procesos.
+  - **Dimensionamiento:** la memoria de Argon2id es `ARGON2_MAX_CONCURRENT × 19 MiB` por proceso. A eso se suma, por
+    proceso, la memoria base de Node (unos 100–150 MiB), más el buffer pool de MariaDB, los buffers del sistema y un
+    margen; el total debe caber en la memoria real del servidor. Node ejecuta Argon2id en el pool de libuv (4 hilos por
+    defecto, compartidos con archivos y DNS): más de 4 no aporta en un proceso, y 3 deja un hilo libre. Para subirlo,
+    sube también `UV_THREADPOOL_SIZE`. **3 es un valor conservador, no una cifra validada para el servidor de
+    producción**, cuya memoria no se conoce.
+  - **Espera acotada:** sin turno libre, una solicitud espera como mucho `ARGON2_WAIT_MS` (por defecto 2000 ms), y un
+    turno liberado pasa al que lleva más tiempo esperando. Como mucho **32** esperan por proceso; las demás reciben
+    `503` de inmediato. **No hay cola ilimitada.**
+  - **Saturación:** cola llena o espera agotada → **`503`** («El servicio está ocupado. Intenta de nuevo en unos
+    segundos.») sin ejecutar Argon2id.
+    - En el login, el intento de S-01 se devuelve. Mientras espera, el intento cuenta para el límite correo + IP: otros
+      intentos simultáneos de la misma pareja pueden recibir 429.
+    - En el cambio de contraseña se devuelve la reserva C1.
+    - En la recuperación, el token queda sin usar.
+  - **Liberación:** un turno se libera en `finally`, también si Argon2id falla (la solicitud responde el `500`
+    genérico). Liberarlo dos veces no tiene efecto. Al no depender de MariaDB, no hay turnos huérfanos ni vencimientos.
+  - **Configuración:** `ARGON2_MAX_CONCURRENT` (1–64) y `ARGON2_WAIT_MS` (0–10000). Un valor inválido (0, negativo,
+    decimal, NaN o fuera de rango) impide arrancar la API; nunca desactiva la protección.
+  - **Fuera del semáforo:** el hash señuelo del login (uno por proceso, al arrancar) y las herramientas de consola
+    (`create-admin.ts`, `demo.ts`, `node api/auth.ts`). Son una operación cada una, fuera de las solicitudes. La creación
+    de cuentas del dominio usa un hash de prueba con SHA-256, no Argon2id.
+  - **Riesgos residuales:**
+    - Muchas solicitudes admitidas desde muchas IP pueden mantener ocupado el semáforo: los usuarios legítimos reciben
+      503 mientras dure (se pierde disponibilidad, pero el servidor no se agota). El límite de S-01 por IP lo acota,
+      salvo un ataque distribuido (R-1).
+    - Con varios procesos, el límite total crece con su número.
+
 - `auditoria`: `LOGIN`, `LOGOUT` e «Intento de acceso fallido» (módulo `auth`), como el `AuthService` del mock.
 
 ## Endpoints
@@ -318,7 +361,8 @@ anterior corre en producción.
 | Planificador de MariaDB                   | `event_scheduler=ON` en la configuración del servidor para el trabajo diario de VENCIDO (migración 002). Ver [`MARIADB.md`](database/MARIADB.md#migraciones).                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Zona horaria                              | Servidor de base de datos y API en la hora de la escuela (`America/Mexico_City`): `DATETIME` guarda hora local sin zona (`MARIADB.md` § 1).                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Correo (D4c: **Resend**, sin implementar) | Proveedor elegido el 2026-11-02 (DP-04). Tareas de despliegue: un transporte de Resend en `password.mailerFromEnv` (pasa por `withAppUrl`, que vuelve absolutos los enlaces con `APP_URL`), dominio remitente verificado con sus registros DNS, la clave de API como variable de entorno del servidor (nunca en el repositorio) y una prueba real de recuperación e invitación. Hasta entonces la recuperación y las invitaciones responden `503` y no crean nada.                                                                                               |
-| Una sola instancia o varias               | Varias instancias son seguras para los datos (`version_datos`, candado por base) y para el límite del login (en MariaDB, S-01; cada instancia tiene además su pool de 2 conexiones para el limitador). El límite del cambio de contraseña y de la solicitud de recuperación sigue en la memoria de cada proceso.                                                                                                                                                                                                                                                 |
+| Una sola instancia o varias               | Varias instancias son seguras para los datos (`version_datos`, candado por base) y para el límite del login (en MariaDB, S-01; cada instancia tiene además su pool de 2 conexiones para el limitador). El semáforo de Argon2id (S-02) es **por proceso**: con N procesos, el máximo es N × `ARGON2_MAX_CONCURRENT`. El límite del cambio de contraseña y de la solicitud de recuperación sigue en la memoria de cada proceso.                                                                                                                                    |
+| Memoria y Argon2id (S-02)                 | Fijar `ARGON2_MAX_CONCURRENT` por proceso según la memoria del servidor (`× 19 MiB` más Node, MariaDB y margen, multiplicado por el número de procesos) y `ARGON2_WAIT_MS` según la espera aceptable al iniciar sesión.                                                                                                                                                                                                                                                                                                                                          |
 | Respaldo                                  | `db/mariadb/scripts/backup.sh` diario; periodicidad y restauración en [`MARIADB.md` § 6](database/MARIADB.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 **Seguridad de la sesión:** cookie `HttpOnly; SameSite=Strict; Path=/` de 8 h (30 min de inactividad), sólo el SHA-256
