@@ -121,7 +121,7 @@ async function runOperation(
           audit: service === 'AuditService',
           // In the same transaction: the operation and its notice are committed together (F5-08).
           beforeCommit: async (conn, out, before) => {
-            await settleAccountChanges(conn, before, out.tables);
+            await settleAccountChanges(conn, before, out.tables, user.sessionId);
             mailIds.length = 0;
             for (const m of out.outbox)
               mailIds.push(await enqueueMail(conn, m.to, m.subject, tokenHashOf(m.body)));
@@ -142,7 +142,7 @@ async function runOperation(
       };
     } catch (e) {
       const code = (e as { errno?: number }).errno;
-      if (code && RETRYABLE.has(code) && attempt < 3) continue;
+      if (code && RETRYABLE.has(code) && attempt < 5) continue;
       if (e instanceof MailUnavailable || e instanceof LockTimeout)
         return { status: 503, body: { error: e.message } };
       if (d.isForbidden(e)) return { status: 403, body: { error: (e as Error).message } };
@@ -179,22 +179,44 @@ function sessionGate(token: string): Argon2Gate {
 class SchemaError extends Error {}
 
 /**
- * An account that changed e-mail or was deactivated: what trusted the old state stops counting, in the same transaction
- * (audit IND-01, IND-08). Its trusted browsers go, and no queued message may go out; the service already revoked its tokens.
+ * An account that changed e-mail or was deactivated: what trusted the old state stops counting, in the same transaction,
+ * which already holds the account's row (audit IND-01, IND-08, IND2-03). The service revoked what it could see, but its
+ * tables are a snapshot, and a request may have committed since; here it is done on the real rows, sparing only what this
+ * operation just wrote (the new invitation) and the session making the change.
  */
-async function settleAccountChanges(conn: PoolConnection, before: Tables, after: Tables) {
+async function settleAccountChanges(
+  conn: PoolConnection,
+  before: Tables,
+  after: Tables,
+  sessionId: number,
+) {
   const old = new Map((before['users'] ?? []).map((u) => [u['id'], u]));
+  const known = new Set((before['resetTokens'] ?? []).map((t) => t['id']));
+  const written = (after['resetTokens'] ?? [])
+    .filter((t) => !known.has(t['id']))
+    .map((t) => t['tokenHash']);
   for (const user of after['users'] ?? []) {
     const prev = old.get(user['id']);
     if (!prev || prev === user) continue;
-    if (prev['email'] === user['email'] && (user['active'] || !prev['active'])) continue;
-    await revokeDevices(conn, user['id'] as number);
+    const moved = prev['email'] !== user['email'];
+    if (!moved && (user['active'] || !prev['active'])) continue;
     const now = localDateTime();
+    await revokeDevices(conn, user['id'] as number);
     await conn.query(
       `UPDATE correo_saliente SET estado = 'FALLIDO', ultimo_error = 'CUENTA_MODIFICADA', cerrado_en = ?, bloqueado_hasta = NULL
         WHERE usuario_id = ? AND estado IN ('PENDIENTE', 'ENVIANDO')`,
       [now, user['id']],
     );
+    await conn.query(
+      `UPDATE tokens_recuperacion SET usado_en = ?
+        WHERE usuario_id = ? AND usado_en IS NULL AND token_hash NOT IN (?)`,
+      [now, user['id'], written.length ? written : ['']],
+    );
+    if (moved)
+      await conn.query(
+        'UPDATE sesiones SET cerrada_en = ? WHERE usuario_id = ? AND cerrada_en IS NULL AND id <> ?',
+        [now, user['id'], sessionId],
+      );
   }
 }
 

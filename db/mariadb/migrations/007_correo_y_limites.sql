@@ -1,11 +1,13 @@
 -- 007 · Correcciones de la auditoría Fase 5 (2026-11-05). Aditiva e idempotente. Para revertirla: DROP TABLE
 -- correo_saliente, origen_conocido (la API anterior no las usa); los ámbitos nuevos de limite_acceso no estorban.
 --
+-- Las migraciones se reejecutan completas: este ENUM debe contener todos los ámbitos que usa la API, o esta sentencia
+-- fallaría (o vaciaría el ámbito) sobre las filas existentes. 008 define el mismo. Si se añade uno, va en los dos.
 -- limite_acceso: ámbitos nuevos, para que los límites de recuperación (RECUP_IP, RECUP_CUENTA) y de cambio de contraseña
 -- (CAMBIO) se compartan entre procesos y no acumulen memoria. CUENTA ya existía: lo vuelve a usar el límite por cuenta de
 -- R-1, ahora sólo para orígenes desconocidos, de modo que un atacante no bloquee a la persona desde donde suele entrar.
 ALTER TABLE limite_acceso
-    MODIFY ambito ENUM('CUENTA', 'IP', 'CUENTA_IP', 'RECUP_IP', 'RECUP_CUENTA', 'CAMBIO') NOT NULL;
+    MODIFY ambito ENUM('CUENTA', 'IP', 'CUENTA_IP', 'RECUP_IP', 'RECUP_CUENTA', 'CAMBIO', 'CUENTA_RED') NOT NULL;
 
 -- origen_conocido: una cuenta inició sesión correctamente desde esta red (IPv4 o /64 de IPv6). `clave` es un SHA-256:
 -- no guarda correos ni IP. Las filas se borran solas pasados 90 días sin uso.

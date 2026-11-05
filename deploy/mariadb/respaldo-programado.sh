@@ -12,6 +12,11 @@ mkdir -p "$BACKUP_DIR/diario" "$BACKUP_DIR/semanal" "$BACKUP_DIR/mensual"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 PLAIN=$(sh "$HERE/../../db/mariadb/scripts/backup.sh" "$DB" "$WORK")
+# Un volcado puede salir bien sin rutinas si la cuenta no puede leerlas (cuentas.sql): sin ellas no sirve para restaurar.
+gunzip -c "$PLAIN" | grep -q 'marcar_cargos_vencidos' || {
+  echo "respaldo-programado.sh: el volcado no contiene el procedimiento marcar_cargos_vencidos" >&2
+  exit 1
+}
 OUT="$BACKUP_DIR/diario/$(basename "$PLAIN").gpg"
 gpg --batch --yes --trust-model always --recipient "$RECIPIENT" --output "$OUT" --encrypt "$PLAIN"
 [ "$(date +%u)" = 7 ] && cp "$OUT" "$BACKUP_DIR/semanal/"

@@ -1,5 +1,7 @@
 # Informe de remediación integral 2026
 
+> **Documento histórico.** Describe el código `42ba617` (2026-11-05). Después, `f8e26ec` y los commits siguientes cambiaron los límites por cuenta (ya no hay `origen_conocido` ni 20 intentos por ventana) y añadieron navegadores de confianza y retención de correo. El estado vigente está en [`CIERRE_FINAL_REMEDIACION_2026.md`](CIERRE_FINAL_REMEDIACION_2026.md).
+
 Causas raíz, decisiones, riesgos y evidencia de la rama `fix/auditoria-integral-cierre`. Resultados antes y después: [`REPRODUCCION_HALLAZGOS_FASE5_2026.md`](REPRODUCCION_HALLAZGOS_FASE5_2026.md). Seguimiento: [`PLAN_REMEDIACION_INTEGRAL_2026.md`](PLAN_REMEDIACION_INTEGRAL_2026.md).
 
 ## 1. Correcciones y decisiones

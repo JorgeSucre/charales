@@ -162,20 +162,33 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
   const token = randomBytes(32).toString('base64url');
   const now = localDateTime();
   const expiresAt = localDateTime(Date.now() + SESSION_HOURS * 3_600_000);
-  const created = await transaction(db, async (tx) => {
-    const [current]: { password_hash: string; activo: number }[] = await tx.query(
-      'SELECT password_hash, activo FROM usuarios WHERE id = ? FOR UPDATE',
-      [row.id],
-    );
-    if (!current?.activo || current.password_hash !== row.password_hash) return null;
-    const device = await issueDevice(tx, row.id, email, deviceSecret, ctx.secureCookie);
-    const { insertId } = await tx.query(
-      `INSERT INTO sesiones (usuario_id, token_hash, inicio_en, expira_en, ultimo_uso_en, ip, user_agent)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [row.id, sha256(token), now, expiresAt, now, ctx.ip, ctx.userAgent],
-    );
-    return { insertId, device };
-  });
+  // Its own short lock wait: nothing in the API holds this row long, and a stuck one must not take the general pool.
+  let created: { insertId: number; device: string } | null;
+  try {
+    created = await transaction(db, async (tx) => {
+      const [current]: { password_hash: string; activo: number; email: string }[] = await tx.query(
+        'SELECT password_hash, activo, email FROM usuarios WHERE id = ? FOR UPDATE WAIT 2',
+        [row.id],
+      );
+      if (
+        !current?.activo ||
+        current.password_hash !== row.password_hash ||
+        current.email !== row.email
+      )
+        return null;
+      const device = await issueDevice(tx, row.id, email, deviceSecret, ctx.secureCookie);
+      const { insertId } = await tx.query(
+        `INSERT INTO sesiones (usuario_id, token_hash, inicio_en, expira_en, ultimo_uso_en, ip, user_agent)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [row.id, sha256(token), now, expiresAt, now, ctx.ip, ctx.userAgent],
+      );
+      return { insertId, device };
+    });
+  } catch (e) {
+    console.error('No se pudo abrir la sesión:', (e as Error).message);
+    await settleLogin(ctx.limiterDb, reservation, 'not-verified');
+    return { status: 503, body: { error: LOGIN_UNAVAILABLE } };
+  }
   if (!created) {
     await settleLogin(ctx.limiterDb, reservation, 'failed');
     return { status: 401, body: { error: INVALID } };
@@ -201,10 +214,7 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
       expiresAt: toJson(expiresAt),
       lastUsedAt: toJson(now),
     },
-    cookie: [
-      sessionCookie(token, SESSION_HOURS * 3600, ctx.secureCookie),
-      ...(device ? [device] : []),
-    ],
+    cookie: [sessionCookie(token, SESSION_HOURS * 3600, ctx.secureCookie), device],
   };
 }
 

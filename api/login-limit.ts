@@ -13,9 +13,10 @@
  * - CUENTA (account, every network): a budget of 10 that recovers 1 every 30 minutes — the brake on guessing one account
  *   from many networks. At most 58 guesses the first day and 48 a day after that, however many addresses the attacker has.
  *   It refills on its own, so it never locks an account for good. A right password gives its attempt back;
- * - CUENTA_RED (account + wide network): a budget of 8 that recovers 1 every 3 hours, 8 a day — so one origin can't keep
- *   CUENTA empty by retaking each attempt as it comes back (audit IND-03): that takes at least 6 allocations. Someone
- *   mistyping on a new browser can still try again when the 15 minutes of CUENTA_IP are over.
+ * - CUENTA_RED (account + wide network): a budget of 8 that recovers 1 every 6 hours, 4 a day — so one origin can't keep
+ *   CUENTA empty by retaking each attempt as it comes back (audit IND-03): that takes about 12 allocations. Someone mistyping
+ *   on a new browser can still try again when the 15 minutes of CUENTA_IP are over; the price is that whoever shares a /24
+ *   or a /48 with an account's owner can use up that account's share there (audit IND2-05), never a whole network at once.
  *
  * A browser the account already logged in from skips them all (api/device-trust.ts): it has its own, stricter limit. So an
  * attacker can't lock the owner out from where they log in (audit H-2). What is left: during a sustained attack from several
@@ -43,8 +44,8 @@ export const LOGIN_WINDOW_MS = 15 * 60_000;
 export const LOGIN_LIMITS = { CUENTA_IP: 5, IP: 50, CUENTA: 10, CUENTA_RED: 8 } as const;
 /** The account-wide budget recovers one attempt this often. 48 guesses a day sustained; see the header. */
 export const ACCOUNT_REFILL_MS = 30 * 60_000;
-/** One wide network's share of an account: 8 attempts a day. */
-export const WIDE_NETWORK_REFILL_MS = 3 * 3_600_000;
+/** One wide network's share of an account: 4 attempts a day once spent. */
+export const WIDE_NETWORK_REFILL_MS = 6 * 3_600_000;
 /** Password recovery budgets: a network, and an account from every network (e-mail bombing: 29 e-mails the first day). */
 export const RESET_LIMITS = { RECUP_IP: 20, RECUP_CUENTA: 5 } as const;
 export const RESET_IP_REFILL_MS = 15 * 60_000;
@@ -144,26 +145,6 @@ function remember(key: string): void {
   refused.set(key, Date.now() + REFUSAL_CACHE_MS);
 }
 
-/** Invented browser cookies a network may try per interval before they stop being looked up. */
-const BAD_DEVICE_LOOKUPS = 20;
-const badDevices = new Map<string, { count: number; until: number }>();
-function deviceLookupAllowed(bucket: string): boolean {
-  const entry = badDevices.get(bucket);
-  if (!entry || entry.until <= Date.now()) {
-    badDevices.delete(bucket);
-    return true;
-  }
-  return entry.count < BAD_DEVICE_LOOKUPS;
-}
-function countBadDevice(bucket: string): void {
-  const entry = badDevices.get(bucket);
-  if (entry && entry.until > Date.now()) entry.count++;
-  else {
-    if (badDevices.size >= REFUSAL_CACHE_MAX) badDevices.delete(badDevices.keys().next().value!);
-    badDevices.set(bucket, { count: 1, until: Date.now() + REFUSAL_CACHE_MS });
-  }
-}
-
 /**
  * Reserves one attempt, or refuses it (→ null: answer 429 without verifying). A trusted browser (`deviceSecret`) reserves on
  * its own row; anything else on every counter, or none if one is at its limit.
@@ -178,16 +159,12 @@ export async function reserveLogin(
   const bucket = limitBucket(ip);
   const ipKey = sha256(`IP|${bucket}`);
   // A cookie has to be looked up, even for a network at its limit: that is the point of it. A bad one is remembered by its
-  // own hash, so it can't refuse a good one; and a network that keeps inventing them runs out of lookups for a few seconds,
-  // or it could reach MariaDB as often as it wanted.
-  if (
-    deviceSecret &&
-    !refusedNow(sha256(`DISP_MALO|${deviceSecret}`)) &&
-    deviceLookupAllowed(bucket)
-  ) {
+  // own hash, so repeating it costs nothing and it can never refuse a good one. Inventing new ones costs one lookup by
+  // primary key each: no cut per network here, it would let anyone there switch off every valid browser (audit IND2-06).
+  // The proxy's rate limit is what bounds that flood (deploy/nginx/charales.conf).
+  if (deviceSecret && !refusedNow(sha256(`DISP_MALO|${deviceSecret}`))) {
     if (await reserveDevice(db, deviceSecret, email)) return { keys: [], device: deviceSecret };
     remember(sha256(`DISP_MALO|${deviceSecret}`));
-    countBadDevice(bucket);
   }
   if (refusedNow(ipKey)) return null; // a network at its limit doesn't even reach MariaDB
   const identity = await accountIdentity(db, email);
@@ -361,7 +338,7 @@ export async function reserveResetRequest(
   ip: string,
   email: string,
 ): Promise<'ok' | 'quiet' | 'refused'> {
-  const ipKey = sha256(`RECUP_IP|${limitBucket(ip)}`);
+  const ipKey = sha256(`RECUP_IP|${wideBucket(ip)}`); // a /24 or /48: /64s come free
   if (refusedNow(ipKey)) return 'refused';
   const accountKey = sha256(`RECUP_CUENTA|${await accountIdentity(db, email)}`);
   if (refusedNow(accountKey)) return 'quiet';
@@ -410,7 +387,8 @@ export async function clearPasswordChange(db: Pool, userId: number): Promise<voi
  * that succeeds also clears the account's counters for that network (the owner is in), while the address only gets its
  * one attempt back, so logging into one's own account can't reset an address that is guessing others. The account-wide
  * counter only gets its one attempt back too: the owner logging in doesn't reset an attack from elsewhere. A right password
- * on a disabled account is not a guess either: its attempts go back, nothing is cleared.
+ * on an account without a role is not a guess either: its attempts go back, nothing is cleared. On a disabled account it
+ * costs its attempt: giving it back would reveal, through the counters, that it was right (audit IND-11).
  * `not-verified` (S-02: no Argon2id turn, the password was never checked) gives the attempt back the same way.
  * A failure here only leaves the counters one higher (the safe side), so it is logged and the login goes on.
  */
@@ -446,5 +424,4 @@ export async function settleLogin(
 /** Test seam: forget the refusals remembered by this process. */
 export function forgetRefusals(): void {
   refused.clear();
-  badDevices.clear();
 }

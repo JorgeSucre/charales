@@ -105,6 +105,7 @@ export async function changePassword(ctx: Ctx, db: Pool): Promise<Reply> {
   if (turn.value === null) return { status: 400, body: { error: WRONG_CURRENT } };
   await releasePasswordChange(ctx.limiterDb, s.user.id);
   const hash = turn.value;
+  let device = '';
   const outcome = await transaction(db, async (tx) => {
     // R1: lock order usuarios → sesiones (same as recovery). Re-check under the lock what was read before: the
     // session is still open and the password is still the one just verified (no concurrent change or reset).
@@ -121,6 +122,7 @@ export async function changePassword(ctx: Ctx, db: Pool): Promise<Reply> {
     const now = localDateTime(); // after the locks: a request that waited stamps the time it actually applied
     await tx.query('UPDATE usuarios SET password_hash = ? WHERE id = ?', [hash, s.user.id]);
     await revokeDevices(tx, s.user.id); // whoever knew the old password may have trusted a browser
+    device = await issueDevice(tx, s.user.id, s.user.email, null, ctx.secureCookie);
     await tx.query(
       'UPDATE sesiones SET cerrada_en = ? WHERE usuario_id = ? AND cerrada_en IS NULL AND id <> ?',
       [now, s.user.id, s.sessionId],
@@ -142,8 +144,7 @@ export async function changePassword(ctx: Ctx, db: Pool): Promise<Reply> {
   // Not a guess (the password was right when read), so it doesn't count toward the limit.
   if (outcome === 'password-changed') return { status: 400, body: { error: WRONG_CURRENT } };
   await clearPasswordChange(ctx.limiterDb, s.user.id);
-  const device = await issueDevice(ctx.limiterDb, s.user.id, s.user.email, null, ctx.secureCookie);
-  return { status: 204, ...(device ? { cookie: device } : {}) };
+  return { status: 204, cookie: device };
 }
 
 /** POST /auth/password-reset/request { email } — always 204 (or 503 / 429), whatever the account (HU-001.2, D7). */
@@ -185,14 +186,17 @@ async function issueRecovery(db: Pool, mailer: Mailer, normalized: string): Prom
   );
   if (!user) return;
   const token = randomBytes(32).toString('base64url');
+  let address = user.email;
   const mailId = await transaction(db, async (tx) => {
     // R2: lock the account row first (order usuarios → tokens_recuperacion, as in confirm), so concurrent
     // requests for one account run one after the other instead of deadlocking on the token index gap.
-    const [locked]: { id: number }[] = await tx.query(
-      'SELECT id FROM usuarios WHERE id = ? AND activo FOR UPDATE',
+    // What matters is the address the account has NOW, under its lock: it may have changed since the read above (IND2-03).
+    const [locked]: { id: number; email: string }[] = await tx.query(
+      'SELECT id, email FROM usuarios WHERE id = ? AND activo FOR UPDATE',
       [user.id],
     );
-    if (!locked) return null;
+    if (locked?.email.toLowerCase() !== normalized) return null;
+    address = locked.email;
     const now = localDateTime();
     // D3b/D3d: revoke the earlier live recovery tokens, keeping the rows; invitations are another purpose (D3e).
     await tx.query(
@@ -205,7 +209,7 @@ async function issueRecovery(db: Pool, mailer: Mailer, normalized: string): Prom
        VALUES (?, 'RECUPERACION', ?, ?, ?)`,
       [user.id, sha256(token), now, localDateTime(Date.now() + RESET_TOKEN_MINUTES * 60_000)],
     );
-    return enqueueMail(tx, user.email, RESET_SUBJECT, sha256(token));
+    return enqueueMail(tx, address, RESET_SUBJECT, sha256(token));
   });
   // deliverMail never throws; a failure stays in correo_saliente for the worker.
   if (mailId !== null)
@@ -213,7 +217,7 @@ async function issueRecovery(db: Pool, mailer: Mailer, normalized: string): Prom
       db,
       mailer,
       mailId,
-      user.email,
+      address,
       RESET_SUBJECT,
       accessMailText('RECUPERACION', token),
     );
@@ -244,6 +248,7 @@ export async function confirmPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
   const turn = await ctx.argon2.run(() => hashPassword(newPassword));
   if (turn.busy) return { status: 503, body: { error: BUSY } }; // the token is untouched
   const hash = turn.value;
+  let device = '';
   const done = await transaction(db, async (tx) => {
     // Lock order usuarios → tokens_recuperacion → sesiones, the same as change and request (R1/R2); only locking
     // reads in here, and the token is re-checked under the lock.
@@ -261,6 +266,12 @@ export async function confirmPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
     await tx.query('UPDATE tokens_recuperacion SET usado_en = ? WHERE id = ?', [now, row.id]);
     await tx.query('UPDATE usuarios SET password_hash = ? WHERE id = ?', [hash, row.usuario_id]);
     await revokeDevices(tx, row.usuario_id);
+    // The account's other live links too: the password was just set, and they may have gone elsewhere (audit IND2-08).
+    await tx.query(
+      'UPDATE tokens_recuperacion SET usado_en = ? WHERE usuario_id = ? AND usado_en IS NULL',
+      [now, row.usuario_id],
+    );
+    device = await issueDevice(tx, row.usuario_id, owner!.email, null, ctx.secureCookie);
     await tx.query(
       'UPDATE sesiones SET cerrada_en = ? WHERE usuario_id = ? AND cerrada_en IS NULL',
       [now, row.usuario_id],
@@ -275,12 +286,11 @@ export async function confirmPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
       ctx.ip,
       'usuarios',
     );
-    return owner ?? false;
+    return true;
   });
-  if (done === false) return { status: 400, body: { error: INVALID_LINK } };
+  if (!done) return { status: 400, body: { error: INVALID_LINK } };
   // The link proved the account: this browser is trusted from now on, so an attack can't keep this person out.
-  const device = await issueDevice(ctx.limiterDb, done.id, done.email, null, ctx.secureCookie);
-  return { status: 204, cookie: [clearCookie(ctx.secureCookie), ...(device ? [device] : [])] };
+  return { status: 204, cookie: [clearCookie(ctx.secureCookie), device] };
 }
 
 /**

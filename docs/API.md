@@ -122,7 +122,8 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
     (medido). Se recarga solo, así que nunca bloquea para siempre: cuando el ataque termina, un intento cabe en 30 min como
     máximo. Una contraseña correcta devuelve su intento, sin reiniciar el ataque.
   - **Parte de cada origen (`CUENTA_RED`, IND-03):** una asignación (/24 de IPv4 o /48 de IPv6) gasta como máximo 8 intentos de una
-    cuenta y recupera 1 cada 3 h. Para mantener vacío el presupuesto hacen falta al menos 6 asignaciones, no un solo origen.
+    cuenta y recupera 1 cada 6 h. Para mantener vacío el presupuesto hacen falta unas 12 asignaciones, no un solo origen. Precio:
+    quien comparta /24 o /48 con el dueño puede agotar esa parte para esa cuenta, nunca para toda la red (IND2-05).
   - **Navegador de confianza (`api/device-trust.ts`, migración 008):** el navegador desde el que una cuenta ya entró guarda un
     secreto en una cookie `HttpOnly; SameSite=Strict; Path=/auth`, y `Secure` en producción. MariaDB sólo guarda su SHA-256,
     ligado a la cuenta. Ese navegador no gasta los límites compartidos, en ninguna red, así que un atacante no puede
@@ -139,7 +140,11 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
       permitiría probar contraseñas sin límite. Sus vías: un enlace de recuperación, que además hace de confianza ese navegador,
       o uno generado por quien administra el servidor (`npm run db:access-link -- <correo>`, se entrega por otro canal). **Sin
       correo real en producción sólo queda la segunda.** Tras el despliegue, todos cuentan como navegador nuevo hasta su primer login.
+    - **Bloqueo con varias redes:** unas 12 asignaciones sostenidas dejan sin intentos a un navegador nuevo de esa cuenta;
+      los /48 pueden conseguirse gratis. Afecta a una cuenta cada vez y no a navegadores de confianza ni a la recuperación.
     - **Red compartida:** sin navegador de confianza, un atacante en la misma red comparte el contador de red.
+    - **Avalancha de cookies inventadas:** cada una cuesta una consulta por clave primaria. La acota el proxy.
+    - **Tope global de correos:** no hay. Muchas asignaciones y cuentas distintas pueden gastar la cuota del proveedor.
     - **Disponibilidad:** el pool de 2 conexiones puede dejar el login en 503 ante una avalancha desde muchas redes; hay
       que limitarlo también en el proxy (`deploy/nginx/charales.conf`).
     - **Memoria de rechazos:** un rechazo recordado puede durar hasta 10 s más que la ventana.

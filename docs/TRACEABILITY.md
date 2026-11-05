@@ -1,6 +1,6 @@
 # Trazabilidad HU → código → pruebas
 
-> **Estado vigente de las 49 HU de Borrayo, de S-01 a S-04 y de producción:** [`audits/AUDITORIA_FINAL_CIERRE_2026.md`](audits/AUDITORIA_FINAL_CIERRE_2026.md).
+> **Estado vigente de las 49 HU de Borrayo, de S-01 a S-04 y de producción:** [`audits/CIERRE_FINAL_REMEDIACION_2026.md`](audits/CIERRE_FINAL_REMEDIACION_2026.md).
 
 Estado verificado al **2026-10-29** sobre `main` (`9107042`) + los cambios de la rama `jorgesucre/cierre-borrayo`
 (sección «Cierre 2026-10-29»). La tabla por capas de abajo es la auditoría del 2026-10-15; donde difieren, manda la

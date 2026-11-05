@@ -8,7 +8,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { argon2Gate } from './argon2-guard.ts';
-import { argon2Stats } from './auth.ts';
+import { argon2Stats, localDateTime, sha256 } from './auth.ts';
 import { checkEnvironment } from './config.ts';
 import { DEVICE_DAYS, deviceCookieName, reserveDevice } from './device-trust.ts';
 import {
@@ -99,6 +99,21 @@ const adminAt = async (at = base) =>
 const tokenIn = (text: string) => /token=([\w-]+)/.exec(text)![1]!;
 const confirm = (at: string, token: string, client = '192.0.2.201') =>
   post(`${at}/auth/password-reset/confirm`, { token, newPassword: 'Nueva-clave-2847' }, client);
+/** The console tool runs on the real clock and these tests on a fixed one: its link is valid at the tests' time. */
+async function operatorLink(email: string): Promise<string> {
+  const run = spawnSync(process.execPath, ['api/access-link.ts', email], {
+    env: { ...process.env, DB_NAME: t.name, APP_URL: 'https://escuela.example' },
+    encoding: 'utf8',
+  });
+  assert.equal(run.status, 0, run.stderr);
+  const token = tokenIn(run.stdout);
+  assert.match(run.stdout, /^https:\/\/escuela\.example\/reset-password\?token=/);
+  await t.db.query('UPDATE tokens_recuperacion SET expira_en = ? WHERE token_hash = ?', [
+    localDateTime(Date.now() + 3_600_000),
+    sha256(token),
+  ]);
+  return token;
+}
 let serial = 0;
 const staff = () => `alta${++serial}@example.com`;
 
@@ -454,6 +469,11 @@ test('IND-10: an invented cookie from the same network does not cancel a valid o
   assert.equal((await login(OWNER, WRONG, office, `${name}=${'a'.repeat(43)}`)).status, 429);
   const res = await login(OWNER, RIGHT, office, good);
   assert.equal(res.status, 200, 'the valid browser still gets in');
+  // Twenty invented ones later (IND2-06) a valid browser still gets in, and repeating a bad one costs no lookup.
+  for (let i = 0; i < 25; i++)
+    await login(OWNER, WRONG, office, `${name}=${String(i).padStart(43, 'b')}`);
+  const again = await login(OWNER, RIGHT, office, browser(res));
+  assert.equal(again.status, 200);
   let queries = 0;
   const original = t.db.query.bind(t.db);
   (t.db as { query: unknown }).query = (...a: Parameters<typeof original>) => {
@@ -461,12 +481,11 @@ test('IND-10: an invented cookie from the same network does not cancel a valid o
     return original(...a);
   };
   try {
-    for (let i = 0; i < 60; i++)
-      await login(OWNER, WRONG, office, `${name}=${String(i).padStart(43, 'b')}`);
+    for (let i = 0; i < 10; i++) await login(OWNER, WRONG, office, `${name}=${'c'.repeat(43)}`);
   } finally {
     (t.db as { query: unknown }).query = original;
   }
-  assert.ok(queries <= 20, `${queries} lookups`);
+  assert.equal(queries, 1, 'a repeated bad cookie is remembered');
 });
 
 test('IND-11: a right password on a disabled account costs its attempt like a wrong one: the counters reveal nothing', async () => {
@@ -526,4 +545,158 @@ test('audit gap: the budget keeps what it did not refill: 45 minutes bring back 
   await t.advance(ACCOUNT_REFILL_MS / 2 + 1000);
   forgetRefusals();
   assert.equal((await login(OWNER, WRONG, '2001:db8:aa3::1')).status, 401);
+});
+
+test('IND2-01: re-running every migration on a database with rows of every scope changes nothing and fails nowhere', async () => {
+  const { setupDatabase } = await import('./schema.ts');
+  await login(OWNER, WRONG, '192.0.2.100');
+  await post(`${base}/auth/password-reset/request`, { email: 'nadie@example.com' }, '192.0.2.101');
+  await recoveriesSettled();
+  const open = await adminAt();
+  await post(
+    `${base}/auth/password`,
+    { currentPassword: 'mala-1', newPassword: 'Otra-clave-2847' },
+    '192.0.2.102',
+    open,
+  );
+  const rows = () =>
+    t.db.query('SELECT clave, ambito, intentos FROM limite_acceso ORDER BY clave') as Promise<
+      { ambito: string }[]
+    >;
+  const before = await rows();
+  assert.deepEqual([...new Set(before.map((r) => r.ambito))].sort(), [
+    'CAMBIO',
+    'CUENTA',
+    'CUENTA_IP',
+    'CUENTA_RED',
+    'IP',
+    'RECUP_CUENTA',
+    'RECUP_IP',
+  ]);
+  await setupDatabase({ ...process.env, DB_NAME: t.name });
+  assert.deepEqual(await rows(), before);
+});
+
+test('IND2-02: a database without the scope of the running code is reported, not a silent 503 on every login', async () => {
+  const { missingSchema } = await import('./schema.ts');
+  const fake = {
+    query: async () => [
+      { t: 'limite_acceso', c: 'ambito', ct: "enum('CUENTA','IP')" },
+      ...['version_datos', 'dispositivo_confiable'].map((x) => ({ t: x, c: 'id', ct: 'int' })),
+      { t: 'correo_saliente', c: 'cerrado_en', ct: 'datetime' },
+      { t: 'pagos', c: 'referencia', ct: 'varchar(100)' },
+    ],
+  };
+  assert.deepEqual(await missingSchema(fake), ['limite_acceso.ambito (CUENTA_RED)']);
+  assert.deepEqual(await missingSchema(t.db), []);
+});
+
+test('IND2-03: changing the e-mail while a recovery and a login are in flight leaves nothing alive for the old address', async () => {
+  const admin = await adminAt();
+  for (let round = 0; round < 8; round++) {
+    forgetRefusals();
+    await t.db.query('DELETE FROM limite_acceso');
+    const email = staff();
+    const created = await (
+      await rpc(base, admin, 'UserService', 'save', {
+        roleId: 2,
+        firstName: 'A',
+        lastName: 'B',
+        email,
+      })
+    ).json();
+    assert.equal((await confirm(base, tokenIn(t.mail.at(-1)!.text))).status, 204);
+    t.mail.length = 0;
+    const others: Promise<unknown>[] = [];
+    const logins: Promise<Response>[] = [];
+    for (let i = 0; i < 5; i++) {
+      others.push(post(`${base}/auth/password-reset/request`, { email }, `192.0.2.${110 + i}`));
+      logins.push(login(email, 'Nueva-clave-2847', `192.0.2.${120 + i}`));
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    const moved = await rpc(base, admin, 'UserService', 'save', {
+      id: created.result.id,
+      roleId: 2,
+      firstName: 'A',
+      lastName: 'B',
+      email: staff(),
+    });
+    await Promise.all(others);
+    const answers = await Promise.all(logins);
+    await recoveriesSettled();
+    if (moved.status !== 200) continue; // refused by the concurrency: nothing changed, nothing to check
+    for (const m of t.mail.filter((x) => x.to === email))
+      assert.equal(
+        (await confirm(base, tokenIn(m.text))).status,
+        400,
+        `round ${round}: a link to the old address works`,
+      );
+    for (const r of answers)
+      if (r.status === 200) {
+        const alive = await fetch(`${base}/auth/session`, { headers: { Cookie: session(r) } });
+        assert.equal(alive.status, 401, `round ${round}: a session of the old address is alive`);
+      }
+  }
+});
+
+test('IND2-04: a recovery request of an attacker does not undo the link the operator generated', async () => {
+  const email = 'coach@example.com';
+  const [{ password_hash: original }] = await t.db.query(
+    'SELECT password_hash FROM usuarios WHERE email = ?',
+    [email],
+  );
+  const link = await operatorLink(email);
+  await post(`${base}/auth/password-reset/request`, { email }, '192.0.2.130');
+  await recoveriesSettled();
+  assert.equal((await confirm(base, link)).status, 204);
+  await t.db.query('UPDATE usuarios SET password_hash = ? WHERE email = ?', [original, email]);
+});
+
+test('IND2-07: a login blocked on its account answers 503 in seconds and gives everything back', async () => {
+  const email = 'secretaria@example.com';
+  const res = await login(email, RIGHT, '192.0.2.140');
+  const trust = browser(res);
+  const holder = await t.db.getConnection();
+  await holder.beginTransaction();
+  await holder.query('SELECT id FROM usuarios WHERE email = ? FOR UPDATE', [email]);
+  try {
+    const started = performance.now();
+    const blocked = await login(email, RIGHT, '192.0.2.141');
+    assert.equal(blocked.status, 503);
+    assert.ok(performance.now() - started < 4000);
+    const withCookie = await login(email, RIGHT, '192.0.2.142', trust);
+    assert.equal(withCookie.status, 503);
+  } finally {
+    await holder.rollback();
+    holder.release();
+  }
+  const [{ n }] = await t.db.query(
+    "SELECT SUM(intentos) AS n FROM limite_acceso WHERE ambito = 'CUENTA'",
+  );
+  assert.equal(Number(n), 0, 'the attempt went back');
+  const [{ fallos }] = await t.db.query('SELECT MAX(fallos) AS fallos FROM dispositivo_confiable');
+  assert.equal(Number(fallos), 0, 'and so did the browser');
+});
+
+test('IND2-08: setting the password by one link kills the others of the account', async () => {
+  const admin = await adminAt();
+  const email = staff();
+  await rpc(base, admin, 'UserService', 'save', {
+    roleId: 2,
+    firstName: 'A',
+    lastName: 'B',
+    email,
+  });
+  const invitation = tokenIn(t.mail.at(-1)!.text);
+  const link = await operatorLink(email);
+  assert.equal((await confirm(base, invitation)).status, 400, 'the operator replaced it');
+  assert.equal((await confirm(base, link)).status, 204);
+  await post(`${base}/auth/password-reset/request`, { email }, '192.0.2.150');
+  await recoveriesSettled();
+  const recovery = tokenIn(t.mail.at(-1)!.text);
+  await post(`${base}/auth/password-reset/request`, { email }, '192.0.2.151');
+  await recoveriesSettled();
+  const newest = tokenIn(t.mail.at(-1)!.text);
+  assert.equal((await confirm(base, newest)).status, 204);
+  assert.equal((await confirm(base, recovery)).status, 400);
 });

@@ -1,5 +1,7 @@
 # Auditoría final de cierre 2026
 
+> **Documento histórico.** Describe el código `42ba617` (2026-11-05). Después, `f8e26ec` y los commits siguientes cambiaron los límites por cuenta (ya no hay `origen_conocido` ni 20 intentos por ventana) y añadieron navegadores de confianza y retención de correo. El estado vigente está en [`CIERRE_FINAL_REMEDIACION_2026.md`](CIERRE_FINAL_REMEDIACION_2026.md).
+
 | Dato            | Valor                                                                                  |
 | --------------- | -------------------------------------------------------------------------------------- |
 | Fecha           | 2026-11-05                                                                             |

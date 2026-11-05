@@ -1,5 +1,7 @@
 # Plan de remediación integral 2026
 
+> **Actualización del cierre.** La matriz describe `42ba617`, salvo lo indicado aquí. Después: N-06 pasó a Verificado; R-1 bajó de 1 920 a un máximo de 58 adivinanzas el primer día y 48 los siguientes; la auditoría independiente añadió IND-01 a IND-15 e IND2-01 a IND2-11. Estado vigente: [`CIERRE_FINAL_REMEDIACION_2026.md`](CIERRE_FINAL_REMEDIACION_2026.md).
+
 Seguimiento de los hallazgos de [`AUDITORIA_FASE5_2026-11-05.md`](AUDITORIA_FASE5_2026-11-05.md), copia literal del informe original (SHA-256 `559dc542…`, sin cambios).
 
 | Dato              | Valor                                                                   |

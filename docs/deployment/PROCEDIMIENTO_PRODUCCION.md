@@ -2,7 +2,7 @@
 
 **Estado:** este procedimiento **nunca se ha ejecutado**. Charales no está desplegado y no existe un servidor de referencia. Las plantillas de [`deploy/`](../../deploy) son propuestas. Lo marcado «Probado localmente» se ejecutó en una máquina de desarrollo con bases temporales; nada se ha verificado en un entorno de producción.
 
-Antes de usarlo, lee el dictamen vigente en [`AUDITORIA_FINAL_CIERRE_2026.md`](../audits/AUDITORIA_FINAL_CIERRE_2026.md).
+Antes de usarlo, lee el dictamen vigente en [`CIERRE_FINAL_REMEDIACION_2026.md`](../audits/CIERRE_FINAL_REMEDIACION_2026.md).
 
 | Control                                         | Estado                                            |
 | ----------------------------------------------- | ------------------------------------------------- |
@@ -50,7 +50,7 @@ Antes de usarlo, lee el dictamen vigente en [`AUDITORIA_FINAL_CIERRE_2026.md`](.
    - `event_scheduler=ON`, para el trabajo diario de VENCIDO. Compruébalo con `SELECT @@event_scheduler;`.
    - `bind-address=127.0.0.1`, si la API está en la misma máquina.
    - Zona horaria de la escuela (`America/Mexico_City`), también en el proceso de la API.
-4. Copia `deploy/env.production.example` a `/etc/charales/api.env`, modo 640, dueño `root:charales`, y complétalo. **Nunca** en Git. Usa una IP o rango real del proxy en `TRUSTED_PROXIES`: no inventes valores. Si hay un balanceador delante de nginx, añádelo: la API busca de derecha a izquierda el primer salto que no sea de confianza, y la plantilla de nginx añade el cliente a `X-Forwarded-For` sin perder los anteriores.
+4. Copia `deploy/env.production.example` a `/etc/charales/api.env`, modo 640, dueño `root:charales`, y complétalo. **Nunca** en Git. Usa una IP o rango real del proxy en `TRUSTED_PROXIES`: no inventes valores. Si hay un balanceador delante de nginx, añádelo: la API busca de derecha a izquierda el primer salto que no sea de confianza, y la plantilla de nginx añade el cliente a `X-Forwarded-For` sin perder los anteriores. En ese caso activa también `real_ip` en nginx (ver la plantilla), o sus límites agruparán a todos. Un rango amplio en `TRUSTED_PROXIES` permite a quien esté dentro elegir su IP: usa sólo las direcciones del proxy.
 5. Instala `deploy/systemd/charales-api.service`.
 6. Instala `deploy/nginx/charales.conf` y copia `deploy/nginx/security-headers.conf` a `/etc/nginx/snippets/charales-security-headers.conf`. Ajusta el dominio y los certificados, y ejecuta `nginx -t`.
 7. Cierra el puerto de la API y de MariaDB en el cortafuegos: sólo 80 y 443 hacia Internet.

@@ -48,50 +48,45 @@ export async function releaseDevice(db: Pool, secret: string): Promise<void> {
 }
 
 /**
- * After a success: a new secret for this browser, replacing the one it presented. Returns its cookie, or null if it couldn't
- * be stored: the login still succeeds, the browser just isn't trusted next time.
+ * After a success: a new secret for this browser, replacing the one it presented. Returns its cookie. Inside the
+ * transaction that holds the account's lock, so a revocation can't pass it by; a failure fails that transaction.
  */
 export async function issueDevice(
-  db: Pool | PoolConnection,
+  tx: PoolConnection,
   userId: number,
   email: string,
   previous: string | null,
   secure: boolean,
-): Promise<string | null> {
-  try {
-    if (previous && wellFormed(previous))
-      await db.query('DELETE FROM dispositivo_confiable WHERE clave = ? AND usuario_id = ?', [
-        sha256(previous),
-        userId,
-      ]);
-    const secret = randomBytes(32).toString('base64url');
-    const now = Date.now();
-    await db.query(
-      `INSERT INTO dispositivo_confiable (clave, cuenta, usuario_id, fallos, creado_en, vence_en)
-       VALUES (?, ?, ?, 0, ?, ?)`,
-      [
-        sha256(secret),
-        accountHash(email),
-        userId,
-        localDateTime(now),
-        localDateTime(now + DEVICE_DAYS * 86_400_000),
-      ],
-    );
-    const old: { clave: string }[] = await db.query(
-      `SELECT clave FROM dispositivo_confiable WHERE usuario_id = ?
-        ORDER BY creado_en DESC, clave LIMIT 100 OFFSET ${DEVICE_MAX_PER_USER}`,
-      [userId],
-    );
-    if (old.length)
-      await db.query('DELETE FROM dispositivo_confiable WHERE clave IN (?)', [
-        old.map((r) => r.clave),
-      ]);
-    const attributes = `HttpOnly; SameSite=Strict; Path=/auth; Max-Age=${DEVICE_DAYS * 86_400}`;
-    return `${deviceCookieName(email)}=${secret}; ${attributes}${secure ? '; Secure' : ''}`;
-  } catch (e) {
-    console.error('No se pudo registrar el navegador:', (e as Error).message);
-    return null;
-  }
+): Promise<string> {
+  if (previous && wellFormed(previous))
+    await tx.query('DELETE FROM dispositivo_confiable WHERE clave = ? AND usuario_id = ?', [
+      sha256(previous),
+      userId,
+    ]);
+  const secret = randomBytes(32).toString('base64url');
+  const now = Date.now();
+  await tx.query(
+    `INSERT INTO dispositivo_confiable (clave, cuenta, usuario_id, fallos, creado_en, vence_en)
+     VALUES (?, ?, ?, 0, ?, ?)`,
+    [
+      sha256(secret),
+      accountHash(email),
+      userId,
+      localDateTime(now),
+      localDateTime(now + DEVICE_DAYS * 86_400_000),
+    ],
+  );
+  const old: { clave: string }[] = await tx.query(
+    `SELECT clave FROM dispositivo_confiable WHERE usuario_id = ?
+      ORDER BY creado_en DESC, clave LIMIT 100 OFFSET ${DEVICE_MAX_PER_USER}`,
+    [userId],
+  );
+  if (old.length)
+    await tx.query('DELETE FROM dispositivo_confiable WHERE clave IN (?)', [
+      old.map((r) => r.clave),
+    ]);
+  const attributes = `HttpOnly; SameSite=Strict; Path=/auth; Max-Age=${DEVICE_DAYS * 86_400}`;
+  return `${deviceCookieName(email)}=${secret}; ${attributes}${secure ? '; Secure' : ''}`;
 }
 
 /** Every browser of the account stops being trusted. In the transaction of a password change or recovery. */

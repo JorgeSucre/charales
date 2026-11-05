@@ -1,5 +1,7 @@
 # Reproducción de los hallazgos de la Fase 5
 
+> **Documento histórico.** Describe el código `42ba617` (2026-11-05). Después, `f8e26ec` y los commits siguientes cambiaron los límites por cuenta (ya no hay `origen_conocido` ni 20 intentos por ventana) y añadieron navegadores de confianza y retención de correo. El estado vigente está en [`CIERRE_FINAL_REMEDIACION_2026.md`](CIERRE_FINAL_REMEDIACION_2026.md).
+
 Se reprodujeron los hallazgos **antes de corregir**, sobre una copia exacta de `9e08b11`, y se repitieron después con el mismo arnés.
 
 ```sh

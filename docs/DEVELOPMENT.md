@@ -6,7 +6,7 @@ Contexto, equipo y estado por área: [`../PROJECT_CONTEXT.md`](../PROJECT_CONTEX
 ## 0. Qué hay y qué no hay
 
 - **Hay:** frontend Angular con las 76 HU, que usa la API para la sesión y los datos; el modelo MariaDB probado (DDL,
-  migraciones, checks, permisos, respaldo); 251 pruebas del frontend, 386 de la API y 23 E2E (2026-11-05).
+  migraciones, checks, permisos, respaldo); 251 pruebas del frontend, 392 de la API y 23 E2E (2026-11-05).
 - **API:** `api/` con autenticación y contraseñas, y `POST /api/rpc`, que ejecuta los servicios de dominio sobre
   MariaDB (D13), más su colección Postman ([`API.md`](API.md)).
 - **La app usa la API para todo** (sesión y datos): sin la API corriendo, el login muestra «No se pudo conectar con la
@@ -65,7 +65,7 @@ Todos son los que usa el proyecto (`package.json`, [`CONTRIBUTING.md`](../CONTRI
 | Formato                    | `npx prettier --check .` (aplicar: `npx prettier --write .`)                       | Todo con formato                     |
 | Build de producción        | `npm run build` (salida en `dist/`)                                                | Sin errores                          |
 | Esquema MariaDB + respaldo | `npm run db:mariadb:test-backup`                                                   | 42/42 checks; 45/45 tablas idénticas |
-| Pruebas de la API          | `npm run api:test` (bases temporales `ef_*` que se borran al terminar)             | 386/386                              |
+| Pruebas de la API          | `npm run api:test` (bases temporales `ef_*` que se borran al terminar)             | 392/392                              |
 | E2E en navegador           | `npm run e2e` (necesita Google Chrome; base temporal `ef_e2e_*`)                   | 23/23                                |
 | Colección Postman          | `postman collection lint postman/` y `postman collection run …` (ver `API.md`)     | 37 requests, 42/42 aserciones        |
 | Lint                       | No hay ESLint configurado                                                          | —                                    |

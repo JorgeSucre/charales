@@ -10,12 +10,15 @@ DIR="${2:-backups}"
 mkdir -p "$DIR"
 FILE="$DIR/${DB}_$(date +%Y-%m-%d_%H%M%S).sql.gz"
 PART="$FILE.parcial"
-trap 'rm -f "$PART"' EXIT
+ZIPPED="$FILE.parcial.gz"
+trap 'rm -f "$PART" "$ZIPPED"' EXIT
+trap 'exit 1' INT TERM # no todos los sh ejecutan el trap de EXIT con una señal: este sí sale por él
 mariadb-dump --single-transaction --routines --triggers --events --default-character-set=utf8mb4 "$DB" > "$PART"
 tail -n 1 "$PART" | grep -q 'Dump completed' || {
   echo "backup.sh: el volcado de $DB quedó incompleto" >&2
   exit 1
 }
-gzip -c "$PART" > "$FILE"
-gzip -t "$FILE"
+gzip -c "$PART" > "$ZIPPED"
+gzip -t "$ZIPPED"
+mv "$ZIPPED" "$FILE"
 echo "$FILE"
