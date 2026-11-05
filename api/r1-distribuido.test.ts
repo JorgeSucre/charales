@@ -9,6 +9,7 @@ import type { AddressInfo } from 'node:net';
 import { argon2Gate } from './argon2-guard.ts';
 import { argon2Stats } from './auth.ts';
 import { LOGIN_LIMITS, LOGIN_WINDOW_MS, forgetRefusals } from './login-limit.ts';
+import { recoveriesSettled } from './password.ts';
 import { createApp } from './server.ts';
 import { openTestDb, type TestDb } from './test-db.ts';
 
@@ -133,6 +134,7 @@ test('a recovery proves the account: its network is known from then on, so the a
     body: JSON.stringify({ email: OWNER }),
   });
   assert.equal(asked.status, 204);
+  await recoveriesSettled(); // the work runs after the answer (S-06)
   const token = /token=([\w-]+)/.exec(t.mail.at(-1)!.text)![1];
   const done = await fetch(`${base}/auth/password-reset/confirm`, {
     method: 'POST',

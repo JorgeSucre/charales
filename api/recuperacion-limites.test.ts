@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { CHANGE_LIMIT, LOGIN_WINDOW_MS, RESET_LIMITS, forgetRefusals } from './login-limit.ts';
+import { recoveriesSettled } from './password.ts';
 import { createApp } from './server.ts';
 import { openTestDb, type TestDb } from './test-db.ts';
 
@@ -47,6 +48,7 @@ const ask = (email: string, client: string, base = a) =>
     body: JSON.stringify({ email }),
   }).then(async (r) => {
     await r.arrayBuffer();
+    await recoveriesSettled(); // the work runs after the answer (S-06)
     return r.status;
   });
 const tally = (s: number[]) =>

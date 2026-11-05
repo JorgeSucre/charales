@@ -247,7 +247,7 @@ const scenarios = {
     const unknown = [];
     for (let i = 1; i <= 30; i++) {
       const k = await login(a.base, 'coach@example.com', WRONG, `192.0.2.${i}`);
-      const u = await login(a.base, `nadie${i}@example.com`, WRONG, `198.18.0.${i}`);
+      const u = await login(a.base, 'nadie.aqui@example.com', WRONG, `198.18.0.${i}`);
       known.push(k);
       unknown.push(u);
     }

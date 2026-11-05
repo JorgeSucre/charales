@@ -28,7 +28,13 @@ import {
   reservePasswordChange,
   reserveResetRequest,
 } from './login-limit.ts';
-import { RESET_TOKEN_MINUTES, accessMailText, deliverMail, enqueueMail } from './mail.ts';
+import {
+  RESET_TOKEN_MINUTES,
+  accessMailText,
+  deliverMail,
+  enqueueMail,
+  type Mailer,
+} from './mail.ts';
 import type { Ctx, Reply } from './server.ts';
 
 const INVALID_LINK = 'El enlace no es válido o ya expiró.';
@@ -38,7 +44,8 @@ const RESET_SUBJECT = 'Recupera tu contraseña';
 const UNAVAILABLE = 'La recuperación de contraseña no está disponible.';
 const CHANGE_UNAVAILABLE = 'No se pudo cambiar la contraseña. Intenta de nuevo en unos minutos.';
 
-export { RESET_TOKEN_MINUTES, mailerFromEnv, withAppUrl, type Mailer } from './mail.ts';
+export { RESET_TOKEN_MINUTES, mailerFromEnv, withAppUrl } from './mail.ts';
+export type { Mailer } from './mail.ts';
 
 /** What guessers try first, among those that meet the length and letter-and-digit rules (F5-16). */
 const COMMON_PASSWORDS = new Set(
@@ -153,53 +160,60 @@ export async function requestPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
     return { status: 503, body: { error: UNAVAILABLE } };
   }
 
+  // After the answer: nothing an account changes (a lookup, a transaction, the provider) can show in its timing, so the
+  // answer says nothing about whether it exists (S-06). The limits above were already applied either way.
+  const mailer = ctx.mailer;
+  const work = issueRecovery(db, mailer, normalized)
+    .catch(() => console.error('No se pudo emitir el token de recuperación.'))
+    .finally(() => recoveries.delete(work));
+  recoveries.add(work);
+  return { status: 204 };
+}
+
+/** Recovery work still running after its answer, at most what the limits admitted. */
+const recoveries = new Set<Promise<void>>();
+/** Test seam: resolves when what was requested so far has been done. */
+export const recoveriesSettled = () => Promise.all(recoveries);
+
+async function issueRecovery(db: Pool, mailer: Mailer, normalized: string): Promise<void> {
   const [user]: { id: number; email: string }[] = await db.query(
     'SELECT id, email FROM usuarios WHERE email = ? AND activo',
     [normalized],
   );
-  if (user) {
-    const token = randomBytes(32).toString('base64url');
-    let mailId: number | null = null;
-    try {
-      mailId = await transaction(db, async (tx) => {
-        // R2: lock the account row first (order usuarios → tokens_recuperacion, as in confirm), so concurrent
-        // requests for one account run one after the other instead of deadlocking on the token index gap.
-        const [locked]: { id: number }[] = await tx.query(
-          'SELECT id FROM usuarios WHERE id = ? AND activo FOR UPDATE',
-          [user.id],
-        );
-        if (!locked) return null;
-        const now = localDateTime();
-        // D3b/D3d: revoke the earlier live recovery tokens, keeping the rows; invitations are another purpose (D3e).
-        await tx.query(
-          `UPDATE tokens_recuperacion SET usado_en = ?
-          WHERE usuario_id = ? AND finalidad = 'RECUPERACION' AND usado_en IS NULL AND expira_en > ?`,
-          [now, user.id, now],
-        );
-        await tx.query(
-          `INSERT INTO tokens_recuperacion (usuario_id, finalidad, token_hash, creado_en, expira_en)
-           VALUES (?, 'RECUPERACION', ?, ?, ?)`,
-          [user.id, sha256(token), now, localDateTime(Date.now() + RESET_TOKEN_MINUTES * 60_000)],
-        );
-        return enqueueMail(tx, user.email, RESET_SUBJECT, sha256(token));
-      });
-    } catch {
-      // Same answer either way (D7): a failure here happens only for existing accounts, so it must not become a 500.
-      console.error('No se pudo emitir el token de recuperación.');
-    }
-    // Not awaited: the answer can't depend on the provider, or its timing would reveal that the account exists (S-06).
-    // deliverMail never throws; a failure stays in correo_saliente for the worker.
-    if (mailId !== null)
-      void deliverMail(
-        db,
-        ctx.mailer,
-        mailId,
-        user.email,
-        RESET_SUBJECT,
-        accessMailText('RECUPERACION', token),
-      );
-  }
-  return { status: 204 };
+  if (!user) return;
+  const token = randomBytes(32).toString('base64url');
+  const mailId = await transaction(db, async (tx) => {
+    // R2: lock the account row first (order usuarios → tokens_recuperacion, as in confirm), so concurrent
+    // requests for one account run one after the other instead of deadlocking on the token index gap.
+    const [locked]: { id: number }[] = await tx.query(
+      'SELECT id FROM usuarios WHERE id = ? AND activo FOR UPDATE',
+      [user.id],
+    );
+    if (!locked) return null;
+    const now = localDateTime();
+    // D3b/D3d: revoke the earlier live recovery tokens, keeping the rows; invitations are another purpose (D3e).
+    await tx.query(
+      `UPDATE tokens_recuperacion SET usado_en = ?
+        WHERE usuario_id = ? AND finalidad = 'RECUPERACION' AND usado_en IS NULL AND expira_en > ?`,
+      [now, user.id, now],
+    );
+    await tx.query(
+      `INSERT INTO tokens_recuperacion (usuario_id, finalidad, token_hash, creado_en, expira_en)
+       VALUES (?, 'RECUPERACION', ?, ?, ?)`,
+      [user.id, sha256(token), now, localDateTime(Date.now() + RESET_TOKEN_MINUTES * 60_000)],
+    );
+    return enqueueMail(tx, user.email, RESET_SUBJECT, sha256(token));
+  });
+  // deliverMail never throws; a failure stays in correo_saliente for the worker.
+  if (mailId !== null)
+    await deliverMail(
+      db,
+      mailer,
+      mailId,
+      user.email,
+      RESET_SUBJECT,
+      accessMailText('RECUPERACION', token),
+    );
 }
 
 /** POST /auth/password-reset/confirm { token, newPassword } — HU-005.3: single use; closes every session (D8). */

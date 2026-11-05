@@ -9,6 +9,7 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import type { Pool } from 'mariadb';
 import { createApp, createPool } from './server.ts';
+import { recoveriesSettled } from './password.ts';
 import { dropTestDatabase, runSqlFile, setupDatabase, uniqueTestDatabase } from './schema.ts';
 
 const DB = uniqueTestDatabase('ef_apitest');
@@ -212,7 +213,11 @@ const post = (path: string, body: unknown, cookie?: string) =>
   });
 const changePassword = (cookie: string | undefined, currentPassword: string, newPassword: string) =>
   post('/auth/password', { currentPassword, newPassword }, cookie);
-const requestReset = (email: string) => post('/auth/password-reset/request', { email });
+const requestReset = async (email: string) => {
+  const res = await post('/auth/password-reset/request', { email });
+  await recoveriesSettled(); // the work runs after the answer (S-06)
+  return res;
+};
 const confirmReset = (token: string, newPassword: string) =>
   post('/auth/password-reset/confirm', { token, newPassword });
 /** Raw token from the last captured e-mail to `to`. */

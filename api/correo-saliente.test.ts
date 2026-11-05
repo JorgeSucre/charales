@@ -6,6 +6,7 @@ import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { recoveriesSettled } from './password.ts';
 import { createApp } from './server.ts';
 import { sha256 } from './auth.ts';
 import {
@@ -279,7 +280,7 @@ test('password recovery: a provider failure answers the same 204 and is retried'
     body: JSON.stringify({ email: 'tutor@example.com' }),
   });
   assert.equal(res.status, 204);
-  await new Promise((r) => setTimeout(r, 100)); // the send is not awaited by the answer (S-06)
+  await recoveriesSettled(); // the work runs after the answer (S-06)
   const [row] = await outbox('tutor@example.com');
   assert.equal(row!.estado, 'PENDIENTE');
   await t.advance(TEN_MIN);
@@ -303,6 +304,7 @@ test('the answer of a recovery request does not wait for the provider (S-06)', a
   });
   assert.equal(res.status, 204);
   assert.ok(performance.now() - started < 1000, 'answered before the provider did');
+  await recoveriesSettled();
 });
 
 // ------------------------------------------------------------------ the Resend transport, against a simulator
