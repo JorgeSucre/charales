@@ -253,6 +253,19 @@ Código: [`api/password.ts`](../api/password.ts). Responsable de la historia: Bo
     menos una vez»: si el proveedor aceptó pero la respuesta se perdió, llegan dos correos y sólo funciona el último.
   - Un error permanente (`HTTP_4xx`), una cuenta inactiva, un enlace ya usado o vencido cierran la fila como `FALLIDO`, con
     un código en `ultimo_error`. Quien no recibió una invitación puede pedir un enlace por «¿Olvidaste tu contraseña?».
+- **Límite global de envíos (`correo_cupo`, migración 009):** los límites por cuenta y por red frenan a una persona, no a
+  muchas cuentas y redes a la vez, y cada envío gasta cuota del proveedor. Por eso todo intento real ante el proveedor
+  (primer envío o reintento) toma una plaza de un presupuesto **común a todos los procesos**, guardado en MariaDB:
+  - `TOTAL`: `CORREO_MAX_POR_HORA`, 60 por defecto (ráfagas de hasta 60; las invitaciones de una temporada salen en
+    pocas horas). `RECUPERACION`, que gastan además las recuperaciones: `CORREO_MAX_RECUPERACION_POR_HORA`, 20 por
+    defecto. Una avalancha de solicitudes desde muchas cuentas y redes toma como mucho 20 de las 60, y las invitaciones
+    conservan al menos 40 por hora. Ambos se recuperan de forma continua (1 plaza cada 60 min / límite): pueden retrasar
+    un correo, nunca impedirlo para siempre. Valores entre 1 y 10000, recuperación ≤ total; uno inválido detiene el arranque.
+  - Sin plaza, el mensaje **espera**: queda `PENDIENTE` con la hora en que vuelve una plaza, sin gastar intento, y el
+    proceso de fondo lo envía entonces (primero las invitaciones). La operación responde como siempre (`mailPending: true`
+    en invitaciones; `204` en la recuperación). Un fallo de MariaDB al tomar la plaza no envía nada: el mensaje espera un
+    minuto. Un fallo del proveedor sí gasta su plaza.
+  - El estado sobrevive a un reinicio. Para restablecerlo a mano: `UPDATE correo_cupo SET usados = 0, desde_ms = 0`.
 - **Retención de `correo_saliente` (migración 008):** lo pendiente o en proceso no se toca. Un mensaje cerrado (enviado o
   fallido para siempre) pierde dirección, usuario, token y referencia del proveedor a los **30 días**
   (`CORREO_RETENCION_DIAS`, de 1 a 365; **no es un plazo legal**, sino un valor inicial hasta que la escuela defina su política),

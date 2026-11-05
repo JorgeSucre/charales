@@ -53,6 +53,8 @@ beforeEach(async () => {
   forgetRefusals();
   await t.db.query('DELETE FROM limite_acceso');
   await t.db.query('DELETE FROM dispositivo_confiable');
+  // These tests are about per-account and per-network limits: the global budget (api/cupo-correo.test.ts) starts whole.
+  await t.db.query('UPDATE correo_cupo SET usados = 0, desde_ms = 0');
   await t.db.query('DELETE FROM correo_saliente');
   t.mail.length = 0;
 });
@@ -582,7 +584,7 @@ test('IND2-02: a database without the scope of the running code is reported, not
   const fake = {
     query: async () => [
       { t: 'limite_acceso', c: 'ambito', ct: "enum('CUENTA','IP')" },
-      ...['version_datos', 'dispositivo_confiable'].map((x) => ({ t: x, c: 'id', ct: 'int' })),
+      ...['version_datos', 'dispositivo_confiable', 'correo_cupo'].map((x) => ({ t: x, c: 'id', ct: 'int' })),
       { t: 'correo_saliente', c: 'cerrado_en', ct: 'datetime' },
       { t: 'pagos', c: 'referencia', ct: 'varchar(100)' },
     ],

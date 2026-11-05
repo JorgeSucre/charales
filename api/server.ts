@@ -17,7 +17,13 @@ import {
   type TrustedProxies,
 } from './client-ip.ts';
 import { checkEnvironment, isProduction } from './config.ts';
-import { mailRetentionFrom, startMailRetention, startMailWorker } from './mail.ts';
+import {
+  mailQuotaFrom,
+  mailRetentionFrom,
+  setMailQuota,
+  startMailRetention,
+  startMailWorker,
+} from './mail.ts';
 import { missingSchema } from './schema.ts';
 
 /** Any failure without a message meant for the user: never a stack trace, SQL or internal detail (logged instead). */
@@ -293,6 +299,7 @@ if (import.meta.main) {
   const secureCookie = production || env['COOKIE_SECURE'] === 'true';
   const limiterDb = createLimiterPool(env);
   const mailer = password.mailerFromEnv(env);
+  setMailQuota(mailQuotaFrom(env));
   if (!missing.length) {
     startMailRetention(db, mailRetentionFrom(env));
     if (mailer) startMailWorker(db, mailer);

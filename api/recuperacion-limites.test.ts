@@ -44,6 +44,8 @@ after(async () => {
 beforeEach(async () => {
   forgetRefusals();
   await t.db.query('DELETE FROM limite_acceso');
+  // These tests are about per-account and per-network limits: the global budget (api/cupo-correo.test.ts) starts whole.
+  await t.db.query('UPDATE correo_cupo SET usados = 0, desde_ms = 0');
   t.mail.length = 0;
 });
 
