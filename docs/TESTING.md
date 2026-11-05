@@ -1,7 +1,7 @@
 # Pruebas
 
 Estado al 2026-10-29 (cierre de las 49 HU de Administrador/Secretaría, rama `jorgesucre/cierre-borrayo` sobre `main`
-`9e08b11` + rama de remediación, 2026-11-05): **249/249** pruebas Angular, **336/336** de la API sobre MariaDB (autenticación, puente de dominio, una
+`9e08b11` + rama de remediación, 2026-11-05): **251/251** pruebas Angular, **338/338** de la API sobre MariaDB (autenticación, puente de dominio, una
 suite por fase con los criterios de cada HU y `hu-criterios.test.ts` con los criterios que antes sólo tenían una
 aserción débil), **23/23** E2E en Chrome headless, colección Postman 37 requests / 42 aserciones, MariaDB 42/42 checks
 y respaldo/restauración idéntico (40 tablas); typecheck, build y formato sin errores. Evidencia:

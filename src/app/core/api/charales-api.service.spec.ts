@@ -1,7 +1,8 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { CharalesApi } from './charales-api.service';
+import { AppNotice } from '../services/app-notice.service';
+import { CharalesApi, MAIL_PENDING_NOTICE } from './charales-api.service';
 
 /** Rows exactly as GET /api/jugadores and /api/categorias return them for db/mariadb/020_dev_seed.sql. */
 const JUGADOR_J0001 = {
@@ -43,6 +44,22 @@ describe('CharalesApi (HTTP layer to the REST API)', () => {
     http = TestBed.inject(HttpTestingController);
   });
   afterEach(() => http.verify());
+
+  it('an operation whose e-mail stayed queued returns its result and tells the user (F5-08)', async () => {
+    const notice = TestBed.inject(AppNotice);
+    const done = api.rpc('UserService', 'save', [{}]);
+    http.expectOne('/api/rpc').flush({ result: { id: 7 }, mailPending: true });
+    await expect(done).resolves.toEqual({ id: 7 });
+    expect(notice.message()).toBe(MAIL_PENDING_NOTICE);
+  });
+
+  it('a normal operation shows no notice', async () => {
+    const notice = TestBed.inject(AppNotice);
+    const done = api.rpc('UserService', 'save', [{}]);
+    http.expectOne('/api/rpc').flush({ result: { id: 8 } });
+    await expect(done).resolves.toEqual({ id: 8 });
+    expect(notice.message()).toBeNull();
+  });
 
   it('players(): GET /api/jugadores, same-origin, no credentials flag needed', async () => {
     const result = api.players();

@@ -44,7 +44,7 @@ Las historias de usuario se organizan por épicas (EP01–EP12) y cada una tiene
 | Portal del tutor      | **EN REVISIÓN** | Tarjetas por hijo, datos deportivos, partidos/resultados por plantel, estado de cuenta, asistencia, uniformes, avisos, perfil                                                                     |
 | Reportes              | **EN REVISIÓN** | Tablero con fuentes, jugadores por categoría, ingresos, agenda global                                                                                                                             |
 | Agenda                | **EN REVISIÓN** | Sesiones (también desde horarios), partidos con reprogramación y resultados                                                                                                                       |
-| Pruebas               | **COMPLETADO**  | 249 Angular + 336 de la API sobre MariaDB (criterios por HU) + 23 E2E en Chrome headless + Postman ([`TESTING.md`](docs/TESTING.md))                                                              |
+| Pruebas               | **COMPLETADO**  | 251 Angular + 338 de la API sobre MariaDB (criterios por HU) + 23 E2E en Chrome headless + Postman ([`TESTING.md`](docs/TESTING.md))                                                              |
 | Deployment            | **NO INICIADO** | —                                                                                                                                                                                                 |
 
 ### Terminado
@@ -54,7 +54,7 @@ Las historias de usuario se organizan por épicas (EP01–EP12) y cada una tiene
 - Modelo MariaDB (39 tablas base, 45 con migraciones; 42/42 checks), permisos de la app (106 filas de `rol_permiso`), respaldo y restauración
   probados.
 - Matriz de roles D12 y corrección de la escalada por perfiles vinculados (`18178ba`).
-- 249 pruebas Angular, 336 de la API y 23 E2E (2026-11-05); documentación de handoff ([`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md),
+- 251 pruebas Angular, 338 de la API y 23 E2E (2026-11-05); documentación de handoff ([`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md),
   [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)).
 
 ### Pendiente
@@ -140,7 +140,7 @@ MariaDB 10.6+            docs/escuela_futbol_mariadb.sql (39 tablas base) + db/m
 | Autenticación y permisos | `src/app/core/auth/`: `ApiAuthService` (sesión por cookie de la API), `permissions.ts` (catálogo y matriz D12), `grants()`, `AuthorizationService`, guards           |
 | Rutas                    | `src/app/app.routes.ts` (áreas `/admin`, `/sports`, `/coach`, `/portal`)                                                                                             |
 | Base de datos            | MariaDB: `docs/escuela_futbol_mariadb*.sql`, `db/mariadb/`. Histórico PostgreSQL: `db/migrations`, `db/seed`, `db/tests`…                                            |
-| Pruebas                  | Angular: `src/**/*.spec.ts` (Vitest, 249). API: `api/*.test.ts` (336). E2E: `e2e/` (18). MariaDB: `npm run db:mariadb:test-backup` ([`TESTING.md`](docs/TESTING.md)) |
+| Pruebas                  | Angular: `src/**/*.spec.ts` (Vitest, 251). API: `api/*.test.ts` (338). E2E: `e2e/` (18). MariaDB: `npm run db:mariadb:test-backup` ([`TESTING.md`](docs/TESTING.md)) |
 
 ## Stack
 
