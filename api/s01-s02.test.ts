@@ -7,20 +7,23 @@
 import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Server } from 'node:http';
+import type { Pool } from 'mariadb';
 import type { AddressInfo } from 'node:net';
 import { argon2Stats, resetArgon2Peak } from './auth.ts';
 import { ARGON2_DEFAULTS, MAX_WAITERS, argon2Gate, type Argon2Gate } from './argon2-guard.ts';
 import { LOGIN_LIMITS, forgetRefusals } from './login-limit.ts';
-import { createApp } from './server.ts';
+import { createApp, createLimiterPool } from './server.ts';
 import { openTestDb, type TestDb } from './test-db.ts';
 
 let t: TestDb;
 const servers: Server[] = [];
+const limiters: Pool[] = [];
 before(async () => {
   t = await openTestDb('ef_s0102');
 });
 after(async () => {
   for (const s of servers) s.close();
+  for (const p of limiters) await p.end();
   await t?.close();
 });
 beforeEach(async () => {
@@ -28,11 +31,17 @@ beforeEach(async () => {
   await t.db.query('DELETE FROM limite_acceso');
 });
 
-/** An API instance (its own gate, as each process has), behind a trusted proxy so each request can pick its IP. */
+/**
+ * An API instance as the server starts one: its own Argon2id gate and its own limiter pool (2 connections, 2 s lock
+ * wait), behind a trusted proxy so each request can pick its IP.
+ */
 async function instance(gate: Argon2Gate = argon2Gate(ARGON2_DEFAULTS)) {
+  const limiterDb = createLimiterPool({ ...process.env, DB_NAME: t.name });
+  limiters.push(limiterDb);
   const server = createApp(t.db, {
     secureCookie: false,
     trustedProxies: ['127.0.0.1'],
+    limiterDb,
     argon2: gate,
   }).listen(0);
   servers.push(server);

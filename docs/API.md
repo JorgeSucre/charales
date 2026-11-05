@@ -101,6 +101,14 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
     la colisión de dos inserciones simultáneas de la misma fila de IP (1062 en esa inserción, y sólo en ella), la
     reserva se repite como máximo 6 veces en 1,5 s, esperando un tiempo aleatorio de hasta 10·2ⁿ ms (máx. 200 ms)
     entre intentos. Cualquier otro 1062 es un error. Si se agotan los intentos o el tiempo, el login responde `503`.
+  - **Espera de bloqueo:** las conexiones del pool del limitador (`createLimiterPool`, `api/server.ts`) ejecutan al
+    abrirse `SET SESSION innodb_lock_wait_timeout = 2` (`LIMITER_LOCK_WAIT_S`): una sentencia del limitador espera como
+    máximo 2 s una fila que otra transacción tiene bloqueada y entonces MariaDB responde 1205. Afecta sólo a esas
+    sesiones (también a las que el pool abra después; el pool no reinicia la sesión al devolverla); el pool general y
+    el valor global del servidor (50 s por defecto) no cambian. Una contención normal dura milisegundos y se espera sin
+    error. El presupuesto de 1,5 s decide si **empieza** otro intento, no corta una espera en curso: un bloqueo que
+    dura más de 2 s da 503 tras unos 2 s, sin reintento, y el peor caso (un reintento que empieza justo antes de 1,5 s
+    y espera otros 2 s) ronda los 3,5 s.
   - **Datos guardados:** sólo SHA-256 de cada clave. Después de cada intento admitido se purgan hasta 100 filas
     vencidas con `FOR UPDATE SKIP LOCKED`: la purga nunca espera una fila bloqueada, así que no puede participar en un
     bloqueo mutuo.
