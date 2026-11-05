@@ -113,9 +113,10 @@ test('F5-16: a common password is refused by the API, whatever its case; an unco
   assert.match((await res.json()).error, /común/);
 });
 
-test('anonymous requests never queue: 200 at once all answer 401', async () => {
+// More than a session's 3 running + 32 queued; not hundreds, which overflow the OS listen backlog (ECONNRESET on macOS).
+test('anonymous requests never queue: 60 at once all answer 401', async () => {
   const statuses = await Promise.all(
-    Array.from({ length: 200 }, () =>
+    Array.from({ length: 60 }, () =>
       fetch(`${t.base}/api/rpc`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

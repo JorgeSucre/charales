@@ -12,13 +12,13 @@ creado: ef_rem26_mig_up_2d6a80_2026-11-05_094130.sql.gz.gpg permisos=600; sql.gz
 Restaurado en ef_rem26_bk_2c415b
 Tablas comparadas: 45
 RESULTADO: OK, el respaldo es idéntico
-deploy/mariadb/respaldo-programado.sh: line 9: BACKUP_GPG_RECIPIENT: Falta BACKUP_GPG_RECIPIENT: un respaldo sin cifrar 
+deploy/mariadb/respaldo-programado.sh: line 9: BACKUP_GPG_RECIPIENT: Falta BACKUP_GPG_RECIPIENT: un respaldo sin cifrar
 permisos de backup.sh: 600
 ## db:reset con otra base
 reset.sh sólo recrea charales_dev o charales_test, no «escuela_futbol». (exit 1, sin tocar nada)
 ## Respaldo accidental en Git (clon desechable, archivo ficticio)
-9e08b11: añadidos por git add -A: .env.production backups/escuela_2026.sql.gz 
-HEAD: añadidos por git add -A: 
+9e08b11: añadidos por git add -A: .env.production backups/escuela_2026.sql.gz
+HEAD: añadidos por git add -A:
 check-sensitive con un respaldo forzado: ERROR: archivos sensibles en Git: backups/a.sql.gz  rc=1
 ## Colisión de puerto (listener ajeno simulado en 0.0.0.0:P)
 listen(P) en :: -> sin respuesta: TimeoutError (el ajeno recibe la conexión)
@@ -26,6 +26,6 @@ listen(P, 127.0.0.1) -> responde el servidor propio 23 ms
 ## actionlint
 rc=0
 ## Bases temporales de esta verificación: ef_rem26_mig_up_2d6a80 ef_rem26_mig_fr_d0b6eb ef_rem26_bk_2c415b
-pruebas nuevas contra 9e08b11, r1-distribuido: ℹ tests 14 ℹ pass 3 ℹ fail 11 
-pruebas nuevas contra 9e08b11, recuperacion-limites: ℹ tests 8 ℹ pass 3 ℹ fail 5 
-pruebas nuevas contra 9e08b11, authorization-order: ℹ tests 10 ℹ pass 4 ℹ fail 6 
+pruebas nuevas contra 9e08b11, r1-distribuido: ℹ tests 14 ℹ pass 3 ℹ fail 11
+pruebas nuevas contra 9e08b11, recuperacion-limites: ℹ tests 8 ℹ pass 3 ℹ fail 5
+pruebas nuevas contra 9e08b11, authorization-order: ℹ tests 10 ℹ pass 4 ℹ fail 6

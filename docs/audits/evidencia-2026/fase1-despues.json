@@ -1,7 +1,7 @@
 {
   "code": "/Users/jorgesucre/Projects/6A/ingenieria_software/charales/charales-wt/auditoria-integral-cierre",
-  "label": "after",
-  "at": "2026-11-05T14:57:04.577Z",
+  "label": "final",
+  "at": "2026-11-05T15:49:38.854Z",
   "node": "v26.13.0",
   "r1": {
     "same64_150_sequential": {
@@ -50,14 +50,15 @@
       "429": 10
     },
     "enum_status_unknown": {
-      "401": 30
+      "401": 20,
+      "429": 10
     },
     "enum_median_ms": {
-      "existing": 23.1,
-      "unknown": 22.6
+      "existing": 28.4,
+      "unknown": 27.7
     },
-    "db": "ef_rem26_after_r1_bcb447",
-    "seconds": 10
+    "db": "ef_rem26_final_r1_b3e907",
+    "seconds": 11
   },
   "proxies": {
     "empty_dev": {
@@ -147,40 +148,40 @@
       "other_client_right_password": 200
     },
     "hops_forged_left_rotating_7": [401, 401, 401, 401, 401, 429, 429],
-    "db": "ef_rem26_after_tp_522f2f",
-    "seconds": 12
+    "db": "ef_rem26_final_tp_0bae65",
+    "seconds": 13
   },
   "reset": {
     "rounds": [
       {
         "requests": 10000,
-        "ms": 1409,
+        "ms": 1518,
         "codes": {
           "204": 20,
           "429": 9980
         },
-        "rss_kb": 158096
+        "rss_kb": 144016
       },
       {
         "requests": 20000,
-        "ms": 1276,
+        "ms": 1325,
         "codes": {
           "429": 10000
         },
-        "rss_kb": 143600
+        "rss_kb": 145280
       },
       {
         "requests": 40000,
-        "ms": 1858,
+        "ms": 2623,
         "codes": {
           "429": 20000
         },
-        "rss_kb": 142432
+        "rss_kb": 87728
       }
     ],
-    "rss_start_kb": 175856,
-    "rss_peak_kb": 175856,
-    "rss_end_kb": 142432,
+    "rss_start_kb": 164816,
+    "rss_peak_kb": 164816,
+    "rss_end_kb": 87728,
     "same_account_same_ip_8": [204, 204, 204, 204, 204, 429, 429, 429],
     "same_account_30_ips": {
       "204": 5,
@@ -189,17 +190,17 @@
     "tokens_issued_for_victim": 5,
     "mail_sent_to_victim": 5,
     "reset_timing_ms": {
-      "existing_median": 4.8,
-      "unknown_median": 3,
+      "existing_median": 2.33,
+      "unknown_median": 2.32,
       "n": [20, 20]
     },
-    "db": "ef_rem26_after_rs_fe5da7",
-    "seconds": 18
+    "db": "ef_rem26_final_rs_f0e9c2",
+    "seconds": 19
   },
   "mail": {
     "ok": {
       "first": 200,
-      "first_body": "{\"result\":{\"roleId\":2,\"firstName\":\"Alta\",\"lastName\":\"ok\",\"email\":\"alta-ok@example.com\",\"roleKind\":\"SEGURIDAD\",\"active\":true,\"createdAt\":\"2026-11-05T08:57:46\",\"u",
+      "first_body": "{\"result\":{\"roleId\":2,\"firstName\":\"Alta\",\"lastName\":\"ok\",\"email\":\"alta-ok@example.com\",\"roleKind\":\"SEGURIDAD\",\"active\":true,\"createdAt\":\"2026-11-05T09:50:23\",\"u",
       "leaks_internal": false,
       "account_created": true,
       "second": 400,
@@ -233,7 +234,7 @@
     },
     "timeout": {
       "first": 200,
-      "first_body": "{\"result\":{\"roleId\":2,\"firstName\":\"Alta\",\"lastName\":\"timeout\",\"email\":\"alta-timeout@example.com\",\"roleKind\":\"SEGURIDAD\",\"active\":true,\"createdAt\":\"2026-11-05T08",
+      "first_body": "{\"result\":{\"roleId\":2,\"firstName\":\"Alta\",\"lastName\":\"timeout\",\"email\":\"alta-timeout@example.com\",\"roleKind\":\"SEGURIDAD\",\"active\":true,\"createdAt\":\"2026-11-05T09",
       "leaks_internal": false,
       "account_created": true,
       "second": 400,
@@ -265,7 +266,7 @@
         }
       ]
     },
-    "db": "ef_rem26_after_ml_751c80",
+    "db": "ef_rem26_final_ml_ccbd36",
     "seconds": 2
   },
   "surface": {
@@ -298,31 +299,31 @@
     "bundle_files_with_demo1234": 0,
     "bundle_files_with_example_accounts": 1,
     "bundle_files_with_zod": 0,
-    "db": ["ef_rem26_after_old_bd1baa", "ef_rem26_after_sf_2b8c79"],
+    "db": ["ef_rem26_final_old_1c99e7", "ef_rem26_final_sf_a29a1e"],
     "seconds": 6
   },
   "flood": {
     "idle": {
-      "p50": 9.4,
-      "p95": 13.3,
-      "max": 22.9,
+      "p50": 6.8,
+      "p95": 11.9,
+      "max": 42.5,
       "codes": {
         "200": 40
       }
     },
     "during_flood": {
-      "p50": 12.2,
-      "p95": 17.6,
-      "max": 21.7,
+      "p50": 14.8,
+      "p95": 23.2,
+      "max": 32.6,
       "codes": {
         "200": 40
       }
     },
     "flood_codes": {
-      "200": 1126,
-      "429": 28100
+      "200": 1013,
+      "429": 24588
     },
-    "db": "ef_rem26_after_fl_cde4c1",
+    "db": "ef_rem26_final_fl_01150c",
     "seconds": 6
   },
   "sweep": {
@@ -385,17 +386,17 @@
     "reuse_after_logout": 401,
     "forged_cookie": 401,
     "stderr_has_sql_params": false,
-    "db": "ef_rem26_after_sw_5d85ab",
-    "seconds": 7
+    "db": "ef_rem26_final_sw_6dab07",
+    "seconds": 8
   },
   "databases": [
-    "ef_rem26_after_r1_bcb447",
-    "ef_rem26_after_tp_522f2f",
-    "ef_rem26_after_rs_fe5da7",
-    "ef_rem26_after_ml_751c80",
-    "ef_rem26_after_old_bd1baa",
-    "ef_rem26_after_sf_2b8c79",
-    "ef_rem26_after_fl_cde4c1",
-    "ef_rem26_after_sw_5d85ab"
+    "ef_rem26_final_r1_b3e907",
+    "ef_rem26_final_tp_0bae65",
+    "ef_rem26_final_rs_f0e9c2",
+    "ef_rem26_final_ml_ccbd36",
+    "ef_rem26_final_old_1c99e7",
+    "ef_rem26_final_sf_a29a1e",
+    "ef_rem26_final_fl_01150c",
+    "ef_rem26_final_sw_6dab07"
   ]
 }
