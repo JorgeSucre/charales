@@ -17,7 +17,7 @@ import { openTestDb, type TestDb } from './test-db.ts';
 let t: TestDb;
 const open: Server[] = [];
 async function appWith(options: Parameters<typeof createApp>[1], db = t.db): Promise<string> {
-  const s = createApp(db, options).listen(0);
+  const s = createApp(db, options).listen(0, '127.0.0.1');
   open.push(s);
   await new Promise((resolve) => s.once('listening', resolve));
   return `http://127.0.0.1:${(s.address() as AddressInfo).port}`;

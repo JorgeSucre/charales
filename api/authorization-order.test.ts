@@ -11,8 +11,8 @@
  *   - with the permission, the id's existence is legitimately visible (control).
  *
  * Training sessions (TrainingService.get/saveNotes, AttendanceService.record) used to look the session up BEFORE the
- * caller's scope check, so a missing id answered 400 «Sesión no encontrado.» where an existing one answered 403 (plan
- * B-2). They now go through TrainingService.sessionFor: the same 403 for both, and «no encontrado» only for a caller
+ * caller's scope check, so a missing id answered 400 «Sesión inexistente…» where an existing one answered 403 (plan
+ * B-2). They now go through TrainingService.sessionFor: the same 403 for both, and «inexistente» only for a caller
  * who may read every session (entrenamientos.consultar) — see the control test.
  * Seed: api/demo.ts on a temporary ef_authz_<pid> database.
  */
@@ -86,7 +86,7 @@ after(() => t?.close());
 
 /** An operation whose first argument is the id under test; `rest` are the other arguments. */
 type Op = [service: string, method: string, rest: unknown[]];
-const NO_PERMISSION = /^No tienes permiso para esta operación\.$/;
+const NO_PERMISSION = /^No tienes permiso para realizar esta acción\.$/;
 const PLAYER = /^No tienes acceso a la información de este jugador\.$/;
 
 /** Same caller, existing vs missing id: the same status and message, and nothing written, for both. */
@@ -102,7 +102,7 @@ async function sameAnswer(
 }
 
 test('T9 no session: an existing and a missing id both answer 401, nothing written', async () => {
-  const noSession = /^Sesión no iniciada o expirada\.$/;
+  const noSession = /^Tu sesión no está iniciada o ya expiró\. Inicia sesión de nuevo\.$/;
   for (const [op, key] of [
     [['PlayerService', 'record', []], 'player'],
     [['BillingService', 'statement', []], 'player'],
@@ -188,10 +188,10 @@ test('T9 control: with the permission, existence is legitimately visible (200 vs
   await t.refused(
     () => t.call(admin, 'PlayerService', 'get', MISSING),
     400,
-    /^Jugador no encontrad[oa]\.$/,
+    /^Jugador inexistente: actualiza la página e inténtalo de nuevo\.$/,
   );
   // The three session operations (B-2), authorized: an existing session works, a missing one keeps the 400.
-  const notFound = /^Sesión no encontrad[oa]\.$/;
+  const notFound = /^Sesión inexistente: actualiza la página e inténtalo de nuevo\.$/;
   await t.ok(t.call(admin, 'TrainingService', 'get', ids['session']));
   await t.refused(() => t.call(admin, 'TrainingService', 'get', MISSING), 400, notFound);
   const notes = { objective: 'Control T9', notes: null };

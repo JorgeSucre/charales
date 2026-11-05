@@ -37,7 +37,7 @@ let s01Base: string;
 /** Another instance on the same database, behind a trusted proxy at 127.0.0.1 (so X-Forwarded-For is believed). */
 let proxiedBase: string;
 async function listen(server: Server): Promise<string> {
-  servers.push(server.listen(0));
+  servers.push(server.listen(0, '127.0.0.1'));
   await new Promise((resolve) => server.once('listening', resolve));
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }

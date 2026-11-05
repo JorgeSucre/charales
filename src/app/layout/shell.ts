@@ -12,6 +12,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { AuthService } from '../core/auth/auth.service';
+import { AppNotice } from '../core/services/app-notice.service';
 import { ROLE_LABELS } from '../core/auth/permissions';
 import { NAV_ITEMS, NavSection, SECTION_ICONS, UI_ICONS } from './nav';
 
@@ -172,12 +173,21 @@ export function activeNavPath(url: string, paths: readonly string[]): string | n
           }
         </div>
       </nav>
-      <main #main id="main" tabindex="-1" [attr.inert]="drawerInert()"><router-outlet /></main>
+      <main #main id="main" tabindex="-1" [attr.inert]="drawerInert()">
+        @if (notice.message(); as message) {
+          <div class="alert info app-notice" role="status">
+            <span>{{ message }}</span>
+            <button type="button" class="secondary" (click)="notice.clear()">Cerrar</button>
+          </div>
+        }
+        <router-outlet />
+      </main>
     </div>
   `,
 })
 export class Shell {
   protected auth = inject(AuthService);
+  protected notice = inject(AppNotice);
   private router = inject(Router);
   protected icons = SECTION_ICONS;
   protected ui = UI_ICONS;
@@ -304,7 +314,9 @@ export class Shell {
       )
       .subscribe((e) => {
         this.url.set(e.urlAfterRedirects);
-        this.closeUserMenu(false);
+        // A navigation closes the menu. If focus was inside (a redirect while it was open), it must not fall to <body>:
+        // it goes back to the menu's button, and a new page then moves it to its content below.
+        this.closeUserMenu(!!this.userMenu()?.nativeElement.contains(document.activeElement));
         this.menuOpen.set(false);
         const section = this.activeSection();
         if (section && !this.openGroups().has(section))

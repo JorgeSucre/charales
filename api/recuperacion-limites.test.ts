@@ -20,7 +20,7 @@ async function instance(): Promise<string> {
     secureCookie: false,
     trustedProxies: ['127.0.0.1'],
     mailer: (to, subject, text) => void t.mail.push({ to, subject, text }),
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
   servers.push(s);
   await new Promise((resolve) => s.once('listening', resolve));
   return `http://127.0.0.1:${(s.address() as AddressInfo).port}`;

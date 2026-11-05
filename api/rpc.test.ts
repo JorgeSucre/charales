@@ -269,7 +269,7 @@ test('HU-004: a new staff account gets a 24 h invitation (D3c/D3e), usable once 
 });
 
 test('HU-004: without a mail transport the account is not created (503, rolled back)', async () => {
-  const noMail = createApp(db, { secureCookie: false }).listen(0);
+  const noMail = createApp(db, { secureCookie: false }).listen(0, '127.0.0.1');
   await new Promise((resolve) => noMail.once('listening', resolve));
   const url = `http://127.0.0.1:${(noMail.address() as AddressInfo).port}`;
   try {
@@ -459,7 +459,7 @@ test('audit: session cookie attributes — HttpOnly, SameSite=Strict, Path=/, 8 
     cookie,
     /^charales_sid=[\w-]{40,}; HttpOnly; SameSite=Strict; Path=\/; Max-Age=28800$/,
   );
-  const secure = createApp(db, { secureCookie: true }).listen(0);
+  const secure = createApp(db, { secureCookie: true }).listen(0, '127.0.0.1');
   await new Promise((resolve) => secure.once('listening', resolve));
   try {
     const r = await fetch(`http://127.0.0.1:${(secure.address() as AddressInfo).port}/auth/login`, {

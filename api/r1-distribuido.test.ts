@@ -26,7 +26,7 @@ before(async () => {
     trustedProxies: ['127.0.0.1'],
     mailer: (to, subject, text) => void t.mail.push({ to, subject, text }),
     argon2: argon2Gate({ limit: 64, waitMs: 10_000 }),
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });

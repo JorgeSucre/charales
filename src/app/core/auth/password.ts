@@ -27,10 +27,19 @@ export async function verifyPassword(password: string, stored: string): Promise<
   return algo === 'sha256' && (await sha256Hex(`${salt}:${password}`)) === hash;
 }
 
-/** Password policy (HU-005): 8+ characters with at least one letter and one digit. Returns the problem or null. */
+/** What guessers try first, among those that meet the length and letter-and-digit rules (F5-16). Same list in api/password.ts. */
+const COMMON_PASSWORDS = new Set(
+  'password1 password12 password123 contraseña1 contrasena1 contrasena123 qwerty123 qwerty1234 abc12345 abcd1234 a1234567 12345678a 1234567a admin123 admin1234 administrador1 charales1 charales123 futbol123 futbol1234 mexico123 mexico1234 test1234 prueba123 usuario1 usuario123 hola1234 iloveyou1 letmein1 welcome1 bienvenido1'.split(
+    ' ',
+  ),
+);
+
+/** Password policy (HU-005): 8+ characters with at least one letter and one digit, not a common one. Returns the problem or null. */
 export function passwordProblem(password: string): string | null {
   if (password.length < 8) return 'La contraseña debe tener al menos 8 caracteres.';
   if (!/[A-Za-zÀ-ÿ]/.test(password) || !/\d/.test(password))
     return 'La contraseña debe incluir letras y números.';
+  if (COMMON_PASSWORDS.has(password.toLowerCase()))
+    return 'Esa contraseña es demasiado común. Elige otra.';
   return null;
 }

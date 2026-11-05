@@ -37,7 +37,7 @@ beforeEach(async () => {
 
 /** Another instance of the API on the test database, with its own Argon2id gate. */
 async function app(gate: Argon2Gate): Promise<string> {
-  const server = createApp(t.db, { secureCookie: false, argon2: gate }).listen(0);
+  const server = createApp(t.db, { secureCookie: false, argon2: gate }).listen(0, '127.0.0.1');
   servers.push(server);
   await new Promise((resolve) => server.once('listening', resolve));
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

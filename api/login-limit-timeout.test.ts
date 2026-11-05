@@ -139,7 +139,7 @@ test('reservation: held past the lock wait it fails once, without a retry (the 1
       secureCookie: false,
       trustedProxies: ['127.0.0.1'], // the request comes from IP, whose row is held
       limiterDb: limiter,
-    }).listen(0);
+    }).listen(0, '127.0.0.1');
     await new Promise((resolve) => server.once('listening', resolve));
     try {
       const verified = passwordVerifications();

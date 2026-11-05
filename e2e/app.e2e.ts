@@ -63,7 +63,7 @@ function serve(): Server {
     const target = existsSync(file) && extname(file) ? file : join(DIST, 'index.html');
     res.writeHead(200, { 'Content-Type': TYPES[extname(target)] ?? 'application/octet-stream' });
     res.end(readFileSync(target));
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
 }
 
 before(async () => {
@@ -84,6 +84,13 @@ after(async () => {
 });
 
 const settled = `document.querySelector('main') && !document.querySelector('[role=status]')?.textContent?.includes('Cargando')`;
+
+/**
+ * `settled` is true as soon as `<main>` has content, which at «/» can be before the guard's redirect to the role's home
+ * ends: that redirect closes an open menu (a real behaviour, see shell.ts). A test that goes on to open one waits for
+ * it: the cause of the intermittent focus failures measured in the 2026-11 series (13/40 rounds, on main too).
+ */
+const landed = `(${settled}) && location.pathname !== '/'`;
 
 /** Ends any session (server and local copy) on the app's origin. */
 async function logoutAll(): Promise<void> {
@@ -355,7 +362,7 @@ test('persistence: a player created and edited in the UI survives a page reload 
 
   // 4) A new API process: its own pool and an empty memory, same MariaDB. The session cookie is still valid.
   const pool = createPool({ ...process.env, DB_NAME: t.name });
-  const restarted = createApp(pool, { secureCookie: false }).listen(0);
+  const restarted = createApp(pool, { secureCookie: false }).listen(0, '127.0.0.1');
   await new Promise((resolve) => restarted.once('listening', resolve));
   const previous = apiBase;
   apiBase = `http://127.0.0.1:${(restarted.address() as AddressInfo).port}`;
@@ -381,7 +388,7 @@ test('user menu: its button opens it, Escape closes it back on its button, an ou
   for (const width of [1280, 375]) {
     await page.size(width, 900);
     await page.goto(`${app}/`);
-    await page.until(settled);
+    await page.until(landed);
     await page.eval(`document.querySelector('.user-menu summary').click()`);
     await page.until(`document.querySelector('.user-menu').open`);
     assert.deepEqual(
@@ -467,7 +474,7 @@ test('Tablero: six indicators in full rows (3 × 2 desktop, 2 × 3 tablet/phone)
   // Phone: «Menú» opens the menu, Escape inside it closes it and focus returns to «Menú» (DOM event, as in the user
   // menu test).
   await page.goto(`${app}/`);
-  await page.until(settled);
+  await page.until(landed);
   await page.eval(`document.querySelector('.menu-toggle').click()`);
   await page.until(`document.querySelector('#nav-links a')?.offsetParent`);
   await page.eval(
@@ -542,14 +549,14 @@ test('side menu: compact mode on desktop (remembered) and tablet, tooltips, coll
   // Tablet: always starts compact.
   await page.size(768, 900);
   await page.goto(`${app}/`);
-  await page.until(settled);
+  await page.until(landed);
   assert.equal(await width('.sidenav'), 72);
   if (SHOTS) writeFileSync(join(SHOTS, 'nav_rail_768.png'), await page.screenshot());
 
   // Phone: hamburger → panel with focus on «Cerrar menú» and the page inert; backdrop, Escape and a link close it.
   await page.size(375, 900);
   await page.goto(`${app}/`);
-  await page.until(settled);
+  await page.until(landed);
   const isOpen = () =>
     page.eval<boolean>(`document.querySelector('.sidenav').classList.contains('open')`);
   const openPanel = async () => {

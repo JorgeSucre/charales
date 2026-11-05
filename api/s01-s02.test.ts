@@ -43,7 +43,7 @@ async function instance(gate: Argon2Gate = argon2Gate(ARGON2_DEFAULTS)) {
     trustedProxies: ['127.0.0.1'],
     limiterDb,
     argon2: gate,
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
   servers.push(server);
   await new Promise((resolve) => server.once('listening', resolve));
   return { gate, base: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };

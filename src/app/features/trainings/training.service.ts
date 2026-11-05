@@ -296,13 +296,13 @@ export class TrainingService {
   /**
    * The session `id` if `allowed` for the caller; otherwise ForbiddenError(`message`) — for a missing id too, so a
    * refusal never tells whether the session exists (B-2, docs/AUTHORIZATION.md). Only a caller who may already read
-   * every session (entrenamientos.consultar) gets the usual «Sesión no encontrado.» for a missing id.
+   * every session (entrenamientos.consultar) gets the usual «Sesión inexistente…» for a missing id.
    */
   sessionFor(id: Id, allowed: (s: TrainingSession) => boolean, message: string): TrainingSession {
     const s = this.db.trainingSessions.find((x) => x.id === id);
     if (s && allowed(s)) return s;
     if (!s && this.authz.has('entrenamientos.consultar'))
-      return this.db.get(this.db.trainingSessions, id, 'Sesión'); // throws the 400 «no encontrado»
+      return this.db.get(this.db.trainingSessions, id, 'Sesión'); // throws the 400 «inexistente»
     throw new ForbiddenError(message);
   }
 

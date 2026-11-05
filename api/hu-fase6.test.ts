@@ -211,7 +211,10 @@ test('HU-074: the critical flows on MariaDB — login, registration + enrollment
 });
 
 test('D13 cache: what the API keeps in memory always equals MariaDB, also across two API instances', async () => {
-  const other = createApp(t.db, { secureCookie: false, mailer: () => undefined }).listen(0);
+  const other = createApp(t.db, { secureCookie: false, mailer: () => undefined }).listen(
+    0,
+    '127.0.0.1',
+  );
   await new Promise((resolve) => other.once('listening', resolve));
   const url2 = `http://127.0.0.1:${(other.address() as AddressInfo).port}`;
   try {

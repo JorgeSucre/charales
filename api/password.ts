@@ -40,12 +40,21 @@ const CHANGE_UNAVAILABLE = 'No se pudo cambiar la contraseña. Intenta de nuevo 
 
 export { RESET_TOKEN_MINUTES, mailerFromEnv, withAppUrl, type Mailer } from './mail.ts';
 
+/** What guessers try first, among those that meet the length and letter-and-digit rules (F5-16). */
+const COMMON_PASSWORDS = new Set(
+  'password1 password12 password123 contraseña1 contrasena1 contrasena123 qwerty123 qwerty1234 abc12345 abcd1234 a1234567 12345678a 1234567a admin123 admin1234 administrador1 charales1 charales123 futbol123 futbol1234 mexico123 mexico1234 test1234 prueba123 usuario1 usuario123 hola1234 iloveyou1 letmein1 welcome1 bienvenido1'.split(
+    ' ',
+  ),
+);
+
 /** HU-005.2 — same policy as the frontend (`core/auth/password.ts` → passwordProblem). */
 export function passwordProblem(password: string): string | null {
   if (password.length < 8) return 'La contraseña debe tener al menos 8 caracteres.';
   if (password.length > 200) return 'La contraseña es demasiado larga.';
   if (!/[A-Za-zÀ-ÿ]/.test(password) || !/\d/.test(password))
     return 'La contraseña debe incluir letras y números.';
+  if (COMMON_PASSWORDS.has(password.toLowerCase()))
+    return 'Esa contraseña es demasiado común. Elige otra.';
   return null;
 }
 

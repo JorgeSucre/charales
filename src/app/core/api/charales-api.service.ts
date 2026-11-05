@@ -4,7 +4,12 @@ import { Router } from '@angular/router';
 import { Observable, firstValueFrom } from 'rxjs';
 import { AuthUser, SessionStore } from '../auth/session.store';
 import { Category, Player } from '../models';
+import { AppNotice } from '../services/app-notice.service';
 import { UNEXPECTED_MESSAGE } from '../../shared/validate';
+
+/** The operation happened; its e-mail is queued (F5-08). Said plainly: nobody should repeat the operation. */
+export const MAIL_PENDING_NOTICE =
+  'Los datos se guardaron, pero el correo de acceso todavía no se pudo enviar. El sistema lo reintentará; si no llega, la persona puede usar «¿Olvidaste tu contraseña?» con ese correo.';
 
 /**
  * HTTP layer to the Charales REST API (docs/API.md). Same-origin through the dev-server proxy (proxy.conf.json), so
@@ -20,6 +25,7 @@ export class CharalesApi {
   private http = inject(HttpClient);
   private store = inject(SessionStore);
   private router = inject(Router);
+  private notice = inject(AppNotice);
 
   /** The API session behind the cookie, or null when there is none (401). */
   async session(): Promise<AuthUser | null> {
@@ -63,9 +69,14 @@ export class CharalesApi {
     const sent = [...args];
     while (sent.length && sent.at(-1) === undefined) sent.pop();
     try {
-      const { result } = await this.call(
-        this.http.post<{ result: T }>('/api/rpc', { service, method, args: sent }),
+      const { result, mailPending } = await this.call(
+        this.http.post<{ result: T; mailPending?: boolean }>('/api/rpc', {
+          service,
+          method,
+          args: sent,
+        }),
       );
+      if (mailPending) this.notice.show(MAIL_PENDING_NOTICE);
       return result;
     } catch (e) {
       if (e instanceof ApiError && e.status === 401 && this.store.user()) {

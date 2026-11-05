@@ -26,7 +26,7 @@ before(async () => {
   server = createApp(db, {
     secureCookie: false,
     mailer: (to, subject, text) => void mail.push({ to, subject, text }),
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -351,7 +351,7 @@ test('reset request: limited per e-mail and IP (429), whether the account exists
 });
 
 test('reset request without a mail transport (D4b): 503 before reading the account, no token created', async () => {
-  const noMail = createApp(db, { secureCookie: false }).listen(0);
+  const noMail = createApp(db, { secureCookie: false }).listen(0, '127.0.0.1');
   await new Promise((resolve) => noMail.once('listening', resolve));
   const url = `http://127.0.0.1:${(noMail.address() as AddressInfo).port}/auth/password-reset/request`;
   try {

@@ -86,7 +86,7 @@ export async function openTestDb(
   const server: Server = createApp(db, {
     secureCookie: false,
     mailer: (to, subject, text) => void mail.push({ to, subject, text }),
-  }).listen(0);
+  }).listen(0, '127.0.0.1'); // not «::»: a port another program holds on IPv4 would not be refused, and would time out
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 

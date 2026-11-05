@@ -38,7 +38,7 @@ beforeEach(async () => {
 });
 
 async function appWith(mailer: Mailer): Promise<string> {
-  const s = createApp(t.db, { secureCookie: false, mailer }).listen(0);
+  const s = createApp(t.db, { secureCookie: false, mailer }).listen(0, '127.0.0.1');
   open.push(s);
   await new Promise((resolve) => s.once('listening', resolve));
   return `http://127.0.0.1:${(s.address() as AddressInfo).port}`;

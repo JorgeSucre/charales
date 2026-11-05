@@ -26,7 +26,7 @@ after(async () => {
 });
 
 async function freePort(): Promise<number> {
-  const s = createServer().listen(0);
+  const s = createServer().listen(0, '127.0.0.1');
   await new Promise((resolve) => s.once('listening', resolve));
   const { port } = s.address() as { port: number };
   await new Promise((resolve) => s.close(resolve));
@@ -97,7 +97,7 @@ test('S-01: two instances sharing MariaDB enforce one limit, and a restart keeps
 async function inProcess(
   limiterDb: ReturnType<typeof createPool>,
 ): Promise<{ base: string; server: Server }> {
-  const server = createApp(t.db, { secureCookie: false, limiterDb }).listen(0);
+  const server = createApp(t.db, { secureCookie: false, limiterDb }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, server };
 }

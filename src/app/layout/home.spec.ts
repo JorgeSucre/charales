@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import { baseProviders } from '../app.config';
 import { AuthService } from '../core/auth/auth.service';
 import { MockDb } from '../core/data/mock-db';
+import { AppNotice } from '../core/services/app-notice.service';
 import { RoleService } from '../features/users/role.service';
 import { QUICK_TASKS } from './nav';
 
@@ -116,6 +117,29 @@ describe('main page (Tablero) and shell header', () => {
       .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(menu.open).toBe(false);
     expect(document.activeElement).toBe(menu.querySelector('summary'));
+  }, 20_000);
+
+  it('user menu: a navigation while it is open closes it and keeps focus on its button, not on <body>', async () => {
+    const el = await open('admin@example.com', '/admin/dashboard');
+    const menu = el.querySelector<HTMLDetailsElement>('.user-menu')!;
+    menu.open = true;
+    menu.querySelector('a')!.focus();
+    await TestBed.inject(Router).navigateByUrl('/admin/players', { replaceUrl: true });
+    harness.detectChanges();
+    expect(menu.open).toBe(false);
+    expect(document.activeElement).toBe(menu.querySelector('summary'));
+  }, 20_000);
+
+  it('a notice for the user is shown until it is closed', async () => {
+    const el = await open('admin@example.com', '/admin/dashboard');
+    TestBed.inject(AppNotice).show('Correo pendiente');
+    harness.detectChanges();
+    const notice = el.querySelector<HTMLElement>('.app-notice')!;
+    expect(notice.getAttribute('role')).toBe('status');
+    expect(notice.textContent).toContain('Correo pendiente');
+    notice.querySelector('button')!.click();
+    harness.detectChanges();
+    expect(el.querySelector('.app-notice')).toBeNull();
   }, 20_000);
 
   it('phone menu: «Menú» opens it, Escape inside closes it and returns focus to «Menú»', async () => {

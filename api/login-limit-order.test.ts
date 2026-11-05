@@ -251,7 +251,7 @@ test('bursts of 50: one IP with many accounts, one account from many IPs, one pa
       trustedProxies: ['127.0.0.1'],
       limiterDb,
       argon2: argon2Gate({ limit: 64, waitMs: 10_000 }),
-    }).listen(0);
+    }).listen(0, '127.0.0.1');
     await new Promise((resolve) => s.once('listening', resolve));
     return { s, limiterDb, base: `http://127.0.0.1:${(s.address() as AddressInfo).port}` };
   };

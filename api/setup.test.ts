@@ -263,7 +263,7 @@ test('SQL files with DELIMITER blocks are split the way the server needs', () =>
 
 test('db:admin creates the first administrator (argon2id) and never overwrites an existing account', async () => {
   const db = createPool(env(FRESH));
-  const server = createApp(db, { secureCookie: false }).listen(0);
+  const server = createApp(db, { secureCookie: false }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const login = (password: string) =>
     fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/auth/login`, {
