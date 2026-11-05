@@ -155,8 +155,9 @@ export async function requestPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
 
   const normalized = email.trim().toLowerCase();
   try {
-    if (!(await reserveResetRequest(ctx.limiterDb, ctx.ip, normalized)))
-      return { status: 429, body: { error: TOO_MANY } };
+    const verdict = await reserveResetRequest(ctx.limiterDb, ctx.ip, normalized);
+    if (verdict === 'refused') return { status: 429, body: { error: TOO_MANY } };
+    if (verdict === 'quiet') return { status: 204 };
   } catch (e) {
     console.error('Límite de intentos no disponible:', (e as Error).message);
     return { status: 503, body: { error: UNAVAILABLE } };
@@ -246,8 +247,8 @@ export async function confirmPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
   const done = await transaction(db, async (tx) => {
     // Lock order usuarios → tokens_recuperacion → sesiones, the same as change and request (R1/R2); only locking
     // reads in here, and the token is re-checked under the lock.
-    const [owner]: { id: number; email: string }[] = await tx.query(
-      'SELECT id, email FROM usuarios WHERE id = ? FOR UPDATE',
+    const [owner]: { id: number; email: string; activo: number }[] = await tx.query(
+      'SELECT id, email, activo FROM usuarios WHERE id = ? FOR UPDATE',
       [ref.usuario_id],
     );
     const [row]: { id: number; usuario_id: number; expira_en: string; usado_en: string | null }[] =
@@ -256,7 +257,7 @@ export async function confirmPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
         [sha256(token)],
       );
     const now = localDateTime();
-    if (!row || row.usado_en || row.expira_en <= now) return false;
+    if (!row || row.usado_en || row.expira_en <= now || !owner?.activo) return false;
     await tx.query('UPDATE tokens_recuperacion SET usado_en = ? WHERE id = ?', [now, row.id]);
     await tx.query('UPDATE usuarios SET password_hash = ? WHERE id = ?', [hash, row.usuario_id]);
     await revokeDevices(tx, row.usuario_id);

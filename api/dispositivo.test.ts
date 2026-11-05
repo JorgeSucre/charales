@@ -74,8 +74,8 @@ async function login(email: string, password: string, client: string, jar?: Jar,
   return r.status;
 }
 let attacker = 1;
-const nextPrefix = () =>
-  `2001:db8:${(attacker >> 8).toString(16)}:${(attacker++ & 255).toString(16)}::1`;
+/** Each from its own /48: this attacker has many allocations, the worst case. */
+const nextPrefix = () => `2001:db8:${(attacker++).toString(16)}::1`;
 async function attack(n: number, email = OWNER) {
   const out: number[] = [];
   for (let i = 0; i < n; i++) out.push(await login(email, WRONG, nextPrefix()));

@@ -274,7 +274,7 @@ test('bursts of 50: one IP with many accounts, one account from many IPs, one pa
     ],
     [
       'one account, 10 IPs (R-1: its budget, from any network)',
-      (i) => login(a.base, 'coach@example.com', `203.0.113.${10 + (i % 10)}`),
+      (i) => login(a.base, 'coach@example.com', `203.0.${100 + (i % 10)}.1`),
       { 401: 10, 429: 40 },
     ],
     ['one pair', () => login(a.base, 'tutor@example.com', '203.0.113.30'), { 401: 5, 429: 45 }],

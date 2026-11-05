@@ -221,6 +221,18 @@ export class AuthService {
     );
   }
 
+  /** Every live access link of an account stops working. True if one of them was a pending invitation. */
+  revokeAccessTokens(userId: Id): boolean {
+    const now = nowDateTime();
+    let invited = false;
+    for (const t of this.db.resetTokens)
+      if (t.userId === userId && !t.usedAt && t.expiresAt > now) {
+        invited ||= t.purpose === 'INVITACION';
+        this.db.update(this.db.resetTokens, t.id, { usedAt: now });
+      }
+    return invited;
+  }
+
   /** HU-005: a valid, unused, unexpired token sets the password once; it then closes every open session. */
   async resetPassword(token: string, next: string): Promise<void> {
     const problem = passwordProblem(next);

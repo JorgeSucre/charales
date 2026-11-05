@@ -31,3 +31,7 @@ CREATE TABLE IF NOT EXISTS dispositivo_confiable (
 ) ENGINE=InnoDB;
 
 DROP TABLE IF EXISTS origen_conocido;
+
+-- limite_acceso: la parte de cada red en el presupuesto de una cuenta (api/login-limit.ts).
+ALTER TABLE limite_acceso
+    MODIFY ambito ENUM('CUENTA', 'IP', 'CUENTA_IP', 'RECUP_IP', 'RECUP_CUENTA', 'CAMBIO', 'CUENTA_RED') NOT NULL;

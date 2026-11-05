@@ -8,6 +8,7 @@ import type { Pool, PoolConnection } from 'mariadb';
 import type { Ctx, Reply } from './server.ts';
 import { deviceCookieName, issueDevice } from './device-trust.ts';
 import { reserveLogin, settleLogin, type Reservation } from './login-limit.ts';
+import { transaction } from './password.ts';
 
 /** Session policy (HU-002), same values as the mock AuthService. */
 export const SESSION_HOURS = 8;
@@ -62,7 +63,11 @@ export const passwordVerifications = () => verifications;
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   verifications++;
   const m = /^\$argon2id\$v=19\$m=(\d+),t=(\d+),p=(\d+)\$([^$]+)\$([^$]+)$/.exec(stored);
-  if (!m) return false;
+  // Not Argon2id (an account whose invitation is pending): the same work as any other, so time doesn't tell it apart.
+  if (!m) {
+    await verifyPassword(password, await DUMMY_HASH);
+    return false;
+  }
   const expected = Buffer.from(m[5]!, 'base64');
   const actual = await argon2id({
     message: password,
@@ -129,9 +134,10 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
     return { status: 503, body: { error: BUSY } };
   }
   const passwordOk = turn.value;
+  // A right password on a disabled account costs its attempt like a wrong one: giving it back would reveal, through the
+  // counters, that the password was right (audit IND-11).
   if (!row || !passwordOk || !row.activo) {
-    // A correct password on a disabled account isn't a guess: only wrong passwords keep their reservation.
-    await settleLogin(ctx.limiterDb, reservation, passwordOk ? 'right-password' : 'failed');
+    await settleLogin(ctx.limiterDb, reservation, 'failed');
     await audit(
       db,
       row?.id ?? null,
@@ -143,20 +149,39 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
     );
     return { status: 401, body: { error: INVALID } };
   }
-  await settleLogin(ctx.limiterDb, reservation, 'success');
 
   const access = await accessOf(db, row);
-  if (!access.roles.length) return { status: 403, body: { error: NO_ROLE } };
+  if (!access.roles.length) {
+    await settleLogin(ctx.limiterDb, reservation, 'right-password');
+    return { status: 403, body: { error: NO_ROLE } };
+  }
 
-  const device = await issueDevice(ctx.limiterDb, row.id, email, deviceSecret, ctx.secureCookie);
+  // Against the account as it is NOW, under its lock: what was verified may have stopped being true while Argon2id ran. A
+  // password change or recovery takes the same lock and closes sessions and browsers, so either it sees this session, or
+  // this login sees the change and is refused (audit IND-02).
   const token = randomBytes(32).toString('base64url');
   const now = localDateTime();
   const expiresAt = localDateTime(Date.now() + SESSION_HOURS * 3_600_000);
-  const { insertId } = await db.query(
-    `INSERT INTO sesiones (usuario_id, token_hash, inicio_en, expira_en, ultimo_uso_en, ip, user_agent)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [row.id, sha256(token), now, expiresAt, now, ctx.ip, ctx.userAgent],
-  );
+  const created = await transaction(db, async (tx) => {
+    const [current]: { password_hash: string; activo: number }[] = await tx.query(
+      'SELECT password_hash, activo FROM usuarios WHERE id = ? FOR UPDATE',
+      [row.id],
+    );
+    if (!current?.activo || current.password_hash !== row.password_hash) return null;
+    const device = await issueDevice(tx, row.id, email, deviceSecret, ctx.secureCookie);
+    const { insertId } = await tx.query(
+      `INSERT INTO sesiones (usuario_id, token_hash, inicio_en, expira_en, ultimo_uso_en, ip, user_agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [row.id, sha256(token), now, expiresAt, now, ctx.ip, ctx.userAgent],
+    );
+    return { insertId, device };
+  });
+  if (!created) {
+    await settleLogin(ctx.limiterDb, reservation, 'failed');
+    return { status: 401, body: { error: INVALID } };
+  }
+  await settleLogin(ctx.limiterDb, reservation, 'success');
+  const { insertId, device } = created;
   await audit(
     db,
     row.id,

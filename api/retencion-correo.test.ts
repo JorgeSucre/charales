@@ -105,11 +105,14 @@ test('4) failed, still to be retried: kept, and it is sent', async () => {
     'SELECT id FROM tokens_recuperacion WHERE token_hash = ?',
     ['f'.repeat(64)],
   );
-  await t.db.query('UPDATE correo_saliente SET token_id = ? WHERE id = ?', [token, id]);
+  await t.db.query(
+    "UPDATE correo_saliente SET token_id = ?, destinatario = 'marta@example.com' WHERE id = ?",
+    [token, id],
+  );
   await purge();
   const sent: string[] = [];
   assert.equal(await processMailQueue(t.db, (to) => void sent.push(to)), 1);
-  assert.deepEqual(sent, ['persona@example.com']);
+  assert.deepEqual(sent, ['marta@example.com']);
   const row = (await get(id))!;
   assert.equal(row['estado'], 'ENVIADO');
   assert.ok(row['cerrado_en'], 'now it has a closing date for the retention');

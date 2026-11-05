@@ -274,8 +274,8 @@ async function reissue(db: Pool, row: QueuedMail): Promise<string | null> {
     );
   return transaction(db, async (tx) => {
     // Lock order usuarios → tokens_recuperacion, the same as the password endpoints (R1/R2).
-    const [user]: { activo: number }[] = await tx.query(
-      'SELECT activo FROM usuarios WHERE id = ? FOR UPDATE',
+    const [user]: { activo: number; email: string }[] = await tx.query(
+      'SELECT activo, email FROM usuarios WHERE id = ? FOR UPDATE',
       [row.usuario_id],
     );
     const now = localDateTime();
@@ -287,12 +287,17 @@ async function reissue(db: Pool, row: QueuedMail): Promise<string | null> {
       await close(tx, 'CUENTA_INACTIVA');
       return null;
     }
+    // An access link only ever goes to the account's current address (audit IND-01).
+    if (user.email !== row.destinatario) {
+      await close(tx, 'CORREO_CAMBIADO');
+      return null;
+    }
     const [current]: { usado_en: string | null }[] = await tx.query(
       'SELECT usado_en FROM tokens_recuperacion WHERE id = ? FOR UPDATE',
       [row.token_id],
     );
     // Used, or revoked by a newer request: this message is out of date.
-    if (current?.usado_en) {
+    if (!current || current.usado_en) {
       await close(tx, 'TOKEN_YA_USADO');
       return null;
     }

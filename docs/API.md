@@ -121,6 +121,8 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
     procesos (MariaDB). Son 58 adivinanzas como máximo el primer día y 48 los siguientes, frente a las 1 920 de antes
     (medido). Se recarga solo, así que nunca bloquea para siempre: cuando el ataque termina, un intento cabe en 30 min como
     máximo. Una contraseña correcta devuelve su intento, sin reiniciar el ataque.
+  - **Parte de cada origen (`CUENTA_RED`, IND-03):** una asignación (/24 de IPv4 o /48 de IPv6) gasta como máximo 8 intentos de una
+    cuenta y recupera 1 cada 3 h. Para mantener vacío el presupuesto hacen falta al menos 6 asignaciones, no un solo origen.
   - **Navegador de confianza (`api/device-trust.ts`, migración 008):** el navegador desde el que una cuenta ya entró guarda un
     secreto en una cookie `HttpOnly; SameSite=Strict; Path=/auth`, y `Secure` en producción. MariaDB sólo guarda su SHA-256,
     ligado a la cuenta. Ese navegador no gasta los límites compartidos, en ninguna red, así que un atacante no puede
@@ -128,14 +130,15 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
     - **Nunca evita la contraseña.** Cada intento reserva 1 de 5 de forma atómica, antes de Argon2id; 5 errores seguidos y
       deja de valer. Una cookie robada vale 5 adivinanzas como máximo.
     - Cada inicio de sesión correcto reemplaza el secreto (una copia antigua deja de funcionar) y renueva los 90 días.
-    - Un cambio o una recuperación de contraseña **revocan todos**; como máximo 10 por cuenta. Revocar a mano:
+    - Un cambio o una recuperación de contraseña, desactivar la cuenta o cambiar su correo **revocan todos**; como máximo 10 por cuenta. Revocar a mano:
       `DELETE FROM dispositivo_confiable WHERE usuario_id = ?`.
   - **Riesgos residuales:**
     - **Ataque distribuido:** 48 adivinanzas al día por cuenta, unas 17 500 al año. Depende también de la calidad de las
       contraseñas. Reduce mucho el riesgo; no lo elimina.
     - **Navegador nuevo durante un ataque sostenido:** recibe 429 aunque la contraseña sea correcta, porque verificarla ahí
-      permitiría probar contraseñas sin límite. Compite por cada intento que se recarga, o recupera la contraseña por correo,
-      que además hace de confianza ese navegador. **Sin correo real en producción, esa vía no existe.**
+      permitiría probar contraseñas sin límite. Sus vías: un enlace de recuperación, que además hace de confianza ese navegador,
+      o uno generado por quien administra el servidor (`npm run db:access-link -- <correo>`, se entrega por otro canal). **Sin
+      correo real en producción sólo queda la segunda.** Tras el despliegue, todos cuentan como navegador nuevo hasta su primer login.
     - **Red compartida:** sin navegador de confianza, un atacante en la misma red comparte el contador de red.
     - **Disponibilidad:** el pool de 2 conexiones puede dejar el login en 503 ante una avalancha desde muchas redes; hay
       que limitarlo también en el proxy (`deploy/nginx/charales.conf`).
@@ -226,8 +229,10 @@ Código: [`api/password.ts`](../api/password.ts). Responsable de la historia: Bo
   vence a los 60 min. Una nueva solicitud revoca los tokens anteriores vigentes de la cuenta marcando `usado_en` (se
   conserva el historial). Confirmar cierra **todas** las sesiones, en una transacción con la auditoría.
 - **Sin enumeración:** la solicitud responde `204` igual para cuentas existentes, inexistentes o inactivas, y el trabajo
-  (consulta, token y envío) ocurre **después** de responder, para que el tiempo no lo delate. Límites en MariaDB, en 15 min
-  y también para correos inexistentes: 20 solicitudes por red y 5 por cuenta sumando todas las redes (`429`).
+  (consulta, token y envío) ocurre **después** de responder, para que el tiempo no lo delate. Límites en MariaDB, también para
+  correos inexistentes: por red, 20 que recuperan 1 cada 15 min (`429`); por cuenta sumando todas las redes, 5 que recuperan 1
+  por hora, como mucho 29 correos el primer día (en silencio: `204` sin enviar, para que otros no muestren un rechazo a su
+  dueño; el último correo sigue valiendo, porque nada nuevo lo revoca).
 - **Correo (`api/mail.ts`):** `MAIL_PROVIDER=resend` (DP-04), `none` o, en desarrollo, `MAIL_CONSOLE=true`. **Resend está
   implementado y probado contra un simulador; nunca se ha enviado un correo real.** Sin transporte, la solicitud y las
   invitaciones responden `503` y no crean nada.
@@ -413,5 +418,5 @@ formulario de otro sitio no puede enviar sin una solicitud previa de CORS (que l
 - **Permisos recalculados en cada `GET /auth/session` y en cada operación de dominio.** `sesiones` no tiene columna para guardar la foto de permisos
   del login, así que un cambio de permisos (HU-006) o de perfil se refleja ya en las sesiones abiertas, no sólo en las
   nuevas. Es más estricto que el mock; si se quiere la foto exacta hace falta una columna (cambio de esquema).
-- **El límite de intentos sólo retiene contraseñas incorrectas:** la contraseña correcta de una cuenta deshabilitada no
-  es un intento de adivinar y devuelve su reserva.
+- **Una cuenta deshabilitada gasta su intento también con la contraseña correcta:** devolverlo revelaría, por los contadores,
+  que la contraseña era correcta (IND-11).

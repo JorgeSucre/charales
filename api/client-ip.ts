@@ -35,6 +35,17 @@ export function limitBucket(raw: string): string {
   return `${groups.slice(0, 4).join(':')}::/64`;
 }
 
+/**
+ * A provider's allocation: the /24 of an IPv4 address, the /48 of an IPv6 one. What it costs to change this is what limits
+ * an origin's share of one account (CUENTA_RED, audit IND-03): a /48 holds 65 536 networks, and they come free.
+ */
+export function wideBucket(raw: string): string {
+  const net = limitBucket(raw);
+  if (net.endsWith('::/64')) return `${net.split(':').slice(0, 3).join(':')}::/48`;
+  const v4 = net.split('.');
+  return v4.length === 4 ? `${v4.slice(0, 3).join('.')}.0/24` : net;
+}
+
 export interface TrustedProxies {
   has(ip: string): boolean;
 }

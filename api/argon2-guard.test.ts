@@ -145,6 +145,7 @@ test('S-02: no slot → 503 without Argon2id and the S-01 attempt is given back;
   assert.deepEqual(await counters(), [
     ['CUENTA', 0],
     ['CUENTA_IP', 0],
+    ['CUENTA_RED', 0],
     ['IP', 0],
   ]);
   held();
@@ -232,6 +233,7 @@ test('S-01 × S-02 (defaults): a 503 does not spend an S-01 attempt, and a 429 n
   assert.deepEqual(await counters(), [
     ['CUENTA', 0],
     ['CUENTA_IP', 0],
+    ['CUENTA_RED', 0],
     ['IP', 0],
   ]);
   forgetRefusals(); // the 429s were remembered for a few seconds by this process (S-01, M-1)

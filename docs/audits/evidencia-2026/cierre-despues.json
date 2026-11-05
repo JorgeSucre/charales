@@ -1,7 +1,7 @@
 {
   "code": "/Users/jorgesucre/Projects/6A/ingenieria_software/charales/charales-wt/auditoria-integral-cierre",
-  "label": "despues",
-  "at": "2026-11-05T16:35:41.373Z",
+  "label": "despues3",
+  "at": "2026-11-05T17:37:11.572Z",
   "node": "v26.13.0",
   "fuerza": {
     "prefijos_150": {
@@ -10,9 +10,18 @@
         "429": 140
       },
       "first429": 11,
-      "median_401_ms": 24.3,
-      "median_429_ms": 0.6,
-      "total_ms": 349
+      "median_401_ms": 24.4,
+      "median_429_ms": 0.5,
+      "total_ms": 342
+    },
+    "prefijos_150_de_un_48": {
+      "statuses": {
+        "401": 8,
+        "429": 142
+      },
+      "first429": 9,
+      "median_401_ms": 24.6,
+      "median_429_ms": 0.5
     },
     "un_64_150": {
       "statuses": {
@@ -20,16 +29,16 @@
         "429": 145
       },
       "first429": 6,
-      "median_401_ms": 23.6,
+      "median_401_ms": 24.6,
       "median_429_ms": 0.5
     },
     "ipv4_60": {
       "statuses": {
-        "401": 10,
-        "429": 50
+        "401": 8,
+        "429": 52
       },
-      "first429": 11,
-      "median_401_ms": 23.9,
+      "first429": 9,
+      "median_401_ms": 25,
       "median_429_ms": 0.5
     },
     "mapeadas_9": {
@@ -38,17 +47,17 @@
         "429": 4
       },
       "first429": 6,
-      "median_401_ms": 23.4,
-      "median_429_ms": 0.8
+      "median_401_ms": 24.2,
+      "median_429_ms": 0.6
     },
     "concurrentes_60": {
       "statuses": {
         "401": 10,
         "429": 50
       },
-      "first429": 2,
-      "median_401_ms": 72.3,
-      "median_429_ms": 43.6,
+      "first429": 11,
+      "median_401_ms": 69.6,
+      "median_429_ms": 41,
       "conexiones_pico": 11
     },
     "dos_procesos_150": {
@@ -57,7 +66,7 @@
         "429": 140
       },
       "first429": 11,
-      "median_401_ms": 23.5,
+      "median_401_ms": 25.2,
       "median_429_ms": 0.5
     },
     "reinicio": {
@@ -70,7 +79,7 @@
       }
     },
     "conexiones_cortadas": {
-      "cortadas": 10,
+      "cortadas": 11,
       "antes": {
         "401": 6
       },
@@ -101,7 +110,7 @@
         "429": 30
       }
     },
-    "db": "ef_cier26_despues_fb_12ad33",
+    "db": "ef_cier26_despues3_fb_20ff41",
     "seconds": 10
   },
   "dia": {
@@ -110,7 +119,7 @@
     "adivinanzas_verificadas_24h": 57,
     "rechazadas_24h": 2343,
     "primera_hora_por_paso": [10, 0, 1, 0],
-    "db": "ef_cier26_despues_dia_6d0ee9",
+    "db": "ef_cier26_despues3_dia_0cdf24",
     "seconds": 44
   },
   "dueno": {
@@ -126,9 +135,11 @@
     "navegador_nuevo_red_nueva": 429,
     "atacante_con_contrasena_correcta_red_nueva": 429,
     "mismo_navegador_otra_instancia": 200,
+    "un_origen_intentos_verificados_por_ronda": [8, 0, 0, 0],
+    "un_origen_navegador_nuevo_red_nueva": 200,
     "dueno_durante_ataque_concurrente": {
       "200": 15,
-      "mediana_ms": 27.1
+      "mediana_ms": 25.7
     },
     "red_agotada": {
       "401": 50,
@@ -146,12 +157,12 @@
     "recuperacion_confirmacion": 204,
     "recuperacion_despues_misma_red": 200,
     "recuperacion_despues_otra_red_mismo_navegador": 200,
-    "db": "ef_cier26_despues_dn_61bb11",
-    "seconds": 9
+    "db": "ef_cier26_despues3_dn_a4e768",
+    "seconds": 12
   },
   "databases": [
-    "ef_cier26_despues_fb_12ad33",
-    "ef_cier26_despues_dia_6d0ee9",
-    "ef_cier26_despues_dn_61bb11"
+    "ef_cier26_despues3_fb_20ff41",
+    "ef_cier26_despues3_dia_0cdf24",
+    "ef_cier26_despues3_dn_a4e768"
   ]
 }

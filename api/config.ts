@@ -29,6 +29,10 @@ export function checkEnvironment(env: Record<string, string | undefined>): Envir
   } catch (e) {
     errors.push((e as Error).message);
   }
+  // Anything else (a typo, a value with a comment stuck to it) would silently switch off every check below (audit IND-04).
+  const mode = env['NODE_ENV'];
+  if (mode && !['production', 'development', 'test'].includes(mode))
+    errors.push(`NODE_ENV: «${mode}» no es production, development ni test.`);
   if (!production) {
     if (env['COOKIE_SECURE'] !== 'true')
       warnings.push(

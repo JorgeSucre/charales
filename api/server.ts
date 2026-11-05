@@ -304,7 +304,7 @@ if (import.meta.main) {
     limiterDb,
     labApi: !production,
     argon2: argon2Gate(argon2LimitsFrom(env)), // S-02, per process; an invalid value stops the start
-  }).listen(port, () =>
+  }).listen(port, env['HOST'] || undefined, () =>
     console.log(
       `Charales API en http://localhost:${port} (BD ${env['DB_NAME'] ?? 'escuela_futbol'})`,
     ),

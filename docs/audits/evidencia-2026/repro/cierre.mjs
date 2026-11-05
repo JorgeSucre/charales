@@ -114,7 +114,10 @@ async function login(base, email, password, ip, jar) {
 const WRONG = 'incorrecta-1';
 const RIGHT = 'demo1234';
 const OWNER = 'marta@example.com';
-const ip6 = (i) => `2001:db8:${(i >> 8).toString(16)}:${(i & 255).toString(16)}::1`;
+/** One /64 of one provider's /48. */
+const same48 = (i) => `2001:db8:1:${(i & 0xffff).toString(16)}::1`;
+/** Each from its own /48: an attacker with many allocations, the worst case. */
+const ip6 = (i) => `2001:db8:${(i & 0xffff).toString(16)}::1`;
 async function clear(db) {
   const p = tmp(db);
   await p.query('DELETE FROM limite_acceso');
@@ -173,6 +176,8 @@ const scenarios = {
     const t0 = performance.now();
     res.prefijos_150 = summary(await seq(a.base, 150, ip6));
     res.prefijos_150.total_ms = Math.round(performance.now() - t0);
+    await fresh();
+    res.prefijos_150_de_un_48 = summary(await seq(a.base, 150, same48));
     await fresh();
     res.un_64_150 = summary(
       await seq(a.base, 150, (i) => `2001:db8:1:2::${((i % 30) + 1).toString(16)}`),
@@ -291,6 +296,22 @@ const scenarios = {
       await login(other.base, OWNER, RIGHT, '203.0.113.213', phone)
     ).s;
     await other.stop();
+    // One origin only: 60 attempts from one provider's /48, retaken every 30 simulated minutes for a day.
+    await fresh();
+    let origin = 0;
+    const retaken = [];
+    for (const first of [60, 2, 2, 2]) {
+      retaken.push(
+        (await seq(a.base, first, () => same48(origin++))).filter((r) => r.s === 401).length,
+      );
+      await a.stop();
+      await shift(db, 30);
+      a = await api(db, { MAIL_CONSOLE: 'true' });
+    }
+    res.un_origen_intentos_verificados_por_ronda = retaken;
+    res.un_origen_navegador_nuevo_red_nueva = (
+      await login(a.base, OWNER, RIGHT, '203.0.113.215', browser())
+    ).s;
     // Latency for the owner under a concurrent attack.
     await fresh();
     const home = browser();

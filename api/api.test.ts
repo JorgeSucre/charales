@@ -349,10 +349,13 @@ test('reset: policy is checked; invalid tokens get the generic message', async (
   assert.deepEqual(await res.json(), { error: 'El enlace no es válido o ya expiró.' });
 });
 
-test('reset request: limited per e-mail and IP (429), whether the account exists or not', async () => {
+test('reset request: limited per e-mail, in silence, whether the account exists or not', async () => {
   for (let i = 0; i < 5; i++) assert.equal((await requestReset('limite@example.com')).status, 204);
-  assert.equal((await requestReset('limite@example.com')).status, 429);
-  assert.equal((await requestReset('LIMITE@example.com ')).status, 429, 'normalized e-mail');
+  // Past the account's budget nothing is done, and the answer is the same: others can't show its owner a refusal.
+  const rows = await db.query('SELECT COUNT(*) AS n FROM limite_acceso');
+  assert.equal((await requestReset('limite@example.com')).status, 204);
+  assert.equal((await requestReset('LIMITE@example.com ')).status, 204, 'normalized e-mail');
+  assert.deepEqual(await db.query('SELECT COUNT(*) AS n FROM limite_acceso'), rows);
 });
 
 test('reset request without a mail transport (D4b): 503 before reading the account, no token created', async () => {

@@ -166,19 +166,14 @@ test('S-01: a successful login clears the account counter of that address and gi
   });
 });
 
-test('S-01: a right password on a disabled account is not a guess — its reservation is given back, nothing cleared', async () => {
-  await t.db.query("UPDATE usuarios SET activo = FALSE WHERE email = 'tutor@example.com'");
-  try {
-    assert.equal((await login('tutor@example.com', WRONG)).status, 401);
-    assert.equal((await login('tutor@example.com', 'demo1234')).status, 401); // same answer (no enumeration)
-    assert.deepEqual(await counters('127.0.0.1', 'tutor@example.com'), {
-      IP: 1,
-      CUENTA_IP: 1,
-      CUENTA: 1,
-    });
-  } finally {
-    await t.db.query("UPDATE usuarios SET activo = TRUE WHERE email = 'tutor@example.com'");
-  }
+test('IND-11: a right password on a disabled account costs its attempt like a wrong one, and clears nothing', async () => {
+  const [res] = await verified(() => login('baja@example.com', 'demo1234'));
+  assert.equal(res.status, 401);
+  assert.deepEqual(await counters('127.0.0.1', 'baja@example.com'), {
+    IP: 1,
+    CUENTA_IP: 1,
+    CUENTA: 1,
+  });
 });
 
 test('S-01: the window expires — after 15 minutes the account can be tried again; expired rows are purged', async () => {
@@ -195,13 +190,13 @@ test('S-01: the window expires — after 15 minutes the account can be tried aga
   const [res, n] = await verified(() => login('marta@example.com', 'demo1234'));
   assert.equal(res.status, 200);
   assert.equal(n, 1);
-  // the old rows were rewritten in place (same keys): only marta's three counters remain
-  assert.equal(await rowCount(), 3);
+  // the old rows were rewritten in place (same keys): only marta's four counters remain
+  assert.equal(await rowCount(), 4);
   await login('otra@example.com', WRONG); // an admitted attempt purges what has expired
   await t.advance(LOGIN_WINDOW_MS);
   await login('nadie@example.com', WRONG);
-  // network and pair rows of the expired attempts are gone; an account's budget row stays until it is whole again
-  assert.equal(await rowCount(), 5, 'the 3 accounts and the last network + pair');
+  // network and pair rows of the expired attempts are gone; the budget rows of an account stay until they are whole again
+  assert.equal(await rowCount(), 8, 'the budgets of the 3 accounts, and the last network + pair');
 });
 
 // ------------------------------------------------------------------ H-1: one identity per account, as MariaDB sees it
@@ -296,7 +291,7 @@ test('H-2 / R-1: 10 attacking addresses × 5 wrong passwords do not stop the own
   });
   assert.equal(usual.status, 200);
   const browser = deviceCookie(usual);
-  const attackers = Array.from({ length: 10 }, (_, i) => `198.51.100.${i + 1}`);
+  const attackers = Array.from({ length: 10 }, (_, i) => `198.51.${i + 1}.1`);
   const [responses, n] = await verified(() =>
     Promise.all(
       attackers.flatMap((client) =>
@@ -518,7 +513,7 @@ test('S-01: the table stores no e-mail, IP, password or token — only SHA-256 k
   const rows: { clave: string; ambito: string }[] = await t.db.query(
     'SELECT clave, ambito FROM limite_acceso',
   );
-  assert.equal(rows.length, 3);
+  assert.equal(rows.length, 4);
   for (const r of rows) assert.match(r.clave, /^[0-9a-f]{64}$/);
-  assert.deepEqual(rows.map((r) => r.ambito).sort(), ['CUENTA', 'CUENTA_IP', 'IP']);
+  assert.deepEqual(rows.map((r) => r.ambito).sort(), ['CUENTA', 'CUENTA_IP', 'CUENTA_RED', 'IP']);
 });

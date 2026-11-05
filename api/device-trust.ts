@@ -9,7 +9,8 @@
  *   and starts over; 5 wrong passwords in a row and it trusts nothing. A stolen cookie is worth at most 5 guesses;
  * - bound to one account, so it is worth nothing for another;
  * - 90 days, renewed only by a successful login, which also replaces the secret (an older copy stops working);
- * - a password change or recovery revokes them all (the transaction of those endpoints), at most 10 per user.
+ * - a password change or recovery revokes them all (the transaction of those endpoints), and so does deactivating the
+ *   account or changing its e-mail (api/rpc.ts); at most 10 per user.
  * Cookie: `Path=/auth`, HttpOnly, SameSite=Strict, Secure in production; one per account, for shared computers. Its name
  * comes from the e-mail as typed (lowercase, trimmed): a variant of the e-mail just finds no cookie and takes the normal path.
  */
@@ -51,7 +52,7 @@ export async function releaseDevice(db: Pool, secret: string): Promise<void> {
  * be stored: the login still succeeds, the browser just isn't trusted next time.
  */
 export async function issueDevice(
-  db: Pool,
+  db: Pool | PoolConnection,
   userId: number,
   email: string,
   previous: string | null,

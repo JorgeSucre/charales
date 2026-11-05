@@ -30,7 +30,7 @@ Antes de usarlo, lee el dictamen vigente en [`AUDITORIA_FINAL_CIERRE_2026.md`](.
 | Revisión de privacidad y retención de datos de menores      | No consta   | Pendiente |
 | Longitud mínima de contraseña (hoy 8, decisión de producto) | No consta   | Pendiente |
 
-**Software:** Node 24.15+ o 26, MariaDB 10.6+ (probado en 13.0.2; CI configurada con 11.8, sin ejecutar), nginx u otro proxy con TLS.
+**Software:** Node 24.15+ o 26, MariaDB 10.6+ (probado en 13.0.2; CI configurada con 11.8, sin ejecutar), nginx 1.25.1+ u otro proxy con TLS.
 
 **Dimensionamiento:** unos 19 MiB por operación de Argon2id, multiplicados por `ARGON2_MAX_CONCURRENT` y por el número de procesos, más 100–150 MiB de Node por proceso, más MariaDB. **No se ha medido bajo carga real.**
 
@@ -50,7 +50,7 @@ Antes de usarlo, lee el dictamen vigente en [`AUDITORIA_FINAL_CIERRE_2026.md`](.
    - `event_scheduler=ON`, para el trabajo diario de VENCIDO. Compruébalo con `SELECT @@event_scheduler;`.
    - `bind-address=127.0.0.1`, si la API está en la misma máquina.
    - Zona horaria de la escuela (`America/Mexico_City`), también en el proceso de la API.
-4. Copia `deploy/env.production.example` a `/etc/charales/api.env`, modo 640, dueño `root:charales`, y complétalo. **Nunca** en Git. Usa una IP o rango real del proxy en `TRUSTED_PROXIES`: no inventes valores. Si hay un balanceador delante de nginx, añádelo, porque la API busca de derecha a izquierda el primer salto que no sea de confianza.
+4. Copia `deploy/env.production.example` a `/etc/charales/api.env`, modo 640, dueño `root:charales`, y complétalo. **Nunca** en Git. Usa una IP o rango real del proxy en `TRUSTED_PROXIES`: no inventes valores. Si hay un balanceador delante de nginx, añádelo: la API busca de derecha a izquierda el primer salto que no sea de confianza, y la plantilla de nginx añade el cliente a `X-Forwarded-For` sin perder los anteriores.
 5. Instala `deploy/systemd/charales-api.service`.
 6. Instala `deploy/nginx/charales.conf` y copia `deploy/nginx/security-headers.conf` a `/etc/nginx/snippets/charales-security-headers.conf`. Ajusta el dominio y los certificados, y ejecuta `nginx -t`.
 7. Cierra el puerto de la API y de MariaDB en el cortafuegos: sólo 80 y 443 hacia Internet.
@@ -72,18 +72,19 @@ cd /srv/charales/releases/<sha>
 npm ci --no-audit --no-fund
 npm run build                 # dist/project/browser
 npm run api:build             # api/.build/domain.mjs: necesita esbuild, dependencia de desarrollo
+```
+
+**Prepara la base antes de retirar las dependencias de desarrollo,** con la cuenta `charales_admin` y después del respaldo:
+
+```sh
+# Instalación nueva: crea el esquema, las migraciones y los permisos. Base con datos: sólo aplica lo que falte.
+DB_USER=charales_admin DB_PASSWORD=<…> DB_NAME=escuela_futbol npm run db:setup
+# Sólo la primera vez:
+DB_USER=charales_admin DB_PASSWORD=<…> DB_NAME=escuela_futbol npm run db:admin
 npm prune --omit=dev          # lo que no hace falta en ejecución
 ```
 
-**Migraciones,** con la cuenta `charales_admin` y después del respaldo. Son idempotentes y `migrate.sh` ejecuta toda la secuencia:
-
-```sh
-DB_NAME=escuela_futbol sh db/mariadb/scripts/migrate.sh
-```
-
-> **No** ejecutes `docs/escuela_futbol_mariadb.sql` sobre una base con datos: borra sus tablas. Sólo sirve para una base nueva.
-
-**Primer administrador,** sólo la primera vez: `npm run db:admin`.
+> **No** ejecutes `docs/escuela_futbol_mariadb.sql` sobre una base con datos: borra sus tablas.
 
 **Activar:**
 
@@ -150,14 +151,22 @@ Un respaldo contiene datos de personas, también de menores. Nunca en el reposit
 La API aplica la retención de `correo_saliente` al arrancar y cada hora (`docs/API.md`). Para una base sin API, o tras cambiar `CORREO_RETENCION_DIAS`:
 
 ```sh
-npm run db:mail-purge   # por lotes; repetir o interrumpir es seguro; avisa si quedan más
+node --env-file=/etc/charales/api.env api/mail-purge.ts   # por lotes; repetir o interrumpir es seguro
 ```
 
 Comprobar: `SELECT estado, COUNT(*), SUM(destinatario IS NOT NULL) FROM correo_saliente GROUP BY estado;`. Fija la retención de los respaldos y de `sesiones` y `auditoria` en la misma política: **esta purga no les alcanza.**
 
 ### Navegadores de confianza
 
-Revocar los de una cuenta, por ejemplo si se pierde un teléfono: `DELETE FROM dispositivo_confiable WHERE usuario_id = ?;`. Un cambio o una recuperación de contraseña ya lo hacen.
+Revocar los de una cuenta, por ejemplo si se pierde un teléfono: `DELETE FROM dispositivo_confiable WHERE usuario_id = ?;`. Un cambio o una recuperación de contraseña, desactivar la cuenta o cambiar su correo ya lo hacen.
+
+### Acceso sin correo
+
+Si alguien no puede entrar y no hay correo disponible, quien administra el servidor puede generar un enlace de 60 minutos, tras confirmar la identidad de quien lo pide y para entregarlo por otro canal. Queda en `auditoria`:
+
+```sh
+node --env-file=/etc/charales/api.env api/access-link.ts <correo>
+```
 
 ## 9. Marcha atrás
 
@@ -176,16 +185,16 @@ La versión anterior ignora las tablas y ámbitos nuevos. **Una API anterior a l
 
 ## 10. Recuperación ante fallos
 
-| Síntoma                                        | Causa probable                             | Qué hacer                                                                                                                        |
-| ---------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| La API no arranca: `Error de configuración`    | Variable obligatoria incorrecta            | Corrige `/etc/charales/api.env`; el log dice cuál                                                                                |
-| La API no arranca: `La base no está al día`    | Falta una migración                        | Respaldo y `migrate.sh`                                                                                                          |
-| Todos reciben 429 al entrar                    | `TRUSTED_PROXIES` no incluye al proxy      | Revisa la IP real del proxy y el log `Llegó X-Forwarded-For`                                                                     |
-| Una cuenta recibe 429 desde un navegador nuevo | Ataque o muchos fallos (límite por cuenta) | Desde un navegador donde ya entró funciona. Si no, esperar (recupera 1 intento cada 30 min) o recuperar la contraseña por correo |
-| Login 503                                      | MariaDB o el pool del limitador            | `/health`, estado de MariaDB; el login falla cerrado a propósito                                                                 |
-| 503 «El servicio está ocupado»                 | Semáforo de Argon2id saturado              | Tráfico anómalo; ajusta `limit_req` o el dimensionamiento                                                                        |
-| Invitaciones o recuperación 503                | `MAIL_PROVIDER=none`                       | Configura el proveedor                                                                                                           |
-| Correos en `PENDIENTE` sin salir               | Proveedor caído                            | Se reintentan solos, hasta 8 veces o hasta su vencimiento                                                                        |
+| Síntoma                                        | Causa probable                             | Qué hacer                                                                                                                                                        |
+| ---------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| La API no arranca: `Error de configuración`    | Variable obligatoria incorrecta            | Corrige `/etc/charales/api.env`; el log dice cuál                                                                                                                |
+| La API no arranca: `La base no está al día`    | Falta una migración                        | Respaldo y `migrate.sh`                                                                                                                                          |
+| Todos reciben 429 al entrar                    | `TRUSTED_PROXIES` no incluye al proxy      | Revisa la IP real del proxy y el log `Llegó X-Forwarded-For`                                                                                                     |
+| Una cuenta recibe 429 desde un navegador nuevo | Ataque o muchos fallos (límite por cuenta) | Desde un navegador donde ya entró funciona. Si no: recuperar la contraseña por correo, o `access-link.ts` (§ 8). Tras un despliegue, todos son «navegador nuevo» |
+| Login 503                                      | MariaDB o el pool del limitador            | `/health`, estado de MariaDB; el login falla cerrado a propósito                                                                                                 |
+| 503 «El servicio está ocupado»                 | Semáforo de Argon2id saturado              | Tráfico anómalo; ajusta `limit_req` o el dimensionamiento                                                                                                        |
+| Invitaciones o recuperación 503                | `MAIL_PROVIDER=none`                       | Configura el proveedor                                                                                                                                           |
+| Correos en `PENDIENTE` sin salir               | Proveedor caído                            | Se reintentan solos, hasta 8 veces o hasta su vencimiento                                                                                                        |
 
 ## 11. Protección de GitHub
 

@@ -14,3 +14,5 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON escuela_futbol.* TO 'charales_app'@'loca
 -- Respaldos: lectura y lo que mariadb-dump necesita.
 CREATE USER IF NOT EXISTS 'charales_backup'@'localhost' IDENTIFIED BY 'CAMBIAR_BACKUP';
 GRANT SELECT, SHOW VIEW, TRIGGER, EVENT, LOCK TABLES ON escuela_futbol.* TO 'charales_backup'@'localhost';
+-- Sin esto, mariadb-dump omite el procedimiento almacenado sin avisar (verify-backup.sh ya lo detecta).
+GRANT SELECT ON mysql.proc TO 'charales_backup'@'localhost';

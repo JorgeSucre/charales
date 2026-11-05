@@ -16,7 +16,8 @@
 import type { Pool, PoolConnection } from 'mariadb';
 import type { Ctx, Reply } from './server.ts';
 import { argon2Gate, type Argon2Gate } from './argon2-guard.ts';
-import { NO_SESSION, sessionUser } from './auth.ts';
+import { NO_SESSION, localDateTime, sessionUser } from './auth.ts';
+import { revokeDevices } from './device-trust.ts';
 import { deliverMail, enqueueMail, tokenHashOf } from './mail.ts';
 import { TABLES, type TableMap } from './tables.ts';
 
@@ -119,7 +120,8 @@ async function runOperation(
         {
           audit: service === 'AuditService',
           // In the same transaction: the operation and its notice are committed together (F5-08).
-          beforeCommit: async (conn, out) => {
+          beforeCommit: async (conn, out, before) => {
+            await settleAccountChanges(conn, before, out.tables);
             mailIds.length = 0;
             for (const m of out.outbox)
               mailIds.push(await enqueueMail(conn, m.to, m.subject, tokenHashOf(m.body)));
@@ -176,6 +178,26 @@ function sessionGate(token: string): Argon2Gate {
 /** The database doesn't match the code (a migration is missing): logged in full, a generic 500 for the client. */
 class SchemaError extends Error {}
 
+/**
+ * An account that changed e-mail or was deactivated: what trusted the old state stops counting, in the same transaction
+ * (audit IND-01, IND-08). Its trusted browsers go, and no queued message may go out; the service already revoked its tokens.
+ */
+async function settleAccountChanges(conn: PoolConnection, before: Tables, after: Tables) {
+  const old = new Map((before['users'] ?? []).map((u) => [u['id'], u]));
+  for (const user of after['users'] ?? []) {
+    const prev = old.get(user['id']);
+    if (!prev || prev === user) continue;
+    if (prev['email'] === user['email'] && (user['active'] || !prev['active'])) continue;
+    await revokeDevices(conn, user['id'] as number);
+    const now = localDateTime();
+    await conn.query(
+      `UPDATE correo_saliente SET estado = 'FALLIDO', ultimo_error = 'CUENTA_MODIFICADA', cerrado_en = ?, bloqueado_hasta = NULL
+        WHERE usuario_id = ? AND estado IN ('PENDIENTE', 'ENVIANDO')`,
+      [now, user['id']],
+    );
+  }
+}
+
 class MailUnavailable extends Error {
   constructor() {
     super(
@@ -201,7 +223,7 @@ export async function unitOfWork<T extends { tables: Tables }>(
   options: {
     audit?: boolean;
     /** Runs on the same connection, after the writes and before COMMIT: its writes share the transaction. */
-    beforeCommit?: (conn: PoolConnection, out: T) => Promise<void>;
+    beforeCommit?: (conn: PoolConnection, out: T, before: Tables) => Promise<void>;
   } = {},
 ): Promise<T> {
   const conn = await db.getConnection();
@@ -235,7 +257,7 @@ export async function unitOfWork<T extends { tables: Tables }>(
           Object.fromEntries(Object.entries(before).map(([k, rows]) => [k, [...rows]])),
         );
         const changed = await applyChanges(conn, meta, before, out.tables);
-        await options.beforeCommit?.(conn, out);
+        await options.beforeCommit?.(conn, out, before);
         const touched = [...changed].filter((t) => !FRESH.has(t));
         let next: Tables | null = null;
         if (touched.length) {

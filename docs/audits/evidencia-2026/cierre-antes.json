@@ -1,7 +1,7 @@
 {
   "code": "/private/tmp/claude-501/-Users-jorgesucre-Projects-6A-ingenieria-software-charales-project/c16807e6-b80d-4f6b-ba11-9084c59dd6a1/scratchpad/cierre/base",
-  "label": "antes",
-  "at": "2026-11-05T16:20:50.921Z",
+  "label": "antes3",
+  "at": "2026-11-05T17:35:19.927Z",
   "node": "v26.13.0",
   "fuerza": {
     "prefijos_150": {
@@ -10,9 +10,18 @@
         "429": 130
       },
       "first429": 21,
-      "median_401_ms": 24.4,
+      "median_401_ms": 24.2,
       "median_429_ms": 0.7,
-      "total_ms": 655
+      "total_ms": 623
+    },
+    "prefijos_150_de_un_48": {
+      "statuses": {
+        "401": 20,
+        "429": 130
+      },
+      "first429": 21,
+      "median_401_ms": 22.8,
+      "median_429_ms": 0.7
     },
     "un_64_150": {
       "statuses": {
@@ -20,7 +29,7 @@
         "429": 145
       },
       "first429": 6,
-      "median_401_ms": 23.7,
+      "median_401_ms": 23.5,
       "median_429_ms": 0.5
     },
     "ipv4_60": {
@@ -29,7 +38,7 @@
         "429": 40
       },
       "first429": 21,
-      "median_401_ms": 23.2,
+      "median_401_ms": 23.1,
       "median_429_ms": 0.7
     },
     "mapeadas_9": {
@@ -38,17 +47,17 @@
         "429": 4
       },
       "first429": 6,
-      "median_401_ms": 23.7,
-      "median_429_ms": 0.6
+      "median_401_ms": 23.2,
+      "median_429_ms": 0.7
     },
     "concurrentes_60": {
       "statuses": {
         "401": 20,
         "429": 40
       },
-      "first429": 2,
-      "median_401_ms": 152.7,
-      "median_429_ms": 99.4,
+      "first429": 19,
+      "median_401_ms": 123.8,
+      "median_429_ms": 71.3,
       "conexiones_pico": 11
     },
     "dos_procesos_150": {
@@ -57,7 +66,7 @@
         "429": 130
       },
       "first429": 21,
-      "median_401_ms": 23.8,
+      "median_401_ms": 23.6,
       "median_429_ms": 0.7
     },
     "reinicio": {
@@ -101,8 +110,8 @@
         "429": 20
       }
     },
-    "db": "ef_cier26_antes_fb_3a9d4e",
-    "seconds": 12
+    "db": "ef_cier26_antes3_fb_24935e",
+    "seconds": 13
   },
   "dia": {
     "pasos": 96,
@@ -110,8 +119,8 @@
     "adivinanzas_verificadas_24h": 1920,
     "rechazadas_24h": 480,
     "primera_hora_por_paso": [20, 20, 20, 20],
-    "db": "ef_cier26_antes_dia_6fd113",
-    "seconds": 88
+    "db": "ef_cier26_antes3_dia_8e1efe",
+    "seconds": 87
   },
   "dueno": {
     "login_inicial": 200,
@@ -126,9 +135,11 @@
     "navegador_nuevo_red_nueva": 429,
     "atacante_con_contrasena_correcta_red_nueva": 429,
     "mismo_navegador_otra_instancia": 429,
+    "un_origen_intentos_verificados_por_ronda": [20, 2, 2, 2],
+    "un_origen_navegador_nuevo_red_nueva": 200,
     "dueno_durante_ataque_concurrente": {
       "429": 15,
-      "mediana_ms": 2.4
+      "mediana_ms": 2.1
     },
     "red_agotada": {
       "401": 50,
@@ -146,13 +157,12 @@
     "recuperacion_confirmacion": 204,
     "recuperacion_despues_misma_red": 200,
     "recuperacion_despues_otra_red_mismo_navegador": 429,
-    "db": "ef_cier26_antes_dn_c482ac",
-    "seconds": 9
+    "db": "ef_cier26_antes3_dn_b29416",
+    "seconds": 12
   },
   "databases": [
-    "ef_cier26_antes_fb_d8c18d",
-    "ef_cier26_antes_dia_6fd113",
-    "ef_cier26_antes_dn_c482ac",
-    "ef_cier26_antes_fb_3a9d4e"
+    "ef_cier26_antes3_fb_24935e",
+    "ef_cier26_antes3_dia_8e1efe",
+    "ef_cier26_antes3_dn_b29416"
   ]
 }

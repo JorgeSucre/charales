@@ -1,76 +1,27 @@
 /**
- * Login attempt limits (S-01), shared through MariaDB (migration 005, `limite_acceso`), so they survive a restart and
- * hold across several API instances. An attempt is RESERVED before the password is verified, in one transaction
- * that locks the counters (FOR UPDATE): N simultaneous requests can never all pass the check while the first ones are
- * still running Argon2id. A correct password gives the reservation back (see `settleLogin`).
- *
- * Two counters per attempt, each a fixed 15-minute window started by its first attempt:
- * - CUENTA_IP (account + client IP): 5 — one person mistyping on one device, and the brake on guessing one account
- *   from one address;
- * - IP (client IP, any account): 50 — caps the Argon2id work one address can trigger, with room for a school office
- *   behind one NAT.
- * There is deliberately NO counter per account alone (audit H-2): it let anyone who knows an e-mail lock its owner out
- * from a few addresses, for as long as they kept trying. A distributed guess is limited by the addresses it uses
- * (5 per account and 50 in total per address and window); see docs/API.md for the residual risk.
- *
- * The account is identified the way MariaDB compares `usuarios.email` (utf8mb4_unicode_ci), not by JavaScript:
- * accents, full-width letters, zero-width characters and trailing spaces that find the same account share its counter
- * (audit H-1). Unknown e-mails are counted exactly like existing ones (no enumeration).
- *
- * A refused attempt writes nothing (audit M-1): the counters are read with FOR UPDATE and written only when the attempt
- * fits, and a refusal is also remembered by this process for a few seconds so a flood doesn't reach MariaDB. The
- * limiter can run on its own small pool (`createApp` option `limiterDb`), so a flood can't take the connections of the
- * rest of the API. Keys are SHA-256 hashes, never the e-mail or the IP; expired rows are purged after an admitted
- * attempt.
- */
-/**
- * Attempt limits shared through MariaDB (S-01, migrations 005 and 007, `limite_acceso`), so they survive a restart and
+ * Attempt limits shared through MariaDB (S-01, migrations 005, 007 and 008, `limite_acceso`), so they survive a restart and
  * hold across several API instances. An attempt is RESERVED before the slow or sensitive work, in one transaction that
  * locks the counters (FOR UPDATE): N simultaneous requests can never all pass the check. A correct password gives the
  * reservation back (see `settleLogin`).
  *
- * The login has three counters. "Network" is an IPv4 address or the /64 of an IPv6 one (api/client-ip.ts): one customer
- * usually holds a whole /64, so counting addresses would be no limit at all (R-1).
+ * The login has four counters. "Network" is an IPv4 address or the /64 of an IPv6 one, and "wide network" its /24 or /48
+ * (api/client-ip.ts): one customer usually holds a whole /64, so counting addresses would be no limit at all (R-1).
  * - CUENTA_IP (account + network): 5 in a fixed 15-minute window — one person mistyping on one device, and the brake on
  *   guessing from one network;
  * - IP (network, any account): 50 in a fixed 15-minute window — caps the Argon2id work one network can trigger, with room
  *   for an office behind NAT;
  * - CUENTA (account, every network): a budget of 10 that recovers 1 every 30 minutes — the brake on guessing one account
- *   from many networks (R-1). It adds up to at most 58 guesses the first day and 48 a day after that, however many addresses
- *   the attacker has. It refills on its own, so it can never lock an account for good: when an attack stops, a new attempt
- *   fits within 30 minutes. A right password gives its attempt back.
+ *   from many networks. At most 58 guesses the first day and 48 a day after that, however many addresses the attacker has.
+ *   It refills on its own, so it never locks an account for good. A right password gives its attempt back;
+ * - CUENTA_RED (account + wide network): a budget of 8 that recovers 1 every 3 hours, 8 a day — so one origin can't keep
+ *   CUENTA empty by retaking each attempt as it comes back (audit IND-03): that takes at least 6 allocations. Someone
+ *   mistyping on a new browser can still try again when the 15 minutes of CUENTA_IP are over.
  *
- * A browser the account already logged in from skips the three (api/device-trust.ts): it has its own, stricter limit. So an
- * attacker can't lock the owner out from where they log in (audit H-2). The price: during a sustained attack, the owner on a
- * NEW browser gets 429 even with the right password, because verifying it there would let anyone try passwords without
- * limit. They can wait for a free slot or recover the password by e-mail, which also trusts that browser.
- *
- * The account is identified the way MariaDB compares `usuarios.email` (utf8mb4_unicode_ci), not by JavaScript:
- * accents, full-width letters, zero-width characters and trailing spaces that find the same account share its counter
- * (audit H-1). Unknown e-mails are counted exactly like existing ones (no enumeration).
- *
- * A refused attempt writes nothing (audit M-1): the counters are read with FOR UPDATE and written only when the attempt
- * fits, and a refusal is also remembered by this process for a few seconds so a flood doesn't reach MariaDB. The
- * limiter can run on its own small pool (`createApp` option `limiterDb`), so a flood can't take the connections of the
- * rest of the API. Keys are SHA-256 hashes, never the e-mail or the IP; expired rows are purged after an admitted
- * attempt.
- */
-/**
- * Attempt limits shared through MariaDB (S-01, migrations 005 and 007, `limite_acceso`), so they survive a restart and
- * hold across several API instances. An attempt is RESERVED before the slow or sensitive work, in one transaction that
- * locks the counters (FOR UPDATE): N simultaneous requests can never all pass the check. A correct password gives the
- * reservation back (see `settleLogin`).
- *
- * The login has three counters, each a fixed 15-minute window started by its first attempt. "Network" is an IPv4 address
- * or the /64 of an IPv6 one (api/client-ip.ts): one customer usually holds a whole /64, so counting addresses would be no
- * limit at all (R-1).
- * - CUENTA_IP (account + network): 5 — one person mistyping on one device, and the brake on guessing from one network;
- * - IP (network, any account): 50 — caps the Argon2id work one network can trigger, with room for an office behind NAT;
- * - CUENTA (account, every network): 20 — the brake on guessing one account from many networks (R-1). It only applies to
- *   networks the account has not logged in from: a network with a recent success never counts on it and is never
- *   refused by it. So an attacker can't lock the owner out from where they usually log in (audit H-2), which is what
- *   a plain counter per account allowed. The price: during an attack the owner on a NEW network gets 429 until the
- *   window ends or they recover the password by e-mail, which proves the account and marks that network as known.
+ * A browser the account already logged in from skips them all (api/device-trust.ts): it has its own, stricter limit. So an
+ * attacker can't lock the owner out from where they log in (audit H-2). What is left: during a sustained attack from several
+ * networks, the owner on a NEW browser gets 429 even with the right password, because verifying it there would let anyone
+ * try passwords without limit. Their ways in: a recovery link (which also trusts that browser), or one an operator
+ * generates (`npm run db:access-link`).
  *
  * The account is identified the way MariaDB compares `usuarios.email` (utf8mb4_unicode_ci), not by JavaScript:
  * accents, full-width letters, zero-width characters and trailing spaces that find the same account share its counters
@@ -79,23 +30,32 @@
  * A refused attempt writes nothing (audit M-1): the counters are read with FOR UPDATE and written only when the attempt
  * fits, and a refusal is also remembered by this process for a few seconds so a flood doesn't reach MariaDB. The
  * limiter can run on its own small pool (`createApp` option `limiterDb`), so a flood can't take the connections of the
- * rest of the API. Keys are SHA-256 hashes, never the e-mail or the IP; expired rows are purged after an admitted
- * attempt.
+ * rest of the API. Keys are SHA-256 hashes, never the e-mail or the IP (pseudonyms, not anonymity: a dictionary of e-mails
+ * reverses them). Expired rows are purged after an admitted attempt.
  */
 import type { Pool } from 'mariadb';
 import { localDateTime, sha256 } from './auth.ts';
-import { limitBucket } from './client-ip.ts';
+import { limitBucket, wideBucket } from './client-ip.ts';
 import { releaseDevice, reserveDevice } from './device-trust.ts';
 import { transaction } from './password.ts';
 
 export const LOGIN_WINDOW_MS = 15 * 60_000;
-export const LOGIN_LIMITS = { CUENTA_IP: 5, IP: 50, CUENTA: 10 } as const;
+export const LOGIN_LIMITS = { CUENTA_IP: 5, IP: 50, CUENTA: 10, CUENTA_RED: 8 } as const;
 /** The account-wide budget recovers one attempt this often. 48 guesses a day sustained; see the header. */
 export const ACCOUNT_REFILL_MS = 30 * 60_000;
-/** A CUENTA row is back to zero after this long, so it can go. */
-const ACCOUNT_IDLE_MS = LOGIN_LIMITS.CUENTA * ACCOUNT_REFILL_MS;
-/** Password recovery requests per window: a network, and an account from every network (e-mail bombing, F5-07). */
+/** One wide network's share of an account: 8 attempts a day. */
+export const WIDE_NETWORK_REFILL_MS = 3 * 3_600_000;
+/** Password recovery budgets: a network, and an account from every network (e-mail bombing: 29 e-mails the first day). */
 export const RESET_LIMITS = { RECUP_IP: 20, RECUP_CUENTA: 5 } as const;
+export const RESET_IP_REFILL_MS = 15 * 60_000;
+export const RESET_ACCOUNT_REFILL_MS = 60 * 60_000;
+/** A row of a refilling counter is back to zero after this long, so it can go. */
+const IDLE_MS: Record<string, number> = {
+  CUENTA: LOGIN_LIMITS.CUENTA * ACCOUNT_REFILL_MS,
+  CUENTA_RED: LOGIN_LIMITS.CUENTA_RED * WIDE_NETWORK_REFILL_MS,
+  RECUP_IP: RESET_LIMITS.RECUP_IP * RESET_IP_REFILL_MS,
+  RECUP_CUENTA: RESET_LIMITS.RECUP_CUENTA * RESET_ACCOUNT_REFILL_MS,
+};
 /** Wrong current passwords per account and window (HU-005). */
 export const CHANGE_LIMIT = 5;
 type Scope = keyof typeof LOGIN_LIMITS | keyof typeof RESET_LIMITS | 'CAMBIO';
@@ -184,6 +144,26 @@ function remember(key: string): void {
   refused.set(key, Date.now() + REFUSAL_CACHE_MS);
 }
 
+/** Invented browser cookies a network may try per interval before they stop being looked up. */
+const BAD_DEVICE_LOOKUPS = 20;
+const badDevices = new Map<string, { count: number; until: number }>();
+function deviceLookupAllowed(bucket: string): boolean {
+  const entry = badDevices.get(bucket);
+  if (!entry || entry.until <= Date.now()) {
+    badDevices.delete(bucket);
+    return true;
+  }
+  return entry.count < BAD_DEVICE_LOOKUPS;
+}
+function countBadDevice(bucket: string): void {
+  const entry = badDevices.get(bucket);
+  if (entry && entry.until > Date.now()) entry.count++;
+  else {
+    if (badDevices.size >= REFUSAL_CACHE_MAX) badDevices.delete(badDevices.keys().next().value!);
+    badDevices.set(bucket, { count: 1, until: Date.now() + REFUSAL_CACHE_MS });
+  }
+}
+
 /**
  * Reserves one attempt, or refuses it (→ null: answer 429 without verifying). A trusted browser (`deviceSecret`) reserves on
  * its own row; anything else on every counter, or none if one is at its limit.
@@ -197,21 +177,24 @@ export async function reserveLogin(
 ): Promise<Reservation | null> {
   const bucket = limitBucket(ip);
   const ipKey = sha256(`IP|${bucket}`);
-  // A cookie has to be looked up, even for a network at its limit: that is the point of it. So a network at its limit that
-  // keeps sending bad ones is remembered, or it could reach MariaDB as often as it wanted. One query per 10 s at most.
-  const badDevices = sha256(`DISP_MALO|${bucket}`);
-  if (deviceSecret && !refusedNow(badDevices)) {
+  // A cookie has to be looked up, even for a network at its limit: that is the point of it. A bad one is remembered by its
+  // own hash, so it can't refuse a good one; and a network that keeps inventing them runs out of lookups for a few seconds,
+  // or it could reach MariaDB as often as it wanted.
+  if (
+    deviceSecret &&
+    !refusedNow(sha256(`DISP_MALO|${deviceSecret}`)) &&
+    deviceLookupAllowed(bucket)
+  ) {
     if (await reserveDevice(db, deviceSecret, email)) return { keys: [], device: deviceSecret };
-    if (refusedNow(ipKey)) {
-      remember(badDevices);
-      return null;
-    }
+    remember(sha256(`DISP_MALO|${deviceSecret}`));
+    countBadDevice(bucket);
   }
   if (refusedNow(ipKey)) return null; // a network at its limit doesn't even reach MariaDB
   const identity = await accountIdentity(db, email);
   const accountKey = sha256(`CUENTA|${identity}`);
   const pairKey = sha256(`CUENTA_IP|${bucket}|${identity}`);
-  if (refusedNow(pairKey) || refusedNow(accountKey)) return null;
+  const wideKey = sha256(`CUENTA_RED|${wideBucket(ip)}|${identity}`);
+  if (refusedNow(pairKey) || refusedNow(wideKey) || refusedNow(accountKey)) return null;
   // ONE lock order for every request: network, then account, then account+network (the inversion that deadlocked:
   // docs/API.md, S-01). Every request of one network queues on its row; every request of one account on the next.
   const counters: Counter[] = [
@@ -221,6 +204,12 @@ export async function reserveLogin(
       scope: 'CUENTA',
       limit: LOGIN_LIMITS.CUENTA,
       refillMs: ACCOUNT_REFILL_MS,
+    },
+    {
+      key: wideKey,
+      scope: 'CUENTA_RED',
+      limit: LOGIN_LIMITS.CUENTA_RED,
+      refillMs: WIDE_NETWORK_REFILL_MS,
     },
     { key: pairKey, scope: 'CUENTA_IP', limit: LOGIN_LIMITS.CUENTA_IP, guarded: true },
   ];
@@ -328,11 +317,19 @@ async function reserveCounters(db: Pool, counters: readonly Counter[]): Promise<
     await transaction(
       db,
       async (tx) => {
+        // A fixed window is over at `expired`; a refilling counter only when it is whole again, or purging would give
+        // an attacker its budget back.
+        const refilling = Object.entries(IDLE_MS);
         const rows: { clave: string }[] = await tx.query(
           `SELECT clave FROM limite_acceso
-            WHERE ventana_inicio <= ? AND (ambito <> 'CUENTA' OR ventana_inicio <= ?)
+            WHERE ventana_inicio <= ?
+              AND (ambito NOT IN (?) ${refilling.map(() => 'OR (ambito = ? AND ventana_inicio <= ?)').join(' ')})
             LIMIT 100 FOR UPDATE SKIP LOCKED`,
-          [expired, localDateTime(now - ACCOUNT_IDLE_MS)],
+          [
+            expired,
+            refilling.map(([scope]) => scope),
+            ...refilling.flatMap(([scope, ms]) => [scope, localDateTime(now - ms)]),
+          ],
         );
         if (rows.length)
           await tx.query('DELETE FROM limite_acceso WHERE clave IN (?)', [
@@ -354,20 +351,37 @@ async function reserveCounters(db: Pool, counters: readonly Counter[]): Promise<
 }
 
 /**
- * One password recovery request of `email` from `ip`, or false when a limit refuses it (→ 429). Counted whether the
- * account exists or not, so the answer reveals nothing. Nothing accumulates in memory or in the table per refusal.
+ * One password recovery request of `email` from `ip`, counted whether the account exists or not, so the answer reveals
+ * nothing. `refused`: its network is out of requests (→ 429). `quiet`: the account is, so nothing is sent, but the answer
+ * stays the normal one: an attacker's requests can't show its owner a refusal, and the last e-mail they got still works
+ * (no new request has revoked it). Nothing accumulates in memory or in the table per refusal.
  */
-export async function reserveResetRequest(db: Pool, ip: string, email: string): Promise<boolean> {
+export async function reserveResetRequest(
+  db: Pool,
+  ip: string,
+  email: string,
+): Promise<'ok' | 'quiet' | 'refused'> {
   const ipKey = sha256(`RECUP_IP|${limitBucket(ip)}`);
-  if (refusedNow(ipKey)) return false;
+  if (refusedNow(ipKey)) return 'refused';
   const accountKey = sha256(`RECUP_CUENTA|${await accountIdentity(db, email)}`);
-  if (refusedNow(accountKey)) return false;
+  if (refusedNow(accountKey)) return 'quiet';
   const refusedBy = await reserveCounters(db, [
-    { key: ipKey, scope: 'RECUP_IP', limit: RESET_LIMITS.RECUP_IP },
-    { key: accountKey, scope: 'RECUP_CUENTA', limit: RESET_LIMITS.RECUP_CUENTA },
+    {
+      key: ipKey,
+      scope: 'RECUP_IP',
+      limit: RESET_LIMITS.RECUP_IP,
+      refillMs: RESET_IP_REFILL_MS,
+    },
+    {
+      key: accountKey,
+      scope: 'RECUP_CUENTA',
+      limit: RESET_LIMITS.RECUP_CUENTA,
+      refillMs: RESET_ACCOUNT_REFILL_MS,
+    },
   ]);
-  if (refusedBy) remember(refusedBy);
-  return !refusedBy;
+  if (!refusedBy) return 'ok';
+  remember(refusedBy);
+  return refusedBy === ipKey ? 'refused' : 'quiet';
 }
 
 const changeKey = (userId: number) => sha256(`CAMBIO|${userId}`);
@@ -393,7 +407,7 @@ export async function clearPasswordChange(db: Pool, userId: number): Promise<voi
 
 /**
  * After the password check. `failed`: the reservation stays (it was a guess). A right password gives it back: a login
- * that succeeds also clears the account's counter for that address (the owner is in), while the address only gets its
+ * that succeeds also clears the account's counters for that network (the owner is in), while the address only gets its
  * one attempt back, so logging into one's own account can't reset an address that is guessing others. The account-wide
  * counter only gets its one attempt back too: the owner logging in doesn't reset an attack from elsewhere. A right password
  * on a disabled account is not a guess either: its attempts go back, nothing is cleared.
@@ -418,7 +432,7 @@ export async function settleLogin(
     await transaction(db, async (tx) => {
       for (const { key, scope } of reservation.keys)
         await tx.query(
-          outcome === 'success' && scope === 'CUENTA_IP'
+          outcome === 'success' && (scope === 'CUENTA_IP' || scope === 'CUENTA_RED')
             ? 'UPDATE limite_acceso SET intentos = 0 WHERE clave = ?'
             : 'UPDATE limite_acceso SET intentos = GREATEST(CAST(intentos AS SIGNED) - 1, 0) WHERE clave = ?',
           [key],
@@ -432,4 +446,5 @@ export async function settleLogin(
 /** Test seam: forget the refusals remembered by this process. */
 export function forgetRefusals(): void {
   refused.clear();
+  badDevices.clear();
 }

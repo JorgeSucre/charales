@@ -175,6 +175,7 @@ test('S-01+S-02: a right password gives the reservation back and clears the pair
   assert.deepEqual(rows.map((r) => [r.ambito, r.intentos]).sort(), [
     ['CUENTA', 4],
     ['CUENTA_IP', 0],
+    ['CUENTA_RED', 0],
     ['IP', 4],
   ]);
   assert.deepEqual(gate.stats(), { active: 0, waiting: 0 });

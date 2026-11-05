@@ -6,7 +6,13 @@ import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { CHANGE_LIMIT, LOGIN_WINDOW_MS, RESET_LIMITS, forgetRefusals } from './login-limit.ts';
+import {
+  CHANGE_LIMIT,
+  LOGIN_WINDOW_MS,
+  RESET_ACCOUNT_REFILL_MS,
+  RESET_LIMITS,
+  forgetRefusals,
+} from './login-limit.ts';
 import { recoveriesSettled } from './password.ts';
 import { createApp } from './server.ts';
 import { openTestDb, type TestDb } from './test-db.ts';
@@ -74,7 +80,7 @@ test('one account from 30 networks gets 5 e-mails, not 30 (no mail bombing)', as
   const before = await t.count('SELECT COUNT(*) AS n FROM tokens_recuperacion');
   const statuses: number[] = [];
   for (let i = 0; i < 30; i++) statuses.push(await ask('coach@example.com', `198.51.100.${i + 1}`));
-  assert.deepEqual(tally(statuses), { 204: 5, 429: 25 });
+  assert.deepEqual(tally(statuses), { 204: 30 }); // in silence: others can't show its owner a refusal
   assert.equal(t.mail.filter((m) => m.to === 'coach@example.com').length, 5);
   assert.equal(await t.count('SELECT COUNT(*) AS n FROM tokens_recuperacion'), before + 5);
 });
@@ -89,28 +95,28 @@ test('an unknown e-mail answers exactly like an existing one, under the same lim
   assert.deepEqual(unknown, existing);
 });
 
-test('under concurrency the limit is exact: 40 at once for one account → 5', async () => {
+test('under concurrency the limit is exact: 40 at once for one account → 5 e-mails', async () => {
   const statuses = await Promise.all(
     Array.from({ length: 40 }, (_, i) => ask('secretaria@example.com', `198.51.100.${i + 1}`)),
   );
-  assert.deepEqual(tally(statuses), { 204: 5, 429: 35 });
+  assert.deepEqual(tally(statuses), { 204: 40 });
+  await recoveriesSettled();
+  assert.equal(t.mail.length, 5);
 });
 
 test('two processes share the limits', async () => {
-  const statuses: number[] = [];
-  for (let i = 0; i < 8; i++)
-    statuses.push(await ask('admin@example.com', '192.0.2.20', i % 2 ? a : b));
-  assert.deepEqual(tally(statuses), { 204: 5, 429: 3 });
+  for (let i = 0; i < 8; i++) await ask('admin@example.com', '192.0.2.20', i % 2 ? a : b);
+  assert.equal(t.mail.length, 5);
 });
 
-test('the window expires, and an expired row is purged', async () => {
+test('the budget recovers one e-mail an hour; a row whole again is purged', async () => {
   for (let i = 0; i < 6; i++) await ask('marta@example.com', '192.0.2.30');
-  assert.equal(await ask('marta@example.com', '192.0.2.30'), 429);
-  await t.advance(LOGIN_WINDOW_MS + 11_000);
+  assert.equal(t.mail.length, 5);
+  await t.advance(RESET_ACCOUNT_REFILL_MS + 11_000);
   forgetRefusals();
   assert.equal(await ask('marta@example.com', '192.0.2.30'), 204);
-  await ask('otra@nobody.example', '192.0.2.31');
-  await t.advance(LOGIN_WINDOW_MS + 1);
+  assert.equal(t.mail.length, 6);
+  await t.advance(RESET_LIMITS.RECUP_CUENTA * RESET_ACCOUNT_REFILL_MS + 1000);
   await ask('tercera@nobody.example', '192.0.2.32');
   assert.equal(await t.count('SELECT COUNT(*) AS n FROM limite_acceso'), 2);
 });

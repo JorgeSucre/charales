@@ -80,14 +80,16 @@ test('R-1: 150 wrong passwords from 150 different /64 → the account takes its 
 });
 
 test('R-1: IPv4 too — 60 addresses, one account: the same budget', async () => {
-  const statuses = await sequence(60, (i) => `198.51.100.${i + 1}`);
+  const statuses = await sequence(60, (i) => `198.51.${i + 1}.1`);
   assert.deepEqual(tally(statuses), { 401: LOGIN_LIMITS.CUENTA, 429: 60 - LOGIN_LIMITS.CUENTA });
 });
 
 test('R-1: under concurrency the account-wide budget is exact — 60 at once from 60 networks', async () => {
   const [statuses, runs] = await verified(() =>
     Promise.all(
-      Array.from({ length: 60 }, (_, i) => login(OWNER, WRONG, `2001:db8:c:${i + 1}::1`)),
+      Array.from({ length: 60 }, (_, i) =>
+        login(OWNER, WRONG, `2001:db8:${(i + 0xc00).toString(16)}::1`),
+      ),
     ),
   );
   assert.deepEqual(tally(statuses), { 401: LOGIN_LIMITS.CUENTA, 429: 60 - LOGIN_LIMITS.CUENTA });
@@ -109,7 +111,7 @@ test('R-1: different networks are different clients: a neighbouring /64 keeps it
 });
 
 test('the owner logging in gives back one attempt, it does not reset an attack from elsewhere', async () => {
-  await sequence(8, (i) => `2001:db8:d:${i + 1}::1`);
+  await sequence(8, (i) => `2001:db8:${(0xd00 + i).toString(16)}::1`);
   assert.equal(await login(OWNER, RIGHT, '203.0.113.71'), 200);
   const [{ intentos }] = await t.db.query(
     "SELECT intentos FROM limite_acceso WHERE ambito = 'CUENTA'",
@@ -129,7 +131,7 @@ test('R-1: a whole day of attack from new networks: 58 verified guesses at most,
   let verified = 0;
   let prefix = 0;
   for (let step = 0; step < 96; step++) {
-    const statuses = await sequence(12, () => `2001:db8:d0:${(prefix++ & 0xffff).toString(16)}::1`);
+    const statuses = await sequence(12, () => `2001:db8:${(prefix++ & 0xffff).toString(16)}::1`);
     verified += statuses.filter((s) => s === 401).length;
     await t.advance(ACCOUNT_REFILL_MS / 2);
     forgetRefusals();
@@ -141,7 +143,7 @@ test('R-1: a whole day of attack from new networks: 58 verified guesses at most,
 });
 
 test('the budget recovers one attempt per interval, and never more than it holds', async () => {
-  await sequence(LOGIN_LIMITS.CUENTA, (i) => `2001:db8:e0:${i}::1`);
+  await sequence(LOGIN_LIMITS.CUENTA, (i) => `2001:db8:${(0xe00 + i).toString(16)}::1`);
   assert.equal(await login(OWNER, WRONG, '2001:db8:e1::1'), 429);
   await t.advance(ACCOUNT_REFILL_MS + 1000);
   forgetRefusals();
@@ -150,7 +152,10 @@ test('the budget recovers one attempt per interval, and never more than it holds
   assert.equal(await login(OWNER, WRONG, '2001:db8:e3::1'), 429, 'only one');
   await t.advance(LOGIN_LIMITS.CUENTA * ACCOUNT_REFILL_MS * 3);
   forgetRefusals();
-  const statuses = await sequence(LOGIN_LIMITS.CUENTA + 2, (i) => `2001:db8:e4:${i}::1`);
+  const statuses = await sequence(
+    LOGIN_LIMITS.CUENTA + 2,
+    (i) => `2001:db8:${(0xe40 + i).toString(16)}::1`,
+  );
   assert.deepEqual(tally(statuses), { 401: LOGIN_LIMITS.CUENTA, 429: 2 });
 });
 
