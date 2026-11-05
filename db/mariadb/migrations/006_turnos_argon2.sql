@@ -1,10 +1,11 @@
--- 006 · Turnos de Argon2id compartidos (S-02 de la auditoría del 2026-11-01): cada verificación o cálculo de hash de una
--- contraseña ocupa un turno mientras dura (unos 19 MiB de memoria y un hilo del pool de libuv). La API sólo empieza si
--- quedan turnos libres (ARGON2_MAX_CONCURRENT) contando TODAS sus instancias (api/argon2-guard.ts). Un turno que su
--- proceso no devolvió (se cayó) vence solo: `vence_en` usa el reloj de MariaDB, el mismo para todas las instancias.
--- `turnos_argon2_guarda` es una fila única que se bloquea al tomar un turno, para que contar y tomar sean atómicos.
--- No guarda contraseñas, hashes, correos ni IP. Aditiva e idempotente.
--- Para revertirla: DROP TABLE turnos_argon2, turnos_argon2_guarda (la API anterior no las usa).
+-- 006 · Tablas del diseño distribuido descartado de S-02 (auditoría del 2026-11-01), que coordinaba en MariaDB los
+-- turnos de Argon2id entre instancias: `turnos_argon2` guardaba los turnos y `turnos_argon2_guarda`, de una sola fila,
+-- se bloqueaba para contarlos y tomarlos de forma atómica.
+-- El semáforo actual es local a cada proceso y vive en memoria (api/argon2-guard.ts). El código actual no consulta ni
+-- modifica estas tablas.
+-- Se conservan temporalmente por compatibilidad, porque no se ha confirmado si esta migración se aplicó en otros
+-- entornos. No deben eliminarse hasta confirmar el estado de todos los entornos.
+-- No guardan contraseñas, hashes, correos ni IP. Aditiva e idempotente.
 CREATE TABLE IF NOT EXISTS turnos_argon2 (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     vence_en DATETIME(3) NOT NULL,
