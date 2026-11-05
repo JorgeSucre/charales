@@ -283,6 +283,24 @@ export async function loadDevSeed(env: Record<string, string | undefined>): Prom
  * Drops a TEMPORARY test database. Refuses any name not starting with `ef_` (the prefix of every test database), so a
  * mistake can never drop escuela_futbol or another real database.
  */
+/** What the running code needs from the latest migrations and this database lacks (F5-06). Reads metadata only. */
+export async function missingSchema(db: {
+  query(sql: string, params?: unknown[]): Promise<unknown>;
+}): Promise<string[]> {
+  const rows = (await db.query(
+    `SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME IN ('version_datos', 'limite_acceso', 'origen_conocido', 'correo_saliente', 'pagos')`,
+  )) as { t: string; c: string }[];
+  const has = (t: string, c?: string) => rows.some((r) => r.t === t && (!c || r.c === c));
+  return [
+    ...['version_datos', 'limite_acceso', 'origen_conocido', 'correo_saliente'].filter(
+      (t) => !has(t),
+    ),
+    ...(has('pagos', 'referencia') ? [] : ['pagos.referencia']),
+  ];
+}
+
 /**
  * A test database name no earlier run can have used. Never built from the pid alone: pids repeat, and the suites drop
  * the database they name, so a repeated pid would destroy a database an earlier run or person left behind.

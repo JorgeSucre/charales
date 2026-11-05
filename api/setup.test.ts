@@ -46,6 +46,7 @@ test('db:setup creates and prepares a new database; a second run changes nothing
     '004_pago_referencia.sql',
     '005_limite_acceso.sql',
     '006_turnos_argon2.sql',
+    '007_correo_y_limites.sql',
   ]);
   assert.deepEqual(first.counts, { usuarios: 0, jugadores: 0, rol_permiso: 106 });
   const second = await setupDatabase(env(FRESH));

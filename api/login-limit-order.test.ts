@@ -59,7 +59,11 @@ function probe(
       arrived();
       await opts.pause;
     }
-    if (opts.inject && opts.inject.match.test(sql) && injected < opts.inject.times) {
+    if (
+      opts.inject &&
+      opts.inject.match.test(`${sql} ${JSON.stringify(params)}`) &&
+      injected < opts.inject.times
+    ) {
       injected++;
       errors[opts.inject.errno] = (errors[opts.inject.errno] ?? 0) + 1;
       throw Object.assign(new Error(`errno ${opts.inject.errno} inyectado`), {
@@ -144,7 +148,7 @@ test('lock order: the T1/T2/T3 interleaving of the audit no longer deadlocks', a
   );
   assert.equal(deadlocks(t1, t2, t3), 0);
   assert.equal((t1.errors[1205] ?? 0) + (t2.errors[1205] ?? 0) + (t3.errors[1205] ?? 0), 0);
-  assert.deepEqual(await counters(IP, EMAIL), { IP: 3, CUENTA_IP: 3 });
+  assert.deepEqual(await counters(IP, EMAIL), { IP: 3, CUENTA_IP: 3, CUENTA: 3 });
 });
 
 test('lock order: a request that misses the IP row holds it (inserted) before it reads the account+IP row', async () => {
@@ -183,7 +187,7 @@ test('lock order: account+IP row present, IP row purged — a burst of 50 reserv
   const results = await Promise.all(probes.map((p) => reserveLogin(p.pool, IP, EMAIL)));
   assert.equal(results.filter(Boolean).length, 3, '2 used + 3 = the 5 of the pair');
   assert.equal(deadlocks(...probes), 0);
-  assert.deepEqual(await counters(IP, EMAIL), { IP: 3, CUENTA_IP: 5 });
+  assert.deepEqual(await counters(IP, EMAIL), { IP: 3, CUENTA_IP: 5, CUENTA: 3 });
   assert.ok(ipKey);
 });
 
@@ -205,7 +209,8 @@ test('M-1: a refusal while the IP row is missing commits nothing — not even th
 
 test('retries: a duplicate on the IP insert, a deadlock or a lock timeout are retried; the reservation is still exact', async () => {
   for (const [match, errno] of [
-    [/INSERT INTO limite_acceso .*'IP', 0/, 1062],
+    [/INSERT INTO limite_acceso .*VALUES \(\?, \?, 0.*"IP"/, 1062],
+    [/INSERT INTO limite_acceso .*VALUES \(\?, \?, 0.*"CUENTA"/, 1062],
     [/FOR UPDATE/, 1213],
     [/FOR UPDATE/, 1205],
   ] as const) {
@@ -213,12 +218,12 @@ test('retries: a duplicate on the IP insert, a deadlock or a lock timeout are re
     const p = probe({ inject: { match, errno, times: 2 } });
     assert.ok(await reserveLogin(p.pool, IP, EMAIL), `${errno} retried`);
     assert.equal(p.errors[errno], 2);
-    assert.deepEqual(await counters(IP, EMAIL), { IP: 1, CUENTA_IP: 1 }, 'counted once');
+    assert.deepEqual(await counters(IP, EMAIL), { IP: 1, CUENTA_IP: 1, CUENTA: 1 }, 'counted once');
   }
 });
 
 test('retries: any other duplicate key (on the account+IP insert) is an error, not retried', async () => {
-  const p = probe({ inject: { match: /'CUENTA_IP', 1/, errno: 1062, times: 1 } });
+  const p = probe({ inject: { match: /VALUES \(\?, \?, 1.*"CUENTA_IP"/, errno: 1062, times: 1 } });
   await assert.rejects(reserveLogin(p.pool, IP, EMAIL), /inyectado/);
   assert.equal(p.errors[1062], 1, 'one attempt only');
   assert.equal(await t.count('SELECT COUNT(*) AS n FROM limite_acceso'), 0, 'rolled back');
@@ -268,9 +273,9 @@ test('bursts of 50: one IP with many accounts, one account from many IPs, one pa
       { 401: 25, 429: 25 },
     ],
     [
-      'one account, 10 IPs',
+      'one account, 10 IPs (R-1: 20 from unknown networks)',
       (i) => login(a.base, 'coach@example.com', `203.0.113.${10 + (i % 10)}`),
-      { 401: 50 },
+      { 401: 20, 429: 30 },
     ],
     ['one pair', () => login(a.base, 'tutor@example.com', '203.0.113.30'), { 401: 5, 429: 45 }],
     [

@@ -10,6 +10,15 @@ import * as auth from './auth.ts';
 import * as password from './password.ts';
 import { rpc } from './rpc.ts';
 import { ARGON2_DEFAULTS, argon2Gate, argon2LimitsFrom, type Argon2Gate } from './argon2-guard.ts';
+import {
+  canonicalIp,
+  trustedProxies as proxyList,
+  trustedProxiesFromEnv,
+  type TrustedProxies,
+} from './client-ip.ts';
+import { checkEnvironment, isProduction } from './config.ts';
+import { startMailWorker } from './mail.ts';
+import { missingSchema } from './schema.ts';
 
 /** Any failure without a message meant for the user: never a stack trace, SQL or internal detail (logged instead). */
 export const UNEXPECTED_MESSAGE =
@@ -49,7 +58,13 @@ const routes: Record<string, Handler> = {
   'POST /auth/password': password.changePassword,
   'POST /auth/password-reset/request': password.requestPasswordReset,
   'POST /auth/password-reset/confirm': password.confirmPasswordReset,
-  // Lab exercise (docs/API.md § Práctica): plain table reads, same permissions as PlayerService.search and
+  // Domain operations of the app (D13, docs/API.md § Operaciones de dominio): the services run here, on MariaDB.
+  'POST /api/rpc': rpc,
+};
+
+/** Lab exercise of the course: on in development only (`createApp` option `labApi`), never in production (F5-18). */
+const labRoutes: Record<string, Handler> = {
+  // docs/API.md § Práctica: plain table reads, same permissions as PlayerService.search and
   // CategoryService.list. Rows go out as stored (snake_case), so they compare 1:1 with SELECT * in MariaDB.
   'GET /api/jugadores': async (ctx, db) =>
     (await auth.requireOffice(ctx, db, 'jugadores.consultar')) ?? {
@@ -61,8 +76,6 @@ const routes: Record<string, Handler> = {
       status: 200,
       body: await db.query('SELECT * FROM categorias ORDER BY id'),
     },
-  // Domain operations of the app (D13, docs/API.md § Operaciones de dominio): the services run here, on MariaDB.
-  'POST /api/rpc': rpc,
 };
 
 async function health(_ctx: Ctx, db: Pool): Promise<Reply> {
@@ -79,24 +92,37 @@ export function createApp(
   options: {
     secureCookie: boolean;
     mailer?: password.Mailer | null;
-    /** Addresses of the reverse proxies whose X-Forwarded-For is believed (TRUSTED_PROXIES); none by default. */
+    /** Addresses or CIDR ranges of the proxies whose X-Forwarded-For is believed (TRUSTED_PROXIES); none by default. */
     trustedProxies?: readonly string[];
     /** Small pool for the login limiter, so a login flood can't take the connections of the rest of the API (M-1). */
     limiterDb?: Pool;
     /** Argon2id gate of this process (S-02); one with ARGON2_DEFAULTS if omitted. */
     argon2?: Argon2Gate;
+    /** The course's plain-table endpoints (`labRoutes`). Off in production. */
+    labApi?: boolean;
   },
 ): Server {
-  const trusted = new Set((options.trustedProxies ?? []).map(plainIp));
+  const trusted = proxyList(options.trustedProxies ?? []);
   const gate = options.argon2 ?? argon2Gate(ARGON2_DEFAULTS);
-  for (const ip of trusted)
-    if (!isIP(ip))
-      throw new Error(`TRUSTED_PROXIES: «${ip}» no es una dirección IP (sin rangos ni nombres).`);
+  const table = options.labApi === false ? routes : { ...routes, ...labRoutes };
+  let warnedForwarded = false;
   return createServer(async (req, res) => {
     let reply: Reply;
     try {
       const path = new URL(req.url ?? '/', 'http://localhost').pathname;
-      const handler = routes[`${req.method} ${path}`];
+      const handler = table[`${req.method} ${path}`];
+      // A proxy we don't trust is in front: every client it serves shares one attempt limit (F5-04). Said once.
+      if (
+        !warnedForwarded &&
+        req.headers['x-forwarded-for'] &&
+        !trusted.has(req.socket.remoteAddress ?? '')
+      ) {
+        warnedForwarded = true;
+        console.warn(
+          `Llegó X-Forwarded-For desde ${canonicalIp(req.socket.remoteAddress ?? '')}, que no está en TRUSTED_PROXIES: ` +
+            'se ignora. Si hay un proxy, configúralo: si no, todos sus clientes comparten un solo límite de intentos.',
+        );
+      }
       reply = handler
         ? await handler(
             {
@@ -121,6 +147,9 @@ export function createApp(
     }
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    // JSON only: nothing here may load, frame or leak. The app's own headers are the proxy's (docs/deployment).
+    res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+    res.setHeader('Referrer-Policy', 'no-referrer');
     if (reply.cookie) res.setHeader('Set-Cookie', reply.cookie);
     if (reply.body === undefined) res.writeHead(reply.status).end();
     else
@@ -156,19 +185,19 @@ async function readJson(req: IncomingMessage, limit: number): Promise<unknown> {
   }
 }
 
-const plainIp = (ip: string) => ip.trim().replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/, '');
-
 /**
  * The client's address, for the attempt limits, sessions and audit (S-01). The TCP peer, unless it is one of our own
  * reverse proxies: then the X-Forwarded-For hop just before them (the rightmost one they didn't add). A direct client
  * can't choose its address with that header, and nothing is believed when no proxy is configured. A hop that isn't an
  * IP address leaves the peer's (the proxy is misconfigured; never an attacker-chosen value).
  */
-export function clientIp(req: IncomingMessage, trusted: ReadonlySet<string>): string {
-  const peer = plainIp(req.socket.remoteAddress ?? '');
+export function clientIp(req: IncomingMessage, trusted: TrustedProxies): string {
+  const peer = canonicalIp(req.socket.remoteAddress ?? '');
   if (!trusted.has(peer)) return peer;
   const header = req.headers['x-forwarded-for'];
-  const hops = (Array.isArray(header) ? header.join(',') : (header ?? '')).split(',').map(plainIp);
+  const hops = (Array.isArray(header) ? header.join(',') : (header ?? ''))
+    .split(',')
+    .map(canonicalIp);
   for (let i = hops.length - 1; i >= 0; i--) {
     const hop = hops[i]!;
     if (!hop) continue;
@@ -241,16 +270,33 @@ export const STRICT_MODE =
 
 if (import.meta.main) {
   const env = process.env;
+  const report = checkEnvironment(env);
+  for (const w of report.warnings) console.warn(`Aviso: ${w}`);
+  if (report.errors.length) {
+    for (const e of report.errors) console.error(`Error de configuración: ${e}`);
+    process.exit(1);
+  }
+  const production = isProduction(env);
   const db = createPool(env);
+  // A database behind the code: login and operations would fail one by one, so it is said at once (F5-06).
+  const missing = await missingSchema(db).catch((e: Error) => [`(sin conexión: ${e.message})`]);
+  if (missing.length) {
+    console.error(
+      `La base no está al día, falta: ${missing.join(', ')}. Aplica las migraciones: npm run db:setup (docs/SETUP.md).`,
+    );
+    if (production) process.exit(1);
+  }
   const port = Number(env['PORT'] ?? 3000);
-  const secureCookie = env['NODE_ENV'] === 'production' || env['COOKIE_SECURE'] === 'true';
-  const trustedProxies = (env['TRUSTED_PROXIES'] ?? '').split(',').filter((ip) => ip.trim());
+  const secureCookie = production || env['COOKIE_SECURE'] === 'true';
   const limiterDb = createLimiterPool(env);
+  const mailer = password.mailerFromEnv(env);
+  if (mailer && !missing.length) startMailWorker(db, mailer);
   createApp(db, {
     secureCookie,
-    mailer: password.mailerFromEnv(env),
-    trustedProxies,
+    mailer,
+    trustedProxies: trustedProxiesFromEnv(env['TRUSTED_PROXIES']),
     limiterDb,
+    labApi: !production,
     argon2: argon2Gate(argon2LimitsFrom(env)), // S-02, per process; an invalid value stops the start
   }).listen(port, () =>
     console.log(

@@ -15,7 +15,9 @@
  */
 import type { Pool, PoolConnection } from 'mariadb';
 import type { Ctx, Reply } from './server.ts';
+import { argon2Gate, type Argon2Gate } from './argon2-guard.ts';
 import { NO_SESSION, sessionUser } from './auth.ts';
+import { deliverMail, enqueueMail, tokenHashOf } from './mail.ts';
 import { TABLES, type TableMap } from './tables.ts';
 
 type Row = Record<string, unknown>;
@@ -77,11 +79,34 @@ export async function rpc(ctx: Ctx, db: Pool): Promise<Reply> {
   const d = await domain;
   if (!d.isRpcMethod(service, method))
     return { status: 404, body: { error: 'Esa operación no está disponible.' } };
-  const user = await sessionUser(ctx, db);
-  if (!user) return { status: 401, body: { error: NO_SESSION } };
+  // Every operation holds a connection and the global lock, so one session flooding the bridge would queue everyone
+  // else (F5-10). Its operations run a few at a time, in order; past the queue it is told to wait, before any query.
+  const gate = sessionGate(ctx.token);
+  try {
+    const turn = await gate.run(async () => {
+      const user = await sessionUser(ctx, db);
+      if (!user) return { status: 401, body: { error: NO_SESSION } };
+      return runOperation(ctx, db, d, user, service, method, args);
+    });
+    return turn.busy ? { status: 429, body: { error: TOO_MANY_AT_ONCE } } : turn.value;
+  } finally {
+    const { active, waiting } = gate.stats();
+    if (!active && !waiting) gates.delete(ctx.token ?? '');
+  }
+}
 
+async function runOperation(
+  ctx: Ctx,
+  db: Pool,
+  d: Domain,
+  user: NonNullable<Awaited<ReturnType<typeof sessionUser>>>,
+  service: string,
+  method: string,
+  args: unknown[],
+): Promise<Reply> {
   for (let attempt = 1; ; attempt++) {
     try {
+      const mailIds: number[] = [];
       const { result, outbox } = await unitOfWork(
         db,
         async (tables) => {
@@ -90,10 +115,28 @@ export async function rpc(ctx: Ctx, db: Pool): Promise<Reply> {
           if (out.outbox.length && !ctx.mailer) throw new MailUnavailable();
           return out;
         },
-        { audit: service === 'AuditService' },
+        {
+          audit: service === 'AuditService',
+          // In the same transaction: the operation and its notice are committed together (F5-08).
+          beforeCommit: async (conn, out) => {
+            mailIds.length = 0;
+            for (const m of out.outbox)
+              mailIds.push(await enqueueMail(conn, m.to, m.subject, tokenHashOf(m.body)));
+          },
+        },
       );
-      for (const m of outbox) await ctx.mailer!(m.to, m.subject, m.body);
-      return { status: 200, body: { result: scrub(result) ?? null } };
+      // After COMMIT the operation HAPPENED, whatever the provider says: a failure stays queued for the worker and the
+      // answer says so, never as an error of the operation (and never with the provider's words).
+      let mailPending = false;
+      for (const [i, m] of outbox.entries())
+        if (
+          (await deliverMail(db, ctx.mailer!, mailIds[i]!, m.to, m.subject, m.body)) !== 'ENVIADO'
+        )
+          mailPending = true;
+      return {
+        status: 200,
+        body: { result: scrub(result) ?? null, ...(mailPending ? { mailPending } : {}) },
+      };
     } catch (e) {
       const code = (e as { errno?: number }).errno;
       if (code && RETRYABLE.has(code) && attempt < 3) continue;
@@ -118,6 +161,21 @@ export async function rpc(ctx: Ctx, db: Pool): Promise<Reply> {
   }
 }
 
+/** Operations of one session running at once: less than the pool (5 by default), so others always find a connection. */
+const SESSION_LIMITS = { limit: 3, waitMs: 5000 };
+const TOO_MANY_AT_ONCE = 'Demasiadas solicitudes a la vez. Espera un momento e inténtalo de nuevo.';
+/** Only sessions with operations running or queued are here, so it can't grow beyond what is in flight. */
+const gates = new Map<string, Argon2Gate>();
+function sessionGate(token: string | null): Argon2Gate {
+  const key = token ?? '';
+  let gate = gates.get(key);
+  if (!gate) gates.set(key, (gate = argon2Gate(SESSION_LIMITS)));
+  return gate;
+}
+
+/** The database doesn't match the code (a migration is missing): logged in full, a generic 500 for the client. */
+class SchemaError extends Error {}
+
 class MailUnavailable extends Error {
   constructor() {
     super(
@@ -140,7 +198,11 @@ const metas = new WeakMap<Pool, Meta>();
 export async function unitOfWork<T extends { tables: Tables }>(
   db: Pool,
   work: (tables: Tables) => Promise<T>,
-  options: { audit?: boolean } = {},
+  options: {
+    audit?: boolean;
+    /** Runs on the same connection, after the writes and before COMMIT: its writes share the transaction. */
+    beforeCommit?: (conn: PoolConnection, out: T) => Promise<void>;
+  } = {},
 ): Promise<T> {
   const conn = await db.getConnection();
   try {
@@ -155,7 +217,7 @@ export async function unitOfWork<T extends { tables: Tables }>(
         const meta = metas.get(db) ?? (await columns(conn));
         metas.set(db, meta);
         const [row] = await conn.query('SELECT version FROM version_datos WHERE id = 1');
-        if (!row) throw new Error('Falta version_datos: aplica db/mariadb/migrations.');
+        if (!row) throw new SchemaError('Falta version_datos: aplica db/mariadb/migrations.');
         const version = Number(row.version);
         let cache = caches.get(db);
         if (cache?.version !== version) {
@@ -173,6 +235,7 @@ export async function unitOfWork<T extends { tables: Tables }>(
           Object.fromEntries(Object.entries(before).map(([k, rows]) => [k, [...rows]])),
         );
         const changed = await applyChanges(conn, meta, before, out.tables);
+        await options.beforeCommit?.(conn, out);
         const touched = [...changed].filter((t) => !FRESH.has(t));
         let next: Tables | null = null;
         if (touched.length) {
@@ -226,7 +289,9 @@ export async function columns(conn: PoolConnection): Promise<Meta> {
     const cols = Object.entries(t.cols).map(([name, field]) => {
       const info = rows.find((r) => r.t === t.table && r.c === name);
       if (!info)
-        throw new Error(`Columna ${t.table}.${name} no existe: aplica db/mariadb/migrations.`);
+        throw new SchemaError(
+          `Columna ${t.table}.${name} no existe: aplica db/mariadb/migrations.`,
+        );
       const kind: Kind = JSON_COLUMNS.has(`${t.table}.${name}`)
         ? 'json'
         : info.dt === 'decimal'

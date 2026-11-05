@@ -76,23 +76,6 @@ export async function verifyPassword(password: string, stored: string): Promise<
 /** Verified against when the e-mail doesn't exist, so response time doesn't reveal which accounts exist. */
 const DUMMY_HASH = hashPassword(randomBytes(16).toString('hex'));
 
-// ---------------------------------------------------------------- attempt limiting of HU-005 (MARIADB.md § 8.3)
-// The login has its own shared limits in MariaDB (api/login-limit.ts, S-01).
-
-export const MAX_FAILURES = 5;
-const FAILURE_WINDOW_MS = 15 * 60_000;
-// ponytail: in-memory per process; the password change and recovery request would need the shared store of
-// api/login-limit.ts if the API ever runs as several instances (S-02 and later).
-const failures = new Map<string, number[]>();
-
-/** Attempts of `key` in the last 15 min; callers push `Date.now()` to count one (password change and recovery). */
-export function recentFailures(key: string): number[] {
-  const since = Date.now() - FAILURE_WINDOW_MS;
-  const list = (failures.get(key) ?? []).filter((t) => t > since);
-  failures.set(key, list);
-  return list;
-}
-
 // ---------------------------------------------------------------- dates (school wall clock, MARIADB.md § 1)
 
 /** 'YYYY-MM-DD HH:MM:SS' in the school's time zone: what MariaDB stores (no offset). */

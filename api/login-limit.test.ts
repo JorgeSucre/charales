@@ -59,6 +59,7 @@ after(async () => {
 beforeEach(async () => {
   forgetRefusals();
   await t.db.query('DELETE FROM limite_acceso');
+  await t.db.query('DELETE FROM origen_conocido');
 });
 
 const login = (email: string, password: string, from?: { base?: string; client?: string }) =>
@@ -118,7 +119,11 @@ test('S-01: 25 simultaneous wrong passwords → exactly 5 verified (401), 20 ref
   );
   assert.deepEqual(statuses(responses), { 401: LOGIN_LIMITS.CUENTA_IP, 429: 20 });
   assert.equal(n, LOGIN_LIMITS.CUENTA_IP);
-  assert.deepEqual(await counters('127.0.0.1', 'marta@example.com'), { IP: 5, CUENTA_IP: 5 });
+  assert.deepEqual(await counters('127.0.0.1', 'marta@example.com'), {
+    IP: 5,
+    CUENTA_IP: 5,
+    CUENTA: 5,
+  });
 });
 
 test('S-01: the IP limit holds across e-mails — 60 simultaneous unknown accounts from one address → 50 verified, 10 refused', async () => {
@@ -135,10 +140,18 @@ test('S-01: the IP limit holds across e-mails — 60 simultaneous unknown accoun
 test('S-01: a successful login clears the account counter of that address and gives the address back its own attempt', async () => {
   for (let i = 0; i < 4; i++) assert.equal((await login('marta@example.com', WRONG)).status, 401);
   assert.equal((await login('marta@example.com', 'demo1234')).status, 200);
-  assert.deepEqual(await counters('127.0.0.1', 'marta@example.com'), { IP: 4, CUENTA_IP: 0 });
+  assert.deepEqual(await counters('127.0.0.1', 'marta@example.com'), {
+    IP: 4,
+    CUENTA_IP: 0,
+    CUENTA: 4,
+  });
   for (let i = 0; i < 5; i++) assert.equal((await login('marta@example.com', WRONG)).status, 401);
   assert.equal((await login('marta@example.com', WRONG)).status, 429);
-  assert.deepEqual(await counters('127.0.0.1', 'marta@example.com'), { IP: 9, CUENTA_IP: 5 });
+  assert.deepEqual(await counters('127.0.0.1', 'marta@example.com'), {
+    IP: 9,
+    CUENTA_IP: 5,
+    CUENTA: 4,
+  });
 });
 
 test('S-01: a right password on a disabled account is not a guess — its reservation is given back, nothing cleared', async () => {
@@ -146,7 +159,11 @@ test('S-01: a right password on a disabled account is not a guess — its reserv
   try {
     assert.equal((await login('tutor@example.com', WRONG)).status, 401);
     assert.equal((await login('tutor@example.com', 'demo1234')).status, 401); // same answer (no enumeration)
-    assert.deepEqual(await counters('127.0.0.1', 'tutor@example.com'), { IP: 1, CUENTA_IP: 1 });
+    assert.deepEqual(await counters('127.0.0.1', 'tutor@example.com'), {
+      IP: 1,
+      CUENTA_IP: 1,
+      CUENTA: 1,
+    });
   } finally {
     await t.db.query("UPDATE usuarios SET activo = TRUE WHERE email = 'tutor@example.com'");
   }
@@ -166,12 +183,12 @@ test('S-01: the window expires — after 15 minutes the account can be tried aga
   const [res, n] = await verified(() => login('marta@example.com', 'demo1234'));
   assert.equal(res.status, 200);
   assert.equal(n, 1);
-  // the old rows were rewritten in place (same keys): only marta's two counters remain
-  assert.equal(await rowCount(), 2);
+  // the old rows were rewritten in place (same keys): only marta's three counters remain
+  assert.equal(await rowCount(), 3);
   await login('otra@example.com', WRONG); // an admitted attempt purges what has expired
   await t.advance(LOGIN_WINDOW_MS);
   await login('nadie@example.com', WRONG);
-  assert.equal(await rowCount(), 2, 'only the counters of the last attempt are left');
+  assert.equal(await rowCount(), 3, 'only the counters of the last attempt are left');
 });
 
 // ------------------------------------------------------------------ H-1: one identity per account, as MariaDB sees it
@@ -232,7 +249,11 @@ test('H-1: variants of one e-mail (accents, full width, zero width, spaces, case
     [401, 401, 401, 401, 401, 429, 429],
   );
   assert.equal(n, 5, 'only the allowance reached Argon2id');
-  assert.deepEqual(await counters('127.0.0.1', 'admin@example.com'), { IP: 5, CUENTA_IP: 5 });
+  assert.deepEqual(await counters('127.0.0.1', 'admin@example.com'), {
+    IP: 5,
+    CUENTA_IP: 5,
+    CUENTA: 5,
+  });
 });
 
 test('H-1: a variant really reaches the account (the right password through a variant logs in)', async () => {
@@ -254,7 +275,13 @@ test('H-1: no enumeration — an unknown account and its variants behave exactly
 
 // ------------------------------------------------------------------ H-2: nobody can lock another user out
 
-test('H-2: 10 attacking addresses × 5 wrong passwords do not stop the owner logging in from their own address', async () => {
+test('H-2 / R-1: 10 attacking addresses × 5 wrong passwords do not stop the owner logging in from their own address', async () => {
+  // The owner has logged in from here before: a known network is not subject to the account-wide counter.
+  const usual = await login('secretaria@example.com', 'demo1234', {
+    base: proxiedBase,
+    client: '203.0.113.50',
+  });
+  assert.equal(usual.status, 200);
   const attackers = Array.from({ length: 10 }, (_, i) => `198.51.100.${i + 1}`);
   const [responses, n] = await verified(() =>
     Promise.all(
@@ -265,8 +292,9 @@ test('H-2: 10 attacking addresses × 5 wrong passwords do not stop the owner log
       ),
     ),
   );
-  assert.deepEqual(statuses(responses), { 401: 50 });
-  assert.equal(n, 50);
+  // R-1: the account takes 20 guesses from unknown networks, however many addresses share them out
+  assert.deepEqual(statuses(responses), { 401: 20, 429: 30 });
+  assert.equal(n, 20);
   // the failed attempts are still limited: each attacking address is out of guesses for this account
   for (const client of attackers.slice(0, 3)) {
     const [again, m] = await verified(() =>
@@ -281,6 +309,12 @@ test('H-2: 10 attacking addresses × 5 wrong passwords do not stop the owner log
   );
   assert.equal(owner.status, 200);
   assert.equal(k, 1);
+  // The documented price of R-1: during the attack, the right password from a NEW network is refused unverified.
+  const [stranger, s] = await verified(() =>
+    login('secretaria@example.com', 'demo1234', { base: proxiedBase, client: '203.0.113.51' }),
+  );
+  assert.equal(stranger.status, 429);
+  assert.equal(s, 0);
 });
 
 test('H-2: an attacker who keeps trying across windows never locks the owner out', async () => {
@@ -409,7 +443,7 @@ test('S-01: clientIp — peer unless it is a trusted proxy; skips trusted hops; 
   assert.equal(clientIp(req('10.0.0.1'), proxies), '10.0.0.1');
   assert.equal(clientIp(req('2001:db8::1', '1.2.3.4'), new Set(['2001:db8::1'])), '1.2.3.4');
   assert.throws(
-    () => createApp(t.db, { secureCookie: false, trustedProxies: ['10.0.0.0/8'] }),
+    () => createApp(t.db, { secureCookie: false, trustedProxies: ['10.0.0.0/99'] }),
     /TRUSTED_PROXIES/,
   );
 });
@@ -459,7 +493,7 @@ test('S-01: the table stores no e-mail, IP, password or token — only SHA-256 k
   const rows: { clave: string; ambito: string }[] = await t.db.query(
     'SELECT clave, ambito FROM limite_acceso',
   );
-  assert.equal(rows.length, 2);
+  assert.equal(rows.length, 3);
   for (const r of rows) assert.match(r.clave, /^[0-9a-f]{64}$/);
-  assert.deepEqual(rows.map((r) => r.ambito).sort(), ['CUENTA_IP', 'IP']);
+  assert.deepEqual(rows.map((r) => r.ambito).sort(), ['CUENTA', 'CUENTA_IP', 'IP']);
 });

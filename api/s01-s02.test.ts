@@ -91,7 +91,7 @@ test('S-01+S-02: 50 at once from one IP with 5 accounts — S-01 admits 25, all 
   assert.deepEqual(r.counted, { ip: 25, pair: 25, over: 0 });
 });
 
-test('S-01+S-02: one account from 10 IPs, 50 at once — the 18 the gate can not hold get 503 and give their S-01 attempt back', async () => {
+test('S-01+S-02: 10 accounts from 10 IPs, 50 at once — the 18 the gate can not hold get 503 and give their S-01 attempt back', async () => {
   // the default cap and queue (3 + 32); a long wait so the 32 queued survive however slowly the 18 others are answered
   const { base, gate } = await instance(argon2Gate({ ...ARGON2_DEFAULTS, waitMs: 10_000 }));
   const overflow = 50 - MAX_WAITERS;
@@ -100,8 +100,8 @@ test('S-01+S-02: one account from 10 IPs, 50 at once — the 18 the gate can not
   );
   const answered: number[] = [];
   const r = await burst(async (i) => {
-    const status = await login(base, 'coach@example.com', `198.51.100.${1 + (i % 10)}`);
-    // S-01 admits all 50 (5 per account+IP, 10 IPs): once the queue is full, the rest are refused at once
+    const status = await login(base, `nadie${i % 10}@example.com`, `198.51.100.${1 + (i % 10)}`);
+    // S-01 admits all 50 (5 per account+IP): once the queue is full, the rest are refused at once
     if (answered.push(status) === overflow) for (const release of held) release!();
     return status;
   });
@@ -139,7 +139,8 @@ test('S-01+S-02: two instances, one IP, 50 at once — the S-01 limits are share
 });
 
 test('S-01+S-02: gate saturated — 503 without Argon2id, nothing counted; a pair at its limit still gets 429 first', async () => {
-  const gate = argon2Gate({ limit: ARGON2_DEFAULTS.limit, waitMs: 100 });
+  // A wait long enough for all 10 to reach the limiter before the first ones give their attempt back.
+  const gate = argon2Gate({ limit: ARGON2_DEFAULTS.limit, waitMs: 1000 });
   const { base } = await instance(gate);
   const held = await Promise.all(
     Array.from({ length: ARGON2_DEFAULTS.limit }, () => gate.acquire()),
@@ -172,6 +173,7 @@ test('S-01+S-02: a right password gives the reservation back and clears the pair
     'SELECT ambito, intentos FROM limite_acceso ORDER BY ambito',
   );
   assert.deepEqual(rows.map((r) => [r.ambito, r.intentos]).sort(), [
+    ['CUENTA', 4],
     ['CUENTA_IP', 0],
     ['IP', 4],
   ]);
