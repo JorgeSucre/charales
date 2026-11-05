@@ -3,6 +3,7 @@
 # Uso: sh db/mariadb/scripts/backup.sh <base> [directorio]   →  imprime la ruta del .sql.gz creado
 # Conexión: variables/archivo de opciones estándar de mariadb (~/.my.cnf, MYSQL_HOST…). Sin contraseñas en el repo.
 set -eu
+umask 077 # sólo su dueño: contiene datos de personas, también de menores
 DB="${1:?Uso: backup.sh <base> [directorio]}"
 DIR="${2:-backups}"
 mkdir -p "$DIR"

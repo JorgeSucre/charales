@@ -38,6 +38,15 @@ let page: Page;
 /** Where the proxy sends API requests; a test can point it at a new API process (restart). */
 let apiBase = '';
 
+/** The headers the production proxy sends: the CSP tested here on every page is the one that gets deployed. */
+const PRODUCTION_HEADERS: Record<string, string> = Object.fromEntries(
+  [
+    ...readFileSync('deploy/nginx/security-headers.conf', 'utf8').matchAll(
+      /^add_header (\S+) "([^"]*)" always;$/gm,
+    ),
+  ].map((m) => [m[1]!, m[2]!]),
+);
+
 function serve(): Server {
   return createServer((req, res) => {
     const api = new URL(apiBase);
@@ -61,7 +70,10 @@ function serve(): Server {
     }
     const file = join(DIST, path);
     const target = existsSync(file) && extname(file) ? file : join(DIST, 'index.html');
-    res.writeHead(200, { 'Content-Type': TYPES[extname(target)] ?? 'application/octet-stream' });
+    res.writeHead(200, {
+      'Content-Type': TYPES[extname(target)] ?? 'application/octet-stream',
+      ...PRODUCTION_HEADERS,
+    });
     res.end(readFileSync(target));
   }).listen(0, '127.0.0.1');
 }
@@ -735,3 +747,116 @@ async function partialPaymentFlow(): Promise<void> {
   );
   assert.deepEqual(page.errors(), []);
 }
+
+test('the production headers are really applied here, and the app works under its CSP', async () => {
+  assert.match(PRODUCTION_HEADERS['Content-Security-Policy'] ?? '', /script-src 'self'/);
+  const res = await fetch(`${app}/login`);
+  assert.equal(res.headers.get('x-frame-options'), 'DENY');
+  assert.equal(res.headers.get('referrer-policy'), 'no-referrer');
+  assert.match(res.headers.get('content-security-policy') ?? '', /frame-ancestors 'none'/);
+  page.errors();
+  await login('admin@example.com');
+  await page.goto(`${app}/admin/players`);
+  await page.until(settled);
+  assert.deepEqual(page.errors(), []);
+});
+
+test('HU-005 through the UI: forgot password, the link in the e-mail, a new password, the old one no longer works', async () => {
+  const email = 'secretaria@example.com';
+  const [{ password_hash: original }] = await t.db.query(
+    'SELECT password_hash FROM usuarios WHERE email = ?',
+    [email],
+  );
+  try {
+    await logoutAll();
+    await page.goto(`${app}/forgot-password`);
+    await page.until(`document.querySelector('input[type=email]')`);
+    const sent = t.mail.length;
+    await page.eval(`(() => {
+      const i = document.querySelector('input[type=email]');
+      i.value = ${JSON.stringify(email)};
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+      document.querySelector('button[type=submit]').click();
+    })()`);
+    await page.until(`document.querySelector('main, app-root')?.innerText.length > 0`);
+    for (let i = 0; i < 50 && t.mail.length === sent; i++)
+      await new Promise((r) => setTimeout(r, 100));
+    const message = t.mail.at(-1)!;
+    assert.equal(message.to, email);
+    const token = /token=([\w-]+)/.exec(message.text)![1]!;
+    await page.goto(`${app}/reset-password?token=${token}`);
+    await page.until(`document.querySelectorAll('input[type=password]').length === 2`);
+    await page.eval(`(() => {
+      for (const i of document.querySelectorAll('input[type=password]')) {
+        i.value = 'Recuperada-2847';
+        i.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      document.querySelector('button[type=submit]').click();
+    })()`);
+    const tryLogin = (password: string) =>
+      fetch(`${t.base}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      }).then((r) => r.status);
+    for (let i = 0; i < 50; i++) {
+      const [row] = await t.db.query('SELECT password_hash FROM usuarios WHERE email = ?', [email]);
+      if (row.password_hash !== original) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.equal(await tryLogin('Recuperada-2847'), 200);
+    assert.equal(await tryLogin('demo1234'), 401);
+  } finally {
+    await t.db.query('UPDATE usuarios SET password_hash = ? WHERE email = ?', [original, email]);
+    await t.db.query('DELETE FROM limite_acceso');
+  }
+});
+
+test('stored markup is shown as text: a notice with a script runs nothing, in a real browser', async () => {
+  const admin = await t.login('admin@example.com');
+  const payload = `<img src=x onerror="window.__xss=1"><script>window.__xss=1</script>`;
+  await t.ok(
+    t.call(admin, 'NoticeService', 'save', {
+      title: payload,
+      message: payload,
+      startsAt: '2020-01-01T00:00:00',
+      endsAt: '2099-12-31T23:59:59',
+      published: true,
+      categoryIds: [],
+      tutorIds: [],
+      coachIds: [],
+    }),
+  );
+  await login('admin@example.com');
+  await page.goto(`${app}/admin/notices`);
+  await page.until(settled);
+  await page.until(`document.querySelector('main').innerText.includes('onerror')`);
+  assert.equal(
+    await page.eval<boolean>(`document.querySelector('main img[src="x"]') !== null`),
+    false,
+  );
+  assert.equal(await page.eval<unknown>(`window.__xss ?? null`), null);
+});
+
+test('the login form tells the limit without saying whether the account exists', async () => {
+  await t.db.query('DELETE FROM limite_acceso');
+  await logoutAll();
+  await page.size(1280, 900);
+  await page.goto(`${app}/login`);
+  await page.until(`document.querySelector('input[type=email]')`);
+  const attempt = async () => {
+    await page.eval(`(() => {
+      const set = (sel, v) => { const i = document.querySelector(sel); i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })); };
+      set('input[type=email]', 'nadie.aqui@example.com');
+      set('input[type=password]', 'incorrecta-1');
+      document.querySelector('button[type=submit]').click();
+    })()`);
+    await new Promise((r) => setTimeout(r, 300));
+    return page.eval<string>(`document.querySelector('form').innerText`);
+  };
+  let text = '';
+  for (let i = 0; i < 6; i++) text = await attempt();
+  assert.match(text, /Demasiados intentos/);
+  assert.doesNotMatch(text, /nadie\.aqui|no existe/);
+  await t.db.query('DELETE FROM limite_acceso');
+});

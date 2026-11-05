@@ -98,6 +98,21 @@ test('F5-10: one session runs 3 operations at once and queues 32; the rest are r
   assert.equal((await call(tutor)).status, 200);
 });
 
+test('F5-16: a common password is refused by the API, whatever its case; an uncommon one with the same shape is not', async () => {
+  const { passwordProblem } = await import('./password.ts');
+  for (const common of ['password1', 'Password123', 'QWERTY123', 'charales1', 'admin1234'])
+    assert.match(passwordProblem(common) ?? '', /común/, common);
+  assert.equal(passwordProblem('zorro-2847'), null);
+  const cookie = await t.login('secretaria@example.com');
+  const res = await fetch(`${t.base}/auth/password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify({ currentPassword: 'demo1234', newPassword: 'qwerty123' }),
+  });
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /común/);
+});
+
 // ------------------------------------------------------------------ a database behind the code
 
 test('F5-06 / F5-17: a database without the migrations: said by name, never to the client', async () => {

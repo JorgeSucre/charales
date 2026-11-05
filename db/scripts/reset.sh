@@ -4,6 +4,14 @@
 set -eu
 export PGOPTIONS="${PGOPTIONS:--c client_min_messages=warning}"
 NAME="${1:-charales_dev}"
+# Borra la base que recibe: sólo las dos de este esquema histórico, nunca otra por error (F5-19).
+case "$NAME" in
+  charales_dev | charales_test) ;;
+  *)
+    echo "reset.sh sólo recrea charales_dev o charales_test, no «$NAME»." >&2
+    exit 1
+    ;;
+esac
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 dropdb --if-exists "$NAME"
 createdb "$NAME"

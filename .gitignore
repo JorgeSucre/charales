@@ -45,6 +45,13 @@ Thumbs.db
 
 # API
 .env
+.env.*
+!.env.example
+
+# Respaldos: contienen datos de personas, también de menores (F5-09)
+backups/
+*.sql.gz
+*.sql.gz.gpg
 postman/environments/*.local.environment.yaml
 
 # API: dominio empaquetado por npm run api:build

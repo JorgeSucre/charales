@@ -1,0 +1,28 @@
+# Propuesta de servicio para la API. PLANTILLA: no se ha probado en un servidor real.
+[Unit]
+Description=Charales API
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=charales
+Group=charales
+WorkingDirectory=/srv/charales/current
+# Variables y secretos: fuera del repositorio, sólo legible por root y por este servicio (modo 640).
+EnvironmentFile=/etc/charales/api.env
+ExecStart=/usr/bin/node api/server.ts
+Restart=on-failure
+RestartSec=5
+# La API termina sin servir si la configuración o la base no son correctas: que no reintente sin fin.
+StartLimitIntervalSec=120
+StartLimitBurst=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/srv/charales
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target

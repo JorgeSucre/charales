@@ -39,6 +39,8 @@ export async function openBrowser(): Promise<Page> {
       '--no-first-run',
       '--no-default-browser-check',
       '--hide-scrollbars',
+      // CI runners block Chrome's sandbox; never on a developer machine.
+      ...(process.env['CI'] ? ['--no-sandbox'] : []),
       'about:blank',
     ],
     { stdio: 'ignore' },
@@ -106,6 +108,11 @@ export async function openBrowser(): Promise<Page> {
           .join(' '),
       );
   });
+  // A resource the Content-Security-Policy blocked is a page that doesn't work in production.
+  on('Log.entryAdded', (p) => {
+    const entry = p['entry'] as { source?: string; text?: string };
+    if (entry.source === 'security') errors.push(`CSP: ${entry.text}`);
+  });
   let acceptDialogs = true;
   const dialogMessages: string[] = [];
   on('Page.javascriptDialogOpening', (p) => {
@@ -126,6 +133,7 @@ export async function openBrowser(): Promise<Page> {
   });
   await send('Page.enable');
   await send('Runtime.enable');
+  await send('Log.enable');
 
   const page: Page = {
     async goto(url) {

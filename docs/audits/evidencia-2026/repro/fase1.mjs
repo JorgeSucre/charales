@@ -19,6 +19,7 @@ const CODE = resolve(arg('code', '.'));
 const LABEL = arg('label', 'run').replace(/\W/g, '');
 const OUT = arg('out');
 const ONLY = arg('only')?.split(',');
+const ROUNDS = (arg('reset-rounds') ?? '10000,10000,20000').split(',').map(Number);
 const conn = {
   DB_SOCKET: process.env.DB_SOCKET ?? '/tmp/mysql.sock',
   DB_USER: process.env.DB_USER,
@@ -364,7 +365,7 @@ const scenarios = {
     let peak = res.rss_start_kb;
     const sampler = setInterval(() => (peak = Math.max(peak, a.rss())), 200);
     let sent = 0;
-    for (const n of [10000, 10000, 20000]) {
+    for (const n of ROUNDS) {
       const codes = {};
       let i = 0;
       const t = Date.now();
@@ -423,6 +424,35 @@ const scenarios = {
     await p.end();
     res.tokens_issued_for_victim = Number(n);
     res.mail_sent_to_victim = (a.logs.out.match(/para coach@example\.com/g) ?? []).length;
+    // Timing of the answer: an existing account vs an unknown one (S-06). A new address each time; limits cleared.
+    const timed = async (email, i) => {
+      const t = performance.now();
+      const r = await post(
+        a.base,
+        '/auth/password-reset/request',
+        { email },
+        { 'x-forwarded-for': `192.0.2.${(i % 250) + 1}` },
+      );
+      await r.arrayBuffer();
+      return [r.status, performance.now() - t];
+    };
+    const existing = [];
+    const nobody = [];
+    const accounts = ['marta', 'coach', 'tutor', 'secretaria', 'admin'].map(
+      (u) => `${u}@example.com`,
+    );
+    await clearCounters(db);
+    await sleep(11000);
+    for (let i = 0; i < 20; i++) {
+      existing.push(await timed(accounts[i % 5], i));
+      nobody.push(await timed(`nadie-t${i}@example.com`, i + 100));
+    }
+    const ms = (l) => l.filter((x) => x[0] === 204).map((x) => x[1]);
+    res.reset_timing_ms = {
+      existing_median: +median(ms(existing)).toFixed(2),
+      unknown_median: +median(ms(nobody)).toFixed(2),
+      n: [ms(existing).length, ms(nobody).length],
+    };
     await a.stop();
     res.db = db;
     return res;
