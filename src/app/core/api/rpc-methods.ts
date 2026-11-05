@@ -27,6 +27,7 @@ export const RPC_METHODS = {
     'setConceptActive',
     'statement',
   ],
+    PaymentsGatewayService: ['validarReferencia', 'crearPreferencia'],
   CategoryService: ['coaches', 'get', 'list', 'members', 'save', 'setActive'],
   CoachPanelService: [
     'categoryOptions',
