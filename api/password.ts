@@ -122,6 +122,11 @@ export async function changePassword(ctx: Ctx, db: Pool): Promise<Reply> {
     const now = localDateTime(); // after the locks: a request that waited stamps the time it actually applied
     await tx.query('UPDATE usuarios SET password_hash = ? WHERE id = ?', [hash, s.user.id]);
     await revokeDevices(tx, s.user.id); // whoever knew the old password may have trusted a browser
+    // And any live link of the account: one asked for before the change would set the password again (audit IND3-06).
+    await tx.query(
+      'UPDATE tokens_recuperacion SET usado_en = ? WHERE usuario_id = ? AND usado_en IS NULL',
+      [now, s.user.id],
+    );
     device = await issueDevice(tx, s.user.id, s.user.email, null, ctx.secureCookie);
     await tx.query(
       'UPDATE sesiones SET cerrada_en = ? WHERE usuario_id = ? AND cerrada_en IS NULL AND id <> ?',

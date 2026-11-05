@@ -11,9 +11,10 @@ HERE=$(dirname "$0")
 mkdir -p "$BACKUP_DIR/diario" "$BACKUP_DIR/semanal" "$BACKUP_DIR/mensual"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
+trap 'exit 1' INT TERM # dash no ejecuta el trap de EXIT con una señal: así sí
 PLAIN=$(sh "$HERE/../../db/mariadb/scripts/backup.sh" "$DB" "$WORK")
 # Un volcado puede salir bien sin rutinas si la cuenta no puede leerlas (cuentas.sql): sin ellas no sirve para restaurar.
-gunzip -c "$PLAIN" | grep -q 'marcar_cargos_vencidos' || {
+gunzip -c "$PLAIN" | grep -q 'PROCEDURE `marcar_cargos_vencidos`' || { # no basta el nombre: el EVENT también lo cita
   echo "respaldo-programado.sh: el volcado no contiene el procedimiento marcar_cargos_vencidos" >&2
   exit 1
 }

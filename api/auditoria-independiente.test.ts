@@ -700,3 +700,62 @@ test('IND2-08: setting the password by one link kills the others of the account'
   assert.equal((await confirm(base, newest)).status, 204);
   assert.equal((await confirm(base, recovery)).status, 400);
 });
+
+/** A live link created outside any endpoint, valid at the tests' time. */
+async function extraLink(email: string): Promise<string> {
+  const token = `extra-${Math.random().toString(36).slice(2)}`;
+  await t.db.query(
+    `INSERT INTO tokens_recuperacion (usuario_id, finalidad, token_hash, creado_en, expira_en)
+     SELECT id, 'RECUPERACION', ?, ?, ? FROM usuarios WHERE email = ?`,
+    [sha256(token), localDateTime(), localDateTime(Date.now() + 3_600_000), email],
+  );
+  return token;
+}
+
+test('IND2-08 (isolated): confirming one link kills every other live link of the account, whatever made it', async () => {
+  const email = 'marta@example.com';
+  const [{ password_hash: original }] = await t.db.query(
+    'SELECT password_hash FROM usuarios WHERE email = ?',
+    [email],
+  );
+  const first = await extraLink(email);
+  const second = await extraLink(email);
+  assert.equal((await confirm(base, first)).status, 204);
+  assert.equal((await confirm(base, second)).status, 400);
+  await t.db.query('UPDATE usuarios SET password_hash = ? WHERE email = ?', [original, email]);
+});
+
+test('IND3-06: a password change kills the account’s live links', async () => {
+  const email = 'marta@example.com';
+  const [{ password_hash: original }] = await t.db.query(
+    'SELECT password_hash FROM usuarios WHERE email = ?',
+    [email],
+  );
+  const link = await extraLink(email);
+  const open = session(await login(email, RIGHT, '192.0.2.160'));
+  const changed = await post(
+    `${base}/auth/password`,
+    { currentPassword: RIGHT, newPassword: 'Cambiada-2847' },
+    '192.0.2.160',
+    open,
+  );
+  assert.equal(changed.status, 204);
+  assert.equal((await confirm(base, link)).status, 400);
+  await t.db.query('UPDATE usuarios SET password_hash = ? WHERE email = ?', [original, email]);
+});
+
+test('IND3-03: recovery is counted per network, not per /24: one neighbour can not block an office', async () => {
+  for (let i = 0; i < 25; i++)
+    await post(
+      `${base}/auth/password-reset/request`,
+      { email: `x${i}@nobody.example` },
+      '203.0.113.10',
+    );
+  const neighbour = await post(
+    `${base}/auth/password-reset/request`,
+    { email: 'tutor@example.com' },
+    '203.0.113.11',
+  );
+  assert.equal(neighbour.status, 204);
+  await recoveriesSettled();
+});

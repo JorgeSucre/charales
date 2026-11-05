@@ -338,7 +338,7 @@ export async function reserveResetRequest(
   ip: string,
   email: string,
 ): Promise<'ok' | 'quiet' | 'refused'> {
-  const ipKey = sha256(`RECUP_IP|${wideBucket(ip)}`); // a /24 or /48: /64s come free
+  const ipKey = sha256(`RECUP_IP|${limitBucket(ip)}`); // per network: a /24 would let one person block a whole office (IND3-03)
   if (refusedNow(ipKey)) return 'refused';
   const accountKey = sha256(`RECUP_CUENTA|${await accountIdentity(db, email)}`);
   if (refusedNow(accountKey)) return 'quiet';

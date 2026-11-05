@@ -144,6 +144,10 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
       los /48 pueden conseguirse gratis. Afecta a una cuenta cada vez y no a navegadores de confianza ni a la recuperación.
     - **Red compartida:** sin navegador de confianza, un atacante en la misma red comparte el contador de red.
     - **Avalancha de cookies inventadas:** cada una cuesta una consulta por clave primaria. La acota el proxy.
+    - **Errores propios en un navegador nuevo:** 8 contraseñas incorrectas desde una red gastan la parte de esa red para la
+      cuenta durante 6 h, también para otros navegadores nuevos de esa misma red (IND3-04). La recuperación sigue disponible.
+    - **Enlace del operador:** se emite como invitación; si después se corrige el correo, se envía una invitación a la dirección
+      nueva (IND3-05).
     - **Tope global de correos:** no hay. Muchas asignaciones y cuentas distintas pueden gastar la cuota del proveedor.
     - **Disponibilidad:** el pool de 2 conexiones puede dejar el login en 503 ante una avalancha desde muchas redes; hay
       que limitarlo también en el proxy (`deploy/nginx/charales.conf`).
