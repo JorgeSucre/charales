@@ -13,6 +13,7 @@ import {
   SetupError,
   baseSchema,
   dropTestDatabase,
+  uniqueTestDatabase,
   loadDevSeed,
   serverOptions,
   setupDatabase,
@@ -21,9 +22,10 @@ import {
 import { cachedTables, unitOfWork } from './rpc.ts';
 import { createApp, createPool } from './server.ts';
 
-const FRESH = `ef_setup_${process.pid}_a`;
-const FOREIGN = `ef_setup_${process.pid}_b`;
-const SEED = `ef_setup_${process.pid}_c`;
+const RUN = uniqueTestDatabase('ef_setup');
+const FRESH = `${RUN}_a`;
+const FOREIGN = `${RUN}_b`;
+const SEED = `${RUN}_c`;
 const env = (name: string) => ({ ...process.env, DB_NAME: name });
 
 after(async () => {
@@ -109,7 +111,7 @@ test('db:mariadb:dev-seed is db:setup -- --dev-seed; these tests only use ef_* d
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   // The old script piped all of 010 (initial matrix included, INSERT IGNORE) and 020 with `sh`, on any database.
   assert.equal(pkg.scripts['db:mariadb:dev-seed'], 'npm run db:setup -- --dev-seed');
-  for (const name of [FRESH, FOREIGN, SEED]) assert.match(name, /^ef_setup_\d+_[a-z]$/);
+  for (const name of [FRESH, FOREIGN, SEED]) assert.match(name, /^ef_setup_\d+_[0-9a-f]{8}_[a-z]$/);
 });
 
 test('dev-seed: a seed that cannot land whole is refused and leaves nothing behind', async () => {

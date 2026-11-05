@@ -9,9 +9,9 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import type { Pool } from 'mariadb';
 import { createApp, createPool } from './server.ts';
-import { dropTestDatabase, runSqlFile, setupDatabase } from './schema.ts';
+import { dropTestDatabase, runSqlFile, setupDatabase, uniqueTestDatabase } from './schema.ts';
 
-const DB = `ef_apitest_${process.pid}`;
+const DB = uniqueTestDatabase('ef_apitest');
 
 let db: Pool;
 let server: Server;
@@ -20,7 +20,6 @@ let base: string;
 const mail: { to: string; subject: string; text: string }[] = [];
 
 before(async () => {
-  await dropTestDatabase(process.env, DB);
   await setupDatabase({ ...process.env, DB_NAME: DB });
   await runSqlFile(process.env, DB, 'db/mariadb/020_dev_seed.sql');
   db = createPool({ ...process.env, DB_NAME: DB });

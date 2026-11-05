@@ -7,6 +7,7 @@
  * the idempotent migrations and the permission catalog (its role matrix only on a first install, so an administrator's
  * changes are kept); any other non-empty database is refused.
  */
+import { randomBytes } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import mariadb, { type Connection, type ConnectionConfig } from 'mariadb';
 
@@ -282,6 +283,14 @@ export async function loadDevSeed(env: Record<string, string | undefined>): Prom
  * Drops a TEMPORARY test database. Refuses any name not starting with `ef_` (the prefix of every test database), so a
  * mistake can never drop escuela_futbol or another real database.
  */
+/**
+ * A test database name no earlier run can have used. Never built from the pid alone: pids repeat, and the suites drop
+ * the database they name, so a repeated pid would destroy a database an earlier run or person left behind.
+ */
+export function uniqueTestDatabase(prefix: string): string {
+  return `${prefix}_${process.pid}_${randomBytes(4).toString('hex')}`;
+}
+
 export async function dropTestDatabase(
   env: Record<string, string | undefined>,
   name: string,
