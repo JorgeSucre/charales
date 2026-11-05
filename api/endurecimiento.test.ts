@@ -113,6 +113,30 @@ test('F5-16: a common password is refused by the API, whatever its case; an unco
   assert.match((await res.json()).error, /común/);
 });
 
+test('anonymous requests never queue: 200 at once all answer 401', async () => {
+  const statuses = await Promise.all(
+    Array.from({ length: 200 }, () =>
+      fetch(`${t.base}/api/rpc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service: 'SeasonService', method: 'list', args: [] }),
+      }).then((r) => r.status),
+    ),
+  );
+  assert.deepEqual([...new Set(statuses)], [401]);
+});
+
+test('a failure giving back a reservation does not break the login: the counter stays one higher, the safe side', async () => {
+  const { reserveLogin, settleLogin } = await import('./login-limit.ts');
+  const reservation = await reserveLogin(t.db, '203.0.113.200', 'marta@example.com');
+  assert.ok(reservation);
+  const broken = {
+    getConnection: () => Promise.reject(new Error('sin conexión')),
+    query: () => Promise.reject(new Error('sin conexión')),
+  } as never;
+  await settleLogin(broken, reservation, 'success');
+});
+
 // ------------------------------------------------------------------ a database behind the code
 
 test('F5-06 / F5-17: a database without the migrations: said by name, never to the client', async () => {

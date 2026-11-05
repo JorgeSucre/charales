@@ -61,6 +61,10 @@ modelo TS, arreglo en `MockDb` y servicio que las escribe ([`MARIADB.md` § 2](M
 | --------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `roles`, `permisos`, `rol_permiso`            | HU-006 (Joss)                   | `RoleService`. Catálogo y matriz inicial en `permissions.ts`, replicada por `010_permisos_app.sql` (D12) |
 | `auditoria`                                   | HU-007 (Joss)                   | `AuditService`; la escriben todos los servicios                                                          |
+| `limite_acceso`, `origen_conocido`            | HU-001 (Joss)                   | `api/login-limit.ts`; fuera de `MockDb`. Sólo claves SHA-256                                             |
+| `correo_saliente`                             | HU-005 (sin responsable)        | `api/mail.ts`; fuera de `MockDb`. Sin cuerpo ni token                                                    |
+| `version_datos`                               | HU-075 (sin responsable)        | `api/rpc.ts` y el trabajo diario; fuera de `MockDb`                                                      |
+| `turnos_argon2`, `turnos_argon2_guarda`       | Sin dueño: sin uso              | Migración 006; no eliminar hasta confirmar todos los entornos                                            |
 | `sesiones`                                    | HU-001 (Joss)                   | `AuthService`; hoy en `MockDb`, del lado del servidor cuando exista la API                               |
 | `historial_estatus` + `jugadores.estatus`     | HU-010 (Dani)                   | ACTIVO / BAJA_TEMPORAL / BAJA_DEFINITIVA (`PlayerService.changeStatus`)                                  |
 | `historial_categoria` (motivo del cambio)     | HU-019 (Dani)                   | `PlayerCategoryService.change`                                                                           |

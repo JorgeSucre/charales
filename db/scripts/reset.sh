@@ -8,7 +8,7 @@ NAME="${1:-charales_dev}"
 case "$NAME" in
   charales_dev | charales_test) ;;
   *)
-    echo "reset.sh sólo recrea charales_dev o charales_test, no «$NAME»." >&2
+    echo "reset.sh sólo recrea charales_dev o charales_test, no «${NAME}»." >&2
     exit 1
     ;;
 esac

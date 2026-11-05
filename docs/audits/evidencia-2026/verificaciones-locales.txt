@@ -1,0 +1,31 @@
+# Verificaciones locales, 2026-11-05 09:21, rama fix/auditoria-integral-cierre. Sólo bases nuevas ef_rem26_*, datos ficticios.
+## Migraciones: 003 con datos -> 004..007 (dos veces) frente a base nueva
+migración aplicada: 007_correo_y_limites.sql
+idempotente: checksums iguales tras repetir
+esquema actualizada=48c402f3bd642526 nueva=48c402f3bd642526 filas usuarios conservadas=6
+tablas=45 fk=63 check=41 unique=32 fk_sin_indice=0
+## Marcha atrás: la API de 9e08b11 sobre una base con 007
+login: 200
+rpc: 200
+## Respaldo cifrado -> descifrar -> restaurar -> verificar
+creado: ef_rem26_mig_up_2d6a80_2026-11-05_094130.sql.gz.gpg permisos=600; sql.gz sin cifrar en el directorio: 0
+Restaurado en ef_rem26_bk_2c415b
+Tablas comparadas: 45
+RESULTADO: OK, el respaldo es idéntico
+deploy/mariadb/respaldo-programado.sh: line 9: BACKUP_GPG_RECIPIENT: Falta BACKUP_GPG_RECIPIENT: un respaldo sin cifrar 
+permisos de backup.sh: 600
+## db:reset con otra base
+db/scripts/reset.sh: line 11: NAME�: unbound variable
+## Respaldo accidental en Git (clon desechable, archivo ficticio)
+9e08b11: añadidos por git add -A: .env.production backups/escuela_2026.sql.gz 
+HEAD: añadidos por git add -A: 
+check-sensitive con un respaldo forzado: ERROR: archivos sensibles en Git: backups/a.sql.gz  rc=1
+## Colisión de puerto (listener ajeno simulado en 0.0.0.0)
+listen(P) en :: -> se enlaza SIN error (causa del ETIMEDOUT)
+listen(P,127.0.0.1) OK
+## actionlint
+rc=0
+## Bases temporales de esta verificación: ef_rem26_mig_up_2d6a80 ef_rem26_mig_fr_d0b6eb ef_rem26_bk_2c415b
+pruebas nuevas contra 9e08b11, r1-distribuido: ℹ tests 14 ℹ pass 3 ℹ fail 11 
+pruebas nuevas contra 9e08b11, recuperacion-limites: ℹ tests 8 ℹ pass 3 ℹ fail 5 
+pruebas nuevas contra 9e08b11, authorization-order: ℹ tests 10 ℹ pass 4 ℹ fail 6 

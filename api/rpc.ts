@@ -79,6 +79,7 @@ export async function rpc(ctx: Ctx, db: Pool): Promise<Reply> {
   const d = await domain;
   if (!d.isRpcMethod(service, method))
     return { status: 404, body: { error: 'Esa operación no está disponible.' } };
+  if (!ctx.token) return { status: 401, body: { error: NO_SESSION } };
   // Every operation holds a connection and the global lock, so one session flooding the bridge would queue everyone
   // else (F5-10). Its operations run a few at a time, in order; past the queue it is told to wait, before any query.
   const gate = sessionGate(ctx.token);
@@ -91,7 +92,7 @@ export async function rpc(ctx: Ctx, db: Pool): Promise<Reply> {
     return turn.busy ? { status: 429, body: { error: TOO_MANY_AT_ONCE } } : turn.value;
   } finally {
     const { active, waiting } = gate.stats();
-    if (!active && !waiting) gates.delete(ctx.token ?? '');
+    if (!active && !waiting) gates.delete(ctx.token);
   }
 }
 
@@ -166,10 +167,9 @@ const SESSION_LIMITS = { limit: 3, waitMs: 5000 };
 const TOO_MANY_AT_ONCE = 'Demasiadas solicitudes a la vez. Espera un momento e inténtalo de nuevo.';
 /** Only sessions with operations running or queued are here, so it can't grow beyond what is in flight. */
 const gates = new Map<string, Argon2Gate>();
-function sessionGate(token: string | null): Argon2Gate {
-  const key = token ?? '';
-  let gate = gates.get(key);
-  if (!gate) gates.set(key, (gate = argon2Gate(SESSION_LIMITS)));
+function sessionGate(token: string): Argon2Gate {
+  let gate = gates.get(token);
+  if (!gate) gates.set(token, (gate = argon2Gate(SESSION_LIMITS)));
   return gate;
 }
 

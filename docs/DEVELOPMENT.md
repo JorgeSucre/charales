@@ -6,7 +6,7 @@ Contexto, equipo y estado por área: [`../PROJECT_CONTEXT.md`](../PROJECT_CONTEX
 ## 0. Qué hay y qué no hay
 
 - **Hay:** frontend Angular con las 76 HU, que usa la API para la sesión y los datos; el modelo MariaDB probado (DDL,
-  migraciones, checks, permisos, respaldo); 241 pruebas del frontend, 192 de la API y 18 E2E (2026-10-29).
+  migraciones, checks, permisos, respaldo); 249 pruebas del frontend, 336 de la API y 23 E2E (2026-11-05).
 - **API:** `api/` con autenticación y contraseñas, y `POST /api/rpc`, que ejecuta los servicios de dominio sobre
   MariaDB (D13), más su colección Postman ([`API.md`](API.md)).
 - **La app usa la API para todo** (sesión y datos): sin la API corriendo, el login muestra «No se pudo conectar con la
@@ -59,14 +59,14 @@ Todos son los que usa el proyecto (`package.json`, [`CONTRIBUTING.md`](../CONTRI
 
 | Qué                        | Comando                                                                            | Resultado actual                     |
 | -------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------ |
-| Pruebas (una corrida)      | `npx ng test --watch=false`                                                        | 241/241                              |
+| Pruebas (una corrida)      | `npx ng test --watch=false`                                                        | 249/249                              |
 | Pruebas en modo watch      | `npm test` (no termina solo)                                                       | —                                    |
 | Typecheck                  | `npx tsc -p tsconfig.app.json --noEmit` y `npx tsc -p tsconfig.spec.json --noEmit` | Sin errores                          |
 | Formato                    | `npx prettier --check .` (aplicar: `npx prettier --write .`)                       | Todo con formato                     |
 | Build de producción        | `npm run build` (salida en `dist/`)                                                | Sin errores                          |
-| Esquema MariaDB + respaldo | `npm run db:mariadb:test-backup`                                                   | 42/42 checks; 40/40 tablas idénticas |
-| Pruebas de la API          | `npm run api:test` (bases temporales `ef_*` que se borran al terminar)             | 192/192                              |
-| E2E en navegador           | `npm run e2e` (necesita Google Chrome; base temporal `ef_e2e_*`)                   | 18/18                                |
+| Esquema MariaDB + respaldo | `npm run db:mariadb:test-backup`                                                   | 42/42 checks; 45/45 tablas idénticas |
+| Pruebas de la API          | `npm run api:test` (bases temporales `ef_*` que se borran al terminar)             | 336/336                              |
+| E2E en navegador           | `npm run e2e` (necesita Google Chrome; base temporal `ef_e2e_*`)                   | 23/23                                |
 | Colección Postman          | `postman collection lint postman/` y `postman collection run …` (ver `API.md`)     | 37 requests, 42/42 aserciones        |
 | Lint                       | No hay ESLint configurado                                                          | —                                    |
 
