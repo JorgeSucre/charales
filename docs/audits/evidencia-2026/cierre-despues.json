@@ -1,7 +1,7 @@
 {
   "code": "/Users/jorgesucre/Projects/6A/ingenieria_software/charales/charales-wt/auditoria-integral-cierre",
-  "label": "despues3",
-  "at": "2026-11-05T17:37:11.572Z",
+  "label": "final",
+  "at": "2026-11-05T22:43:03.195Z",
   "node": "v26.13.0",
   "fuerza": {
     "prefijos_150": {
@@ -10,9 +10,9 @@
         "429": 140
       },
       "first429": 11,
-      "median_401_ms": 24.4,
-      "median_429_ms": 0.5,
-      "total_ms": 342
+      "median_401_ms": 27.5,
+      "median_429_ms": 0.6,
+      "total_ms": 383
     },
     "prefijos_150_de_un_48": {
       "statuses": {
@@ -20,7 +20,7 @@
         "429": 142
       },
       "first429": 9,
-      "median_401_ms": 24.6,
+      "median_401_ms": 27.3,
       "median_429_ms": 0.5
     },
     "un_64_150": {
@@ -29,7 +29,7 @@
         "429": 145
       },
       "first429": 6,
-      "median_401_ms": 24.6,
+      "median_401_ms": 25.7,
       "median_429_ms": 0.5
     },
     "ipv4_60": {
@@ -38,7 +38,7 @@
         "429": 52
       },
       "first429": 9,
-      "median_401_ms": 25,
+      "median_401_ms": 23.9,
       "median_429_ms": 0.5
     },
     "mapeadas_9": {
@@ -47,8 +47,8 @@
         "429": 4
       },
       "first429": 6,
-      "median_401_ms": 24.2,
-      "median_429_ms": 0.6
+      "median_401_ms": 27.3,
+      "median_429_ms": 0.7
     },
     "concurrentes_60": {
       "statuses": {
@@ -56,8 +56,8 @@
         "429": 50
       },
       "first429": 11,
-      "median_401_ms": 69.6,
-      "median_429_ms": 41,
+      "median_401_ms": 105.6,
+      "median_429_ms": 96.1,
       "conexiones_pico": 11
     },
     "dos_procesos_150": {
@@ -66,7 +66,7 @@
         "429": 140
       },
       "first429": 11,
-      "median_401_ms": 25.2,
+      "median_401_ms": 24.9,
       "median_429_ms": 0.5
     },
     "reinicio": {
@@ -110,8 +110,8 @@
         "429": 30
       }
     },
-    "db": "ef_cier26_despues3_fb_20ff41",
-    "seconds": 10
+    "db": "ef_cier26_final_fb_5fa2a4",
+    "seconds": 11
   },
   "dia": {
     "pasos": 96,
@@ -119,8 +119,8 @@
     "adivinanzas_verificadas_24h": 57,
     "rechazadas_24h": 2343,
     "primera_hora_por_paso": [10, 0, 1, 0],
-    "db": "ef_cier26_despues3_dia_0cdf24",
-    "seconds": 44
+    "db": "ef_cier26_final_dia_cf833e",
+    "seconds": 43
   },
   "dueno": {
     "login_inicial": 200,
@@ -139,7 +139,7 @@
     "un_origen_navegador_nuevo_red_nueva": 200,
     "dueno_durante_ataque_concurrente": {
       "200": 15,
-      "mediana_ms": 25.7
+      "mediana_ms": 26
     },
     "red_agotada": {
       "401": 50,
@@ -157,12 +157,12 @@
     "recuperacion_confirmacion": 204,
     "recuperacion_despues_misma_red": 200,
     "recuperacion_despues_otra_red_mismo_navegador": 200,
-    "db": "ef_cier26_despues3_dn_a4e768",
+    "db": "ef_cier26_final_dn_618743",
     "seconds": 12
   },
   "databases": [
-    "ef_cier26_despues3_fb_20ff41",
-    "ef_cier26_despues3_dia_0cdf24",
-    "ef_cier26_despues3_dn_a4e768"
+    "ef_cier26_final_fb_5fa2a4",
+    "ef_cier26_final_dia_cf833e",
+    "ef_cier26_final_dn_618743"
   ]
 }
