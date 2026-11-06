@@ -57,7 +57,7 @@ CREATE USER 'charales'@'localhost' IDENTIFIED BY 'elige-una-contraseña';
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES, CREATE ROUTINE, ALTER ROUTINE, EXECUTE,
       EVENT, TRIGGER, LOCK TABLES, SHOW VIEW, CREATE TEMPORARY TABLES
    ON escuela_futbol.* TO 'charales'@'localhost';
--- Sólo si vas a correr las pruebas (crean y borran bases temporales ef_*):
+-- Sólo si vas a correr las pruebas (crean bases temporales ef_* nuevas y las conservan):
 GRANT ALL PRIVILEGES ON `ef\_%`.* TO 'charales'@'localhost';
 ```
 
@@ -133,14 +133,14 @@ nuevo: los datos siguen ahí (es lo que prueba `e2e/app.e2e.ts`, «persistence»
 ## 8. Pruebas
 
 ```bash
-npm run test:all          # frontend (Vitest) + typecheck + API sobre MariaDB (bases temporales ef_*, se borran)
+npm run test:all          # frontend (Vitest) + typecheck + API sobre MariaDB (bases temporales ef_* nuevas, se conservan)
 npm run e2e               # navegador (Google Chrome headless) sobre una base temporal
 npx prettier --check .    # formato
 npm run db:mariadb:test-backup   # sh: checks del esquema y respaldo/restauración (usa el cliente `mariadb` del sistema)
 ```
 
-Las pruebas de la API y el E2E nunca usan `escuela_futbol`: crean bases `ef_*` y sólo pueden borrar bases con ese
-prefijo. Necesitan el permiso sobre `ef\_%` de la sección 3. Detalle: [`TESTING.md`](TESTING.md).
+Las pruebas de la API y el E2E nunca usan `escuela_futbol`: crean bases `ef_*` con nombre único y nunca borran
+ninguna: se conservan al terminar; bórralas a mano cuando ya no hagan falta (cada suite imprime «Base de prueba conservada: …»). Necesitan el permiso sobre `ef\_%` de la sección 3. Detalle: [`TESTING.md`](TESTING.md).
 
 **Chrome para `npm run e2e`.** Por omisión se busca en la ruta de macOS
 (`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`); si no está ahí, la prueba falla con «Google Chrome

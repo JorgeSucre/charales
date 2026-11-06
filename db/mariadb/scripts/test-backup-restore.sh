@@ -4,10 +4,10 @@
 # Uso: sh db/mariadb/scripts/test-backup-restore.sh   (desde la raíz del repo, con un servidor MariaDB local)
 set -eu
 HERE=$(dirname "$0")
-# Nombres imposibles de repetir: el PID solo se repite, y la limpieza borra las bases que nombra.
+# Nombres imposibles de repetir: el PID solo se repite. Las dos bases se conservan al terminar (decisión del 2026-11-05).
 RUN="ef_bktest_$$_$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
 SRC="${RUN}_src"; DST="${RUN}_dst"; TMP=$(mktemp -d)
-cleanup() { mariadb -e "DROP DATABASE IF EXISTS \`$SRC\`; DROP DATABASE IF EXISTS \`$DST\`;"; rm -rf "$TMP"; }
+cleanup() { rm -rf "$TMP"; echo "Bases de prueba conservadas: $SRC $DST" >&2; }
 trap cleanup EXIT
 echo "MariaDB $(mariadb -N -e 'SELECT VERSION()') · $(date '+%Y-%m-%d %H:%M')"
 sed "s/escuela_futbol/$SRC/g" docs/escuela_futbol_mariadb.sql | mariadb

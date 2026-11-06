@@ -65,12 +65,12 @@ Todos son los que usa el proyecto (`package.json`, [`CONTRIBUTING.md`](../CONTRI
 | Formato                    | `npx prettier --check .` (aplicar: `npx prettier --write .`)                       | Todo con formato                     |
 | Build de producción        | `npm run build` (salida en `dist/`)                                                | Sin errores                          |
 | Esquema MariaDB + respaldo | `npm run db:mariadb:test-backup`                                                   | 42/42 checks; 45/45 tablas idénticas |
-| Pruebas de la API          | `npm run api:test` (bases temporales `ef_*` que se borran al terminar)             | 395/395                              |
+| Pruebas de la API          | `npm run api:test` (bases temporales `ef_*` nuevas, que se conservan)              | 395/395                              |
 | E2E en navegador           | `npm run e2e` (necesita Google Chrome; base temporal `ef_e2e_*`)                   | 23/23                                |
 | Colección Postman          | `postman collection lint postman/` y `postman collection run …` (ver `API.md`)     | 37 requests, 42/42 aserciones        |
 | Lint                       | No hay ESLint configurado                                                          | —                                    |
 
-`npm run db:mariadb:test-backup` crea y borra sólo sus propias bases temporales `ef_bktest_*`. Los scripts
+`npm run db:mariadb:test-backup` crea sus propias bases temporales `ef_bktest_*` y las conserva. Los scripts
 `npm run db:reset` y `npm run db:test` son del esquema PostgreSQL **histórico** y **borran y recrean** `charales_dev` y
 `charales_test`: nunca los apuntes a una base compartida.
 
