@@ -9,12 +9,16 @@ BACKUP_DIR="${2:?Uso: respaldo-programado.sh <base> <directorio>}"
 RECIPIENT="${BACKUP_GPG_RECIPIENT:?Falta BACKUP_GPG_RECIPIENT: un respaldo sin cifrar no sale de aquí}"
 HERE=$(dirname "$0")
 mkdir -p "$BACKUP_DIR/diario" "$BACKUP_DIR/semanal" "$BACKUP_DIR/mensual"
-WORK=$(mktemp -d)
+# El volcado en claro vive dentro de $BACKUP_DIR (0700), nunca en /tmp. KILL no se puede atrapar: lo que deje una
+# ejecución matada se borra en la siguiente (directorios .trabajo.* de más de una hora).
+find "$BACKUP_DIR" -maxdepth 1 -type d -name '.trabajo.*' -mmin +60 -exec rm -rf {} +
+WORK=$(mktemp -d "$BACKUP_DIR/.trabajo.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
-trap 'exit 1' INT TERM # dash no ejecuta el trap de EXIT con una señal: así sí
+trap 'exit 1' HUP INT TERM # dash no ejecuta el trap de EXIT con una señal: así sí
 PLAIN=$(sh "$HERE/../../db/mariadb/scripts/backup.sh" "$DB" "$WORK")
 # Un volcado puede salir bien sin rutinas si la cuenta no puede leerlas (cuentas.sql): sin ellas no sirve para restaurar.
-gunzip -c "$PLAIN" | grep -q 'PROCEDURE `marcar_cargos_vencidos`' || { # no basta el nombre: el EVENT también lo cita
+# Anclado al inicio de línea: ni el EVENT, que lo cita, ni un dato que contenga el texto (va en un INSERT) lo satisfacen.
+gunzip -c "$PLAIN" | grep -Eq '^CREATE( DEFINER=[^ ]+)? PROCEDURE `marcar_cargos_vencidos`[(]' || {
   echo "respaldo-programado.sh: el volcado no contiene el procedimiento marcar_cargos_vencidos" >&2
   exit 1
 }

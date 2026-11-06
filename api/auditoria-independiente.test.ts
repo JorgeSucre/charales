@@ -709,12 +709,12 @@ test('IND2-08: setting the password by one link kills the others of the account'
 });
 
 /** A live link created outside any endpoint, valid at the tests' time. */
-async function extraLink(email: string): Promise<string> {
+async function extraLink(email: string, finalidad = 'RECUPERACION'): Promise<string> {
   const token = `extra-${Math.random().toString(36).slice(2)}`;
   await t.db.query(
     `INSERT INTO tokens_recuperacion (usuario_id, finalidad, token_hash, creado_en, expira_en)
-     SELECT id, 'RECUPERACION', ?, ?, ? FROM usuarios WHERE email = ?`,
-    [sha256(token), localDateTime(), localDateTime(Date.now() + 3_600_000), email],
+     SELECT id, ?, ?, ?, ? FROM usuarios WHERE email = ?`,
+    [finalidad, sha256(token), localDateTime(), localDateTime(Date.now() + 3_600_000), email],
   );
   return token;
 }
@@ -738,20 +738,27 @@ test('IND3-06: a password change kills the account’s live links', async () => 
     'SELECT password_hash FROM usuarios WHERE email = ?',
     [email],
   );
+  // Both purposes (IND4-07): revoking only RECUPERACION would leave an invitation or an operator link alive.
   const link = await extraLink(email);
-  const open = session(await login(email, RIGHT, '192.0.2.160'));
-  const changed = await post(
-    `${base}/auth/password`,
-    { currentPassword: RIGHT, newPassword: 'Cambiada-2847' },
-    '192.0.2.160',
-    open,
-  );
-  assert.equal(changed.status, 204);
-  assert.equal((await confirm(base, link)).status, 400);
-  await t.db.query('UPDATE usuarios SET password_hash = ? WHERE email = ?', [original, email]);
+  const invitation = await extraLink(email, 'INVITACION');
+  try {
+    const open = session(await login(email, RIGHT, '192.0.2.160'));
+    const changed = await post(
+      `${base}/auth/password`,
+      { currentPassword: RIGHT, newPassword: 'Cambiada-2847' },
+      '192.0.2.160',
+      open,
+    );
+    assert.equal(changed.status, 204);
+    assert.equal((await confirm(base, link)).status, 400);
+    assert.equal((await confirm(base, invitation)).status, 400);
+  } finally {
+    // Restored whatever happened (IND4-07): a failure here must not drag the next tests.
+    await t.db.query('UPDATE usuarios SET password_hash = ? WHERE email = ?', [original, email]);
+  }
 });
 
-test('IND3-03: recovery is counted per network, not per /24: one neighbour can not block an office', async () => {
+test('IND3-03: recovery is counted per network, not per /24: a neighbour on another address of the /24 is not blocked (behind one NAT address it is: IND4-02)', async () => {
   for (let i = 0; i < 25; i++)
     await post(
       `${base}/auth/password-reset/request`,

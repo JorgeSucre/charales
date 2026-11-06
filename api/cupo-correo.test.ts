@@ -123,6 +123,19 @@ test('one budget for every account, network and instance: recoveries take at mos
     assert.equal(r.intentos, 0, 'waiting for a slot costs no attempt');
 });
 
+test('IND4-01: one /48 (many /64) asking for many accounts sends no more than the recovery share', async () => {
+  const accounts = ['marta', 'tutor', 'coach', 'secretaria', 'admin'];
+  let answered = 0;
+  for (let i = 0; i < 25; i++)
+    if (
+      (await recover(a, `${accounts[i % 5]}@example.com`, `2001:db8:4801:${i.toString(16)}::1`)) ===
+      204
+    )
+      answered++;
+  assert.equal(answered, 25, 'every /64 is its own network for the per-network limit (IND3-03)');
+  assert.equal(sent.length, QUOTA.recoveryPerHour, 'but the provider gets only the global share');
+});
+
 test('a flood of recoveries never leaves invitations without slots', async () => {
   for (let i = 0; i < 10; i++)
     await recover(

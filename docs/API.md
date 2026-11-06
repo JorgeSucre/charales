@@ -143,10 +143,13 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
     - **Bloqueo con varias redes (IND-03, aceptado):** unas 12 asignaciones sostenidas dejan sin intentos a un navegador
       nuevo de esa cuenta a largo plazo; medido en 72 h, 10 bastan para los 3 días y 6 para el primero. Los /48 pueden
       conseguirse gratis. Afecta a una cuenta cada vez y no a navegadores de confianza ni a la recuperación.
-    - **Red compartida:** sin navegador de confianza, un atacante en la misma red comparte el contador de red.
+    - **Red compartida:** sin navegador de confianza, un atacante en la misma red comparte el contador de red. Lo mismo
+      con la recuperación: tras un NAT (una sola IPv4 pública, como la oficina de la escuela), 20 solicitudes de una persona
+      dejan a las demás en 429 durante unos minutos (recupera 1 cada 15 min). Aceptado (IND4-02): el flujo de recuperación
+      queda fuera de este cierre.
     - **Avalancha de cookies inventadas:** cada una cuesta una consulta por clave primaria. La acota el proxy.
     - **Errores propios en un navegador nuevo:** 8 contraseñas incorrectas desde una red gastan la parte de esa red para la
-      cuenta durante 6 h, también para otros navegadores nuevos de esa misma red (IND3-04). La recuperación sigue disponible.
+      cuenta durante 6 h, también para otros navegadores nuevos de todo ese /24 (o /48 de IPv6) (IND3-04). La recuperación sigue disponible.
     - **Enlace del operador:** se emite como invitación (IND2-04). Corregir después el correo sólo reinvita a una cuenta que
       nunca fijó contraseña; si ya la tiene, no se envía nada y la corrección funciona aun sin correo (IND3-05, corregido).
     - **Cuota del proveedor:** la acota el límite global de envíos (`correo_cupo`, más abajo). Una avalancha de recuperaciones
@@ -209,7 +212,7 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
 | `POST /auth/login`                       | No     | `200 AuthUser` + cookie · `400` faltan datos · `401` correo/contraseña incorrectos **o cuenta deshabilitada** (mismo mensaje) · `403` sin rol ni perfil · `429` límite de intentos · `503` límite no disponible |
 | `GET /auth/session`                      | Sí     | `200 AuthUser` (renueva el uso) · `401` sin sesión, vencida o cerrada                                                                                                                                           |
 | `POST /auth/logout`                      | —      | `204` siempre; borra la cookie y cierra la sesión si había una                                                                                                                                                  |
-| `POST /auth/password`                    | Sí     | `{currentPassword, newPassword}` → `204` (cierra las otras sesiones) · `400` actual incorrecta, política o igual a la actual · `401` sin sesión · `429`                                                         |
+| `POST /auth/password`                    | Sí     | `{currentPassword, newPassword}` → `204` (cierra las otras sesiones y revoca todo enlace vivo de la cuenta, IND3-06) · `400` actual incorrecta, política o igual a la actual · `401` sin sesión · `429`         |
 | `POST /auth/password-reset/request`      | No     | `{email}` → `204` siempre (exista o no la cuenta) · `400` sin correo · `429` · `503` sin transporte de correo                                                                                                   |
 | `POST /auth/password-reset/confirm`      | No     | `{token, newPassword}` → `204` (cierra todas las sesiones y borra la cookie) · `400` política, o «El enlace no es válido o ya expiró.»                                                                          |
 | `GET /api/jugadores` (no en producción)  | Sí     | `200` arreglo de filas de `jugadores` · `401` sin sesión · `403` sin `jugadores.consultar` del rol de seguridad                                                                                                 |
