@@ -7,8 +7,8 @@ Lee [`AGENTS.md`](AGENTS.md) y [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) antes 
 ## Específico de Claude Code
 
 - Pruebas: usa `npx ng test --watch=false`. `npm test` entra en modo watch y no termina.
-- El modelo vigente es **MariaDB** (`docs/database/MARIADB.md`). `npm run db:mariadb:test-backup` crea y borra sólo sus
-  bases temporales `ef_bktest_*`. `npm run db:reset` y `npm run db:test` son del esquema PostgreSQL **histórico** y
+- El modelo vigente es **MariaDB** (`docs/database/MARIADB.md`). `npm run db:mariadb:test-backup` crea sus propias
+  bases temporales `ef_bktest_*` y las conserva (como todas las suites, desde el 2026-11-05). `npm run db:reset` y `npm run db:test` son del esquema PostgreSQL **histórico** y
   **borran y recrean** `charales_dev` y `charales_test`; nunca los apuntes a una BD compartida.
 - Validación visual: si la extensión de Chrome no está conectada, dilo. No declares la UI validada sin haberla visto.
 - Commits: sólo cuando te lo pidan, en una rama (`<persona>/<tema>`), nunca en `main`, sin push.

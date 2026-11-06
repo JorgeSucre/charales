@@ -10,7 +10,7 @@ import type { Server } from 'node:http';
 import type { Pool } from 'mariadb';
 import { createApp, createPool } from './server.ts';
 import { recoveriesSettled } from './password.ts';
-import { dropTestDatabase, runSqlFile, setupDatabase, uniqueTestDatabase } from './schema.ts';
+import { releaseTestDatabase, runSqlFile, setupDatabase, uniqueTestDatabase } from './schema.ts';
 
 const DB = uniqueTestDatabase('ef_apitest');
 
@@ -35,7 +35,7 @@ before(async () => {
 after(async () => {
   server?.close();
   await db?.end();
-  await dropTestDatabase(process.env, DB);
+  await releaseTestDatabase(DB);
 });
 
 function login(email: string, password = 'demo1234') {

@@ -290,13 +290,17 @@ export async function missingSchema(db: {
   const rows = (await db.query(
     `SELECT TABLE_NAME AS t, COLUMN_NAME AS c, COLUMN_TYPE AS ct FROM information_schema.COLUMNS
       WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME IN ('version_datos', 'limite_acceso', 'dispositivo_confiable', 'correo_saliente', 'pagos')`,
+        AND TABLE_NAME IN ('version_datos', 'limite_acceso', 'dispositivo_confiable', 'correo_saliente', 'correo_cupo', 'pagos')`,
   )) as { t: string; c: string; ct: string }[];
   const has = (t: string, c?: string) => rows.some((r) => r.t === t && (!c || r.c === c));
   return [
-    ...['version_datos', 'limite_acceso', 'dispositivo_confiable', 'correo_saliente'].filter(
-      (t) => !has(t),
-    ),
+    ...[
+      'version_datos',
+      'limite_acceso',
+      'dispositivo_confiable',
+      'correo_saliente',
+      'correo_cupo',
+    ].filter((t) => !has(t)),
     ...(has('pagos', 'referencia') ? [] : ['pagos.referencia']),
     ...(rows.some(
       (r) => r.t === 'limite_acceso' && r.c === 'ambito' && !r.ct.includes("'CUENTA_RED'"),
@@ -310,23 +314,20 @@ export async function missingSchema(db: {
 }
 
 /**
- * A test database name no earlier run can have used. Never built from the pid alone: pids repeat, and the suites drop
- * the database they name, so a repeated pid would destroy a database an earlier run or person left behind.
+ * A test database name no earlier run can have used. Never built from the pid alone: pids repeat, and a repeated name
+ * would make a suite reuse a database an earlier run or person left behind.
  */
 export function uniqueTestDatabase(prefix: string): string {
   return `${prefix}_${process.pid}_${randomBytes(4).toString('hex')}`;
 }
 
-export async function dropTestDatabase(
-  env: Record<string, string | undefined>,
-  name: string,
-): Promise<void> {
+/**
+ * The end of a suite with its test database: the database is KEPT, never dropped (decision of 2026-11-05, so every
+ * run leaves its evidence), and its name is printed so each run records what it created. Still refuses any name that
+ * is not a test database (ef_*): a suite must never end on someone else's.
+ */
+export async function releaseTestDatabase(name: string): Promise<void> {
   if (!/^ef_[A-Za-z0-9_]+$/.test(name))
-    throw new SetupError(`Sólo se borran bases de prueba ef_*, no «${name}».`);
-  const conn = await mariadb.createConnection(serverOptions(env));
-  try {
-    await conn.query(`DROP DATABASE IF EXISTS \`${name}\``);
-  } finally {
-    await conn.end();
-  }
+    throw new SetupError(`Sólo se usan bases de prueba ef_*, no «${name}».`);
+  console.error(`Base de prueba conservada: ${name}`);
 }

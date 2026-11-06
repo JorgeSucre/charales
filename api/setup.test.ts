@@ -12,7 +12,7 @@ import { createAdmin } from './create-admin.ts';
 import {
   SetupError,
   baseSchema,
-  dropTestDatabase,
+  releaseTestDatabase,
   uniqueTestDatabase,
   loadDevSeed,
   serverOptions,
@@ -29,13 +29,12 @@ const SEED = `${RUN}_c`;
 const env = (name: string) => ({ ...process.env, DB_NAME: name });
 
 after(async () => {
-  await dropTestDatabase(process.env, FRESH);
-  await dropTestDatabase(process.env, FOREIGN);
-  await dropTestDatabase(process.env, SEED);
+  await releaseTestDatabase(FRESH);
+  await releaseTestDatabase(FOREIGN);
+  await releaseTestDatabase(SEED);
 });
 
 test('db:setup creates and prepares a new database; a second run changes nothing', async () => {
-  await dropTestDatabase(process.env, FRESH);
   const first = await setupDatabase(env(FRESH));
   assert.equal(first.created, true);
   assert.equal(first.schemaApplied, true);
@@ -48,6 +47,7 @@ test('db:setup creates and prepares a new database; a second run changes nothing
     '006_turnos_argon2.sql',
     '007_correo_y_limites.sql',
     '008_retencion_y_dispositivos.sql',
+    '009_cupo_correo.sql',
   ]);
   assert.deepEqual(first.counts, { usuarios: 0, jugadores: 0, rol_permiso: 106 });
   const second = await setupDatabase(env(FRESH));
@@ -117,7 +117,6 @@ test('db:mariadb:dev-seed is db:setup -- --dev-seed; these tests only use ef_* d
 });
 
 test('dev-seed: a seed that cannot land whole is refused and leaves nothing behind', async () => {
-  await dropTestDatabase(process.env, SEED);
   await setupDatabase(env(SEED));
   const db = createPool(env(SEED));
   try {
@@ -213,7 +212,6 @@ test('dev-seed is refused on a database with players but no users', async () => 
 });
 
 test('db:setup refuses a non-empty database that is not Charales, without touching it', async () => {
-  await dropTestDatabase(process.env, FOREIGN);
   const conn = await mariadb.createConnection(serverOptions(process.env));
   try {
     await conn.query(`CREATE DATABASE \`${FOREIGN}\``);
@@ -246,9 +244,9 @@ test('db:setup fails clearly on a bad name or an unreachable server; the schema 
   assert.doesNotMatch(baseSchema(), /CREATE DATABASE|USE escuela_futbol/);
 });
 
-test('test databases are the only ones the harness may drop', async () => {
+test('test databases are the only ones a suite may end on (kept, never dropped)', async () => {
   for (const name of ['escuela_futbol', 'charales_dev', 'ef', 'x_ef_1'])
-    await assert.rejects(dropTestDatabase(process.env, name), SetupError);
+    await assert.rejects(releaseTestDatabase(name), SetupError);
 });
 
 test('SQL files with DELIMITER blocks are split the way the server needs', () => {

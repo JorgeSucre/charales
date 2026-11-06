@@ -6,7 +6,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp, createPool } from './server.ts';
 import {
-  dropTestDatabase,
+  releaseTestDatabase,
   missingSchema,
   runSqlFile,
   setupDatabase,
@@ -188,7 +188,7 @@ test('F5-06 / F5-17: a database without the migrations: said by name, never to t
       await db.end();
     }
   } finally {
-    await dropTestDatabase(process.env, name);
+    await releaseTestDatabase(name);
   }
 });
 
@@ -266,7 +266,7 @@ test('F5-06: production refuses a database without the migrations; development o
     assert.match(dev.out, /falta: correo_saliente/);
     assert.match(dev.out, /Charales API en/);
   } finally {
-    await dropTestDatabase(process.env, name);
+    await releaseTestDatabase(name);
   }
 });
 

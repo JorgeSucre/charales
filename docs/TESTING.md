@@ -73,7 +73,7 @@ No deriva lo permitido de `auth.can()`: una matriz o una verificación de servic
 
 ### MariaDB (`npm run db:mariadb:test-backup`)
 
-En bases temporales propias (`ef_bktest_*`, se borran al final): carga el esquema, `010_permisos_app.sql` y los 42
+En bases temporales propias (`ef_bktest_*`, que se conservan al final): carga el esquema, `010_permisos_app.sql` y los 42
 casos de `docs/escuela_futbol_mariadb_checks.sql`; respalda, restaura en una base nueva y compara filas y
 `CHECKSUM TABLE` de todas las tablas (45). Detalle: [`database/MARIADB.md` § 6](database/MARIADB.md).
 

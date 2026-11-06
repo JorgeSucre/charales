@@ -155,10 +155,139 @@ export function tokenHashOf(text: string): string {
   return sha256(token);
 }
 
+/**
+ * Global sending budget (cierre funcional 2026): per-account and per-network limits stop one person, not many accounts and
+ * networks together, and every message costs provider quota. So each real attempt at the provider — first send or retry —
+ * takes a slot of a budget shared by every process (`correo_cupo`, migration 009). Without one, the message just waits:
+ * it stays PENDIENTE with the time a slot comes back, costs no attempt, and the worker sends it then. Nothing is lost or
+ * duplicated, and a failure of MariaDB here never sends (the message waits for the worker too).
+ *
+ * TOTAL: 60 an hour by default, with bursts of up to 60 (a season's invitations go out in a few hours). RECUPERACION, also
+ * spent by password recoveries: 20 an hour, far above what a school asks for, so a flood of requests from many accounts and
+ * networks can take at most 20 of the 60 and invitations keep at least 40 an hour. Size them to the provider's plan:
+ * CORREO_MAX_POR_HORA and CORREO_MAX_RECUPERACION_POR_HORA (for instance 4 an hour on a plan of 100 a day). A budget recovers
+ * steadily, so it can delay mail but never stop it for good.
+ */
+export interface MailQuota {
+  perHour: number;
+  recoveryPerHour: number;
+}
+export const MAIL_QUOTA_DEFAULTS: MailQuota = { perHour: 60, recoveryPerHour: 20 };
+let mailQuota: MailQuota = MAIL_QUOTA_DEFAULTS;
+/** Set at startup from the environment (api/server.ts); tests set their own. */
+export function setMailQuota(quota: MailQuota): void {
+  mailQuota = quota;
+}
+
+export function mailQuotaFrom(env: Record<string, string | undefined>): MailQuota {
+  const read = (name: string, fallback: number) => {
+    const raw = env[name]?.trim();
+    if (!raw) return fallback;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 1 || n > 10_000)
+      throw new Error(`${name}: «${raw}» no es un entero entre 1 y 10000.`);
+    return n;
+  };
+  const perHour = read('CORREO_MAX_POR_HORA', MAIL_QUOTA_DEFAULTS.perHour);
+  const recoveryPerHour = read(
+    'CORREO_MAX_RECUPERACION_POR_HORA',
+    Math.min(MAIL_QUOTA_DEFAULTS.recoveryPerHour, perHour),
+  );
+  if (recoveryPerHour > perHour)
+    throw new Error('CORREO_MAX_RECUPERACION_POR_HORA no puede superar CORREO_MAX_POR_HORA.');
+  return { perHour, recoveryPerHour };
+}
+
+/**
+ * One slot of the global budget for a message of `finalidad`: 0 if taken, or how many milliseconds until one comes back.
+ * Atomic across processes: both rows are locked (always TOTAL first) and written only when there is room.
+ */
+export async function takeMailSlot(db: Pool, finalidad: string): Promise<number> {
+  const budgets: [string, number][] = [['TOTAL', mailQuota.perHour]];
+  if (finalidad === 'RECUPERACION') budgets.push(['RECUPERACION', mailQuota.recoveryPerHour]);
+  return transaction(
+    db,
+    async (tx) => {
+      const now = Date.now();
+      const rows: { ambito: string; usados: number; desde_ms: number }[] = await tx.query(
+        `SELECT ambito, usados, desde_ms FROM correo_cupo WHERE ambito IN (?)
+          ORDER BY ambito = 'RECUPERACION' FOR UPDATE`,
+        [budgets.map(([scope]) => scope)],
+      );
+      if (rows.length !== budgets.length)
+        throw new Error('Falta correo_cupo: aplica las migraciones.');
+      const states = budgets.map(([scope, perHour]) => {
+        const row = rows.find((r) => r.ambito === scope)!;
+        const every = 3_600_000 / perHour;
+        // A clock that went back refills nothing (and never moves `since` back).
+        const refilled = Math.max(0, Math.floor((now - Number(row.desde_ms)) / every));
+        const used = Math.max(0, Number(row.usados) - refilled);
+        const since = used ? Number(row.desde_ms) + refilled * every : now;
+        return { scope, perHour, every, used, since };
+      });
+      const full = states.filter((s) => s.used >= s.perHour);
+      if (full.length) return Math.max(...full.map((s) => Math.ceil(s.since + s.every - now)), 1);
+      for (const s of states)
+        await tx.query('UPDATE correo_cupo SET usados = ?, desde_ms = ? WHERE ambito = ?', [
+          s.used + 1,
+          Math.round(s.since),
+          s.scope,
+        ]);
+      return 0;
+    },
+    'READ COMMITTED',
+  );
+}
+
+/** Leaves a message for the worker, at the time a slot comes back. Costs no attempt. */
+async function waitForSlot(db: Pool, id: number, ms: number): Promise<MailState> {
+  console.warn(`Correo ${id}: sin cupo global, espera ${Math.ceil(ms / 1000)} s.`);
+  await db
+    .query(
+      `UPDATE correo_saliente SET estado = 'PENDIENTE', proximo_intento = ?, bloqueado_hasta = NULL WHERE id = ?`,
+      [localDateTime(Date.now() + ms), id],
+    )
+    .catch(() => console.error(`Correo ${id}: no se pudo reprogramar.`));
+  return 'PENDIENTE';
+}
+
+/** A slot for message `id`, or the wait (a failure of MariaDB is a minute's wait: never send without one). */
+async function slotFor(db: Pool, id: number, finalidad?: string): Promise<number> {
+  try {
+    const purpose =
+      finalidad ??
+      (
+        (await db.query('SELECT finalidad FROM correo_saliente WHERE id = ?', [id])) as {
+          finalidad: string;
+        }[]
+      )[0]?.finalidad ??
+      'RECUPERACION';
+    return await takeMailSlot(db, purpose);
+  } catch (e) {
+    console.error(`Cupo de correo no disponible (${(e as { code?: string }).code ?? 'ERROR'}).`);
+    return 60_000;
+  }
+}
+
 export type MailState = 'ENVIADO' | 'PENDIENTE' | 'FALLIDO';
 
 /** Sends one recorded message and stores the outcome. Never throws: the operation that asked for it already happened. */
 export async function deliverMail(
+  db: Pool,
+  mailer: Mailer,
+  id: number,
+  to: string,
+  subject: string,
+  text: string,
+  finalidad?: string,
+): Promise<MailState> {
+  const wait = await slotFor(db, id, finalidad);
+  if (wait) return waitForSlot(db, id, wait);
+  return deliverWithSlot(db, mailer, id, to, subject, text);
+}
+
+/** The send itself, once a slot was taken. */
+async function deliverWithSlot(
   db: Pool,
   mailer: Mailer,
   id: number,
@@ -233,7 +362,7 @@ export async function processMailQueue(db: Pool, mailer: Mailer, limit = 5): Pro
     const rows: QueuedMail[] = await tx.query(
       `SELECT id, usuario_id, token_id, finalidad, destinatario, asunto, vence_en FROM correo_saliente
         WHERE (estado = 'PENDIENTE' AND proximo_intento <= ?) OR (estado = 'ENVIANDO' AND bloqueado_hasta <= ?)
-        ORDER BY proximo_intento LIMIT ${Number(limit)} FOR UPDATE SKIP LOCKED`,
+        ORDER BY finalidad = 'INVITACION' DESC, proximo_intento LIMIT ${Number(limit)} FOR UPDATE SKIP LOCKED`,
       [now, now],
     );
     if (rows.length)
@@ -245,9 +374,15 @@ export async function processMailQueue(db: Pool, mailer: Mailer, limit = 5): Pro
   });
   for (const row of due) {
     try {
+      // The slot first: a new link is only issued for a message that will really go out now.
+      const wait = await slotFor(db, row.id, row.finalidad);
+      if (wait) {
+        await waitForSlot(db, row.id, wait);
+        continue;
+      }
       const issued = await reissue(db, row);
       if (issued)
-        await deliverMail(
+        await deliverWithSlot(
           db,
           mailer,
           row.id,

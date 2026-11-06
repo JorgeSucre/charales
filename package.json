@@ -23,6 +23,7 @@
     "db:admin": "npm run api:build && node --env-file-if-exists=.env api/create-admin.ts",
     "db:mail-purge": "node --env-file-if-exists=.env api/mail-purge.ts",
     "db:access-link": "node --env-file-if-exists=.env api/access-link.ts",
+    "db:datos-personales": "node --env-file-if-exists=.env api/datos-personales.ts",
     "test:all": "ng test --watch=false && npm run api:typecheck && npm run api:test"
   },
   "private": true,

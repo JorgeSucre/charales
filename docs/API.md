@@ -140,15 +140,20 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
       permitiría probar contraseñas sin límite. Sus vías: un enlace de recuperación, que además hace de confianza ese navegador,
       o uno generado por quien administra el servidor (`npm run db:access-link -- <correo>`, se entrega por otro canal). **Sin
       correo real en producción sólo queda la segunda.** Tras el despliegue, todos cuentan como navegador nuevo hasta su primer login.
-    - **Bloqueo con varias redes:** unas 12 asignaciones sostenidas dejan sin intentos a un navegador nuevo de esa cuenta;
-      los /48 pueden conseguirse gratis. Afecta a una cuenta cada vez y no a navegadores de confianza ni a la recuperación.
-    - **Red compartida:** sin navegador de confianza, un atacante en la misma red comparte el contador de red.
+    - **Bloqueo con varias redes (IND-03, aceptado):** unas 12 asignaciones sostenidas dejan sin intentos a un navegador
+      nuevo de esa cuenta a largo plazo; medido en 72 h, 10 bastan para los 3 días y 6 para el primero. Los /48 pueden
+      conseguirse gratis. Afecta a una cuenta cada vez y no a navegadores de confianza ni a la recuperación.
+    - **Red compartida:** sin navegador de confianza, un atacante en la misma red comparte el contador de red. Lo mismo
+      con la recuperación: tras un NAT (una sola IPv4 pública, como la oficina de la escuela), 20 solicitudes de una persona
+      dejan a las demás en 429 durante unos minutos (recupera 1 cada 15 min). Aceptado (IND4-02): el flujo de recuperación
+      queda fuera de este cierre.
     - **Avalancha de cookies inventadas:** cada una cuesta una consulta por clave primaria. La acota el proxy.
     - **Errores propios en un navegador nuevo:** 8 contraseñas incorrectas desde una red gastan la parte de esa red para la
-      cuenta durante 6 h, también para otros navegadores nuevos de esa misma red (IND3-04). La recuperación sigue disponible.
-    - **Enlace del operador:** se emite como invitación; si después se corrige el correo, se envía una invitación a la dirección
-      nueva (IND3-05).
-    - **Tope global de correos:** no hay. Muchas asignaciones y cuentas distintas pueden gastar la cuota del proveedor.
+      cuenta durante 6 h, también para otros navegadores nuevos de todo ese /24 (o /48 de IPv6) (IND3-04). La recuperación sigue disponible.
+    - **Enlace del operador:** se emite como invitación (IND2-04). Corregir después el correo sólo reinvita a una cuenta que
+      nunca fijó contraseña; si ya la tiene, no se envía nada y la corrección funciona aun sin correo (IND3-05, corregido).
+    - **Cuota del proveedor:** la acota el límite global de envíos (`correo_cupo`, más abajo). Una avalancha de recuperaciones
+      puede retrasar otras recuperaciones, nunca las invitaciones más allá de su parte.
     - **Disponibilidad:** el pool de 2 conexiones puede dejar el login en 503 ante una avalancha desde muchas redes; hay
       que limitarlo también en el proxy (`deploy/nginx/charales.conf`).
     - **Memoria de rechazos:** un rechazo recordado puede durar hasta 10 s más que la ventana.
@@ -207,7 +212,7 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
 | `POST /auth/login`                       | No     | `200 AuthUser` + cookie · `400` faltan datos · `401` correo/contraseña incorrectos **o cuenta deshabilitada** (mismo mensaje) · `403` sin rol ni perfil · `429` límite de intentos · `503` límite no disponible |
 | `GET /auth/session`                      | Sí     | `200 AuthUser` (renueva el uso) · `401` sin sesión, vencida o cerrada                                                                                                                                           |
 | `POST /auth/logout`                      | —      | `204` siempre; borra la cookie y cierra la sesión si había una                                                                                                                                                  |
-| `POST /auth/password`                    | Sí     | `{currentPassword, newPassword}` → `204` (cierra las otras sesiones) · `400` actual incorrecta, política o igual a la actual · `401` sin sesión · `429`                                                         |
+| `POST /auth/password`                    | Sí     | `{currentPassword, newPassword}` → `204` (cierra las otras sesiones y revoca todo enlace vivo de la cuenta, IND3-06) · `400` actual incorrecta, política o igual a la actual · `401` sin sesión · `429`         |
 | `POST /auth/password-reset/request`      | No     | `{email}` → `204` siempre (exista o no la cuenta) · `400` sin correo · `429` · `503` sin transporte de correo                                                                                                   |
 | `POST /auth/password-reset/confirm`      | No     | `{token, newPassword}` → `204` (cierra todas las sesiones y borra la cookie) · `400` política, o «El enlace no es válido o ya expiró.»                                                                          |
 | `GET /api/jugadores` (no en producción)  | Sí     | `200` arreglo de filas de `jugadores` · `401` sin sesión · `403` sin `jugadores.consultar` del rol de seguridad                                                                                                 |
@@ -253,6 +258,19 @@ Código: [`api/password.ts`](../api/password.ts). Responsable de la historia: Bo
     menos una vez»: si el proveedor aceptó pero la respuesta se perdió, llegan dos correos y sólo funciona el último.
   - Un error permanente (`HTTP_4xx`), una cuenta inactiva, un enlace ya usado o vencido cierran la fila como `FALLIDO`, con
     un código en `ultimo_error`. Quien no recibió una invitación puede pedir un enlace por «¿Olvidaste tu contraseña?».
+- **Límite global de envíos (`correo_cupo`, migración 009):** los límites por cuenta y por red frenan a una persona, no a
+  muchas cuentas y redes a la vez, y cada envío gasta cuota del proveedor. Por eso todo intento real ante el proveedor
+  (primer envío o reintento) toma una plaza de un presupuesto **común a todos los procesos**, guardado en MariaDB:
+  - `TOTAL`: `CORREO_MAX_POR_HORA`, 60 por defecto (ráfagas de hasta 60; las invitaciones de una temporada salen en
+    pocas horas). `RECUPERACION`, que gastan además las recuperaciones: `CORREO_MAX_RECUPERACION_POR_HORA`, 20 por
+    defecto. Una avalancha de solicitudes desde muchas cuentas y redes toma como mucho 20 de las 60, y las invitaciones
+    conservan al menos 40 por hora. Ambos se recuperan de forma continua (1 plaza cada 60 min / límite): pueden retrasar
+    un correo, nunca impedirlo para siempre. Valores entre 1 y 10000, recuperación ≤ total; uno inválido detiene el arranque.
+  - Sin plaza, el mensaje **espera**: queda `PENDIENTE` con la hora en que vuelve una plaza, sin gastar intento, y el
+    proceso de fondo lo envía entonces (primero las invitaciones). La operación responde como siempre (`mailPending: true`
+    en invitaciones; `204` en la recuperación). Un fallo de MariaDB al tomar la plaza no envía nada: el mensaje espera un
+    minuto. Un fallo del proveedor sí gasta su plaza.
+  - El estado sobrevive a un reinicio. Para restablecerlo a mano: `UPDATE correo_cupo SET usados = 0, desde_ms = 0`.
 - **Retención de `correo_saliente` (migración 008):** lo pendiente o en proceso no se toca. Un mensaje cerrado (enviado o
   fallido para siempre) pierde dirección, usuario, token y referencia del proveedor a los **30 días**
   (`CORREO_RETENCION_DIAS`, de 1 a 365; **no es un plazo legal**, sino un valor inicial hasta que la escuela defina su política),

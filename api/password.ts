@@ -225,6 +225,7 @@ async function issueRecovery(db: Pool, mailer: Mailer, normalized: string): Prom
       address,
       RESET_SUBJECT,
       accessMailText('RECUPERACION', token),
+      'RECUPERACION',
     );
 }
 

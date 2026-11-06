@@ -9,7 +9,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Pool } from 'mariadb';
 import { loadDemo } from './demo.ts';
-import { dropTestDatabase, setupDatabase, uniqueTestDatabase } from './schema.ts';
+import { releaseTestDatabase, setupDatabase, uniqueTestDatabase } from './schema.ts';
 import { TYPE_ERROR_MESSAGE } from './rpc.ts';
 import { createApp, createPool } from './server.ts';
 
@@ -168,7 +168,7 @@ export async function openTestDb(
     async close() {
       server.close();
       await db.end();
-      await dropTestDatabase(process.env, name);
+      await releaseTestDatabase(name);
     },
   };
 }
