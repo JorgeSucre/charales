@@ -131,7 +131,9 @@ export class UserService {
 
   /**
    * The address that received access links may no longer be this person's: those links stop working and other sessions
-   * close. A pending invitation is sent again, to the new address (audit IND-01).
+   * close. A pending invitation is sent again, to the new address (audit IND-01) — only to an account that never set a
+   * password: the API stores every password it sets as Argon2id, and an operator link (`db:access-link`, issued as
+   * INVITACION) for an account that has one is not an invitation (audit IND3-05).
    */
   private async afterEmailChange(row: UserRow): Promise<void> {
     const now = nowDateTime();
@@ -140,7 +142,7 @@ export class UserService {
       (s) => s.userId === row.id && !s.closedAt && s.id !== mine,
     ))
       this.db.update(this.db.sessions, s.id, { closedAt: now });
-    if (this.auth.revokeAccessTokens(row.id))
+    if (this.auth.revokeAccessTokens(row.id) && !row.passwordHash.startsWith('$argon2id$'))
       await this.auth.issueResetToken(row, 'Tu cuenta en Charales', 'INVITACION');
   }
 

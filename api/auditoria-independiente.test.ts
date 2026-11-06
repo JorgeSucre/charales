@@ -110,10 +110,11 @@ async function operatorLink(email: string): Promise<string> {
   assert.equal(run.status, 0, run.stderr);
   const token = tokenIn(run.stdout);
   assert.match(run.stdout, /^https:\/\/escuela\.example\/reset-password\?token=/);
-  await t.db.query('UPDATE tokens_recuperacion SET expira_en = ? WHERE token_hash = ?', [
-    localDateTime(Date.now() + 3_600_000),
-    sha256(token),
-  ]);
+  // The child ran on the real clock: move the link to the tests' clock (creation too, or chk_token_expira refuses it).
+  await t.db.query(
+    'UPDATE tokens_recuperacion SET creado_en = ?, expira_en = ? WHERE token_hash = ?',
+    [localDateTime(), localDateTime(Date.now() + 3_600_000), sha256(token)],
+  );
   return token;
 }
 let serial = 0;
@@ -584,7 +585,11 @@ test('IND2-02: a database without the scope of the running code is reported, not
   const fake = {
     query: async () => [
       { t: 'limite_acceso', c: 'ambito', ct: "enum('CUENTA','IP')" },
-      ...['version_datos', 'dispositivo_confiable', 'correo_cupo'].map((x) => ({ t: x, c: 'id', ct: 'int' })),
+      ...['version_datos', 'dispositivo_confiable', 'correo_cupo'].map((x) => ({
+        t: x,
+        c: 'id',
+        ct: 'int',
+      })),
       { t: 'correo_saliente', c: 'cerrado_en', ct: 'datetime' },
       { t: 'pagos', c: 'referencia', ct: 'varchar(100)' },
     ],
@@ -760,4 +765,113 @@ test('IND3-03: recovery is counted per network, not per /24: one neighbour can n
   );
   assert.equal(neighbour.status, 204);
   await recoveriesSettled();
+});
+
+test('IND3-05: correcting the e-mail after an operator link invites only an account that never set a password', async () => {
+  const admin = await adminAt();
+  const edit = (at: string, id: number, email: string) =>
+    rpc(at, admin, 'UserService', 'save', { id, roleId: 2, firstName: 'A', lastName: 'B', email });
+  // An account that set its password, then got an operator link (issued as INVITACION, IND2-04).
+  const email = staff();
+  const created = await (
+    await rpc(base, admin, 'UserService', 'save', {
+      roleId: 2,
+      firstName: 'A',
+      lastName: 'B',
+      email,
+    })
+  ).json();
+  assert.equal((await confirm(base, tokenIn(t.mail.at(-1)!.text))).status, 204);
+  const link = await operatorLink(email);
+  t.mail.length = 0;
+  const moved = staff();
+  assert.equal((await edit(base, created.result.id, moved)).status, 200);
+  assert.equal(t.mail.length, 0, 'no «invitation» that never existed');
+  assert.equal(
+    (await confirm(base, link)).status,
+    400,
+    'the operator link died with the old address',
+  );
+  // Without e-mail (the scenario of access-link) the correction is not refused either.
+  const noMail = createApp(t.db, {
+    secureCookie: false,
+    trustedProxies: ['127.0.0.1'],
+    mailer: null,
+  });
+  noMail.listen(0, '127.0.0.1');
+  servers.push(noMail);
+  await new Promise((resolve) => noMail.once('listening', resolve));
+  const offline = `http://127.0.0.1:${(noMail.address() as AddressInfo).port}`;
+  await operatorLink(moved);
+  const offlineAdmin = await adminAt(offline);
+  const r = await rpc(offline, offlineAdmin, 'UserService', 'save', {
+    id: created.result.id,
+    roleId: 2,
+    firstName: 'A',
+    lastName: 'B',
+    email: staff(),
+  });
+  assert.equal(r.status, 200, await r.text());
+  // An account still waiting for its invitation is invited again at the new address, as before (IND-01).
+  const pending = staff();
+  const fresh = await (
+    await rpc(base, admin, 'UserService', 'save', {
+      roleId: 2,
+      firstName: 'A',
+      lastName: 'B',
+      email: pending,
+    })
+  ).json();
+  await operatorLink(pending);
+  t.mail.length = 0;
+  const next = staff();
+  assert.equal((await edit(base, fresh.result.id, next)).status, 200);
+  assert.deepEqual(
+    t.mail.map((m) => m.to),
+    [next],
+  );
+  assert.equal((await confirm(base, tokenIn(t.mail[0]!.text))).status, 204);
+});
+
+// Cierre funcional 2026: IND-03, IND2-05 and IND3-04 are accepted (the authentication limits and MFA are out of scope).
+// These tests pin what remains and the ways out the owner keeps, so a change in either is noticed.
+test('IND2-05 / IND3-04 (accepted): 8 failures from one /24 close it to new browsers of that account for 6 h; not the rest', async () => {
+  // The owner signs in once from home: that browser is trusted.
+  const home = browser(await login(OWNER, RIGHT, '198.51.100.20'));
+  forgetRefusals();
+  // 8 wrong passwords from the same /24: a neighbour, or the owner's own mistakes in a new browser.
+  for (let i = 0; i < LOGIN_LIMITS.CUENTA_RED; i++)
+    assert.equal((await login(OWNER, WRONG, `198.51.100.${30 + i}`)).status, 401);
+  // A new browser in that /24, with the right password: refused.
+  assert.equal((await login(OWNER, RIGHT, '198.51.100.99')).status, 429);
+  // The trusted browser, in the same /24: in. Another network: in. Recovery from the /24: answered and sent.
+  assert.equal((await login(OWNER, RIGHT, '198.51.100.20', home)).status, 200);
+  forgetRefusals();
+  assert.equal((await login(OWNER, RIGHT, '192.0.2.77')).status, 200);
+  const r = await post(`${base}/auth/password-reset/request`, { email: OWNER }, '198.51.100.99');
+  assert.equal(r.status, 204);
+  await recoveriesSettled();
+  assert.equal(t.mail.at(-1)?.to, OWNER);
+  // After 6 h the /24 gets one attempt back.
+  await t.advance(WIDE_NETWORK_REFILL_MS + 60_000);
+  forgetRefusals();
+  assert.equal((await login(OWNER, RIGHT, '198.51.100.99')).status, 200);
+});
+
+test('IND-03 (accepted): from enough networks, a new browser of the account gets 429; trusted browser and recovery do not', async () => {
+  const home = browser(await login(OWNER, RIGHT, '192.0.2.60'));
+  forgetRefusals();
+  // Two /24 spend the account's 10 (8 + 2).
+  for (let i = 0; i < LOGIN_LIMITS.CUENTA_RED; i++) await login(OWNER, WRONG, `203.0.113.${i + 1}`);
+  for (let i = 0; i < 2; i++) await login(OWNER, WRONG, `198.18.0.${i + 1}`);
+  assert.equal((await login(OWNER, RIGHT, '100.64.7.7')).status, 429, 'a new browser anywhere');
+  assert.equal((await login(OWNER, RIGHT, '100.64.7.7', home)).status, 200, 'the trusted browser');
+  const r = await post(`${base}/auth/password-reset/request`, { email: OWNER }, '100.64.7.7');
+  assert.equal(r.status, 204);
+  await recoveriesSettled();
+  assert.equal(
+    t.mail.at(-1)?.to,
+    OWNER,
+    'the recovery link, which also trusts the browser that uses it',
+  );
 });

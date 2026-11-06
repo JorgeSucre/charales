@@ -140,15 +140,17 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
       permitiría probar contraseñas sin límite. Sus vías: un enlace de recuperación, que además hace de confianza ese navegador,
       o uno generado por quien administra el servidor (`npm run db:access-link -- <correo>`, se entrega por otro canal). **Sin
       correo real en producción sólo queda la segunda.** Tras el despliegue, todos cuentan como navegador nuevo hasta su primer login.
-    - **Bloqueo con varias redes:** unas 12 asignaciones sostenidas dejan sin intentos a un navegador nuevo de esa cuenta;
-      los /48 pueden conseguirse gratis. Afecta a una cuenta cada vez y no a navegadores de confianza ni a la recuperación.
+    - **Bloqueo con varias redes (IND-03, aceptado):** unas 12 asignaciones sostenidas dejan sin intentos a un navegador
+      nuevo de esa cuenta a largo plazo; medido en 72 h, 10 bastan para los 3 días y 6 para el primero. Los /48 pueden
+      conseguirse gratis. Afecta a una cuenta cada vez y no a navegadores de confianza ni a la recuperación.
     - **Red compartida:** sin navegador de confianza, un atacante en la misma red comparte el contador de red.
     - **Avalancha de cookies inventadas:** cada una cuesta una consulta por clave primaria. La acota el proxy.
     - **Errores propios en un navegador nuevo:** 8 contraseñas incorrectas desde una red gastan la parte de esa red para la
       cuenta durante 6 h, también para otros navegadores nuevos de esa misma red (IND3-04). La recuperación sigue disponible.
-    - **Enlace del operador:** se emite como invitación; si después se corrige el correo, se envía una invitación a la dirección
-      nueva (IND3-05).
-    - **Tope global de correos:** no hay. Muchas asignaciones y cuentas distintas pueden gastar la cuota del proveedor.
+    - **Enlace del operador:** se emite como invitación (IND2-04). Corregir después el correo sólo reinvita a una cuenta que
+      nunca fijó contraseña; si ya la tiene, no se envía nada y la corrección funciona aun sin correo (IND3-05, corregido).
+    - **Cuota del proveedor:** la acota el límite global de envíos (`correo_cupo`, más abajo). Una avalancha de recuperaciones
+      puede retrasar otras recuperaciones, nunca las invitaciones más allá de su parte.
     - **Disponibilidad:** el pool de 2 conexiones puede dejar el login en 503 ante una avalancha desde muchas redes; hay
       que limitarlo también en el proxy (`deploy/nginx/charales.conf`).
     - **Memoria de rechazos:** un rechazo recordado puede durar hasta 10 s más que la ventana.
