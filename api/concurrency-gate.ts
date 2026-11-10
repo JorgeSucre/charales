@@ -2,6 +2,7 @@
 export interface GateLimits {
   limit: number;
   waitMs: number;
+  maxWaiters?: number;
 }
 
 export const MAX_WAITERS = 32;
@@ -12,7 +13,11 @@ export interface ConcurrencyGate {
   stats(): { active: number; waiting: number };
 }
 
-export function concurrencyGate({ limit, waitMs }: GateLimits): ConcurrencyGate {
+export function concurrencyGate({
+  limit,
+  waitMs,
+  maxWaiters = MAX_WAITERS,
+}: GateLimits): ConcurrencyGate {
   let active = 0;
   const queue: (() => void)[] = [];
   const slot = () => {
@@ -31,7 +36,7 @@ export function concurrencyGate({ limit, waitMs }: GateLimits): ConcurrencyGate 
         active++;
         return slot();
       }
-      if (queue.length >= MAX_WAITERS) return null;
+      if (queue.length >= maxWaiters) return null;
       const admitted = await new Promise<boolean>((resolve) => {
         const wake = () => {
           clearTimeout(timer);

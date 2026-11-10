@@ -1,5 +1,8 @@
 /** Password hashing for the API. Stored values use a versioned, self describing scrypt format. */
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { ScryptCapacityError, ScryptOperationError, runScryptOperation } from './scrypt-gate.ts';
+
+export { ScryptCapacityError, ScryptOperationError, scryptGateStats } from './scrypt-gate.ts';
 
 export interface ScryptParameters {
   N: number;
@@ -27,13 +30,6 @@ export const SCRYPT_PARAMETERS: Readonly<ScryptParameters> = Object.freeze({
   maxmem: parameterFromEnv('SCRYPT_MAXMEM_MB', 64) * 1024 * 1024,
 });
 const DUMMY_SALT = randomBytes(16);
-const DUMMY_KEY = scrypt('not a user password', DUMMY_SALT, SCRYPT_PARAMETERS.keyLength, {
-  N: SCRYPT_PARAMETERS.N,
-  r: SCRYPT_PARAMETERS.r,
-  p: SCRYPT_PARAMETERS.p,
-  maxmem: SCRYPT_PARAMETERS.maxmem,
-});
-
 const FORMAT =
   /^\$scrypt\$v=1\$N=(\d+),r=(\d+),p=(\d+),l=(\d+)\$([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/;
 
@@ -43,11 +39,19 @@ function scrypt(
   keyLength: number,
   options: { N: number; r: number; p: number; maxmem: number },
 ) {
-  return new Promise<Buffer>((resolve, reject) =>
-    scryptCallback(password, salt, keyLength, options, (error, key) =>
-      error ? reject(error) : resolve(key as Buffer),
-    ),
+  return runScryptOperation(
+    () =>
+      new Promise<Buffer>((resolve, reject) =>
+        scryptCallback(password, salt, keyLength, options, (error, key) =>
+          error ? reject(error) : resolve(key as Buffer),
+        ),
+      ),
   );
+}
+
+/** Argon2 PHC values are recognized internally, but are never verified by this implementation. */
+export function isLegacyPasswordHash(stored: unknown): boolean {
+  return typeof stored === 'string' && /^\$argon2(?:id|i|d)\$/.test(stored);
 }
 
 function validateParameters(params: ScryptParameters): void {
@@ -101,13 +105,19 @@ export async function verifyPassword(password: string, stored: string): Promise<
     return false;
   const match = FORMAT.exec(stored);
   if (!match) {
-    const actual = await scrypt(password, DUMMY_SALT, SCRYPT_PARAMETERS.keyLength, {
-      N: SCRYPT_PARAMETERS.N,
-      r: SCRYPT_PARAMETERS.r,
-      p: SCRYPT_PARAMETERS.p,
-      maxmem: SCRYPT_PARAMETERS.maxmem,
-    });
-    timingSafeEqual(actual, await DUMMY_KEY);
+    try {
+      const actual = await scrypt(password, DUMMY_SALT, SCRYPT_PARAMETERS.keyLength, {
+        N: SCRYPT_PARAMETERS.N,
+        r: SCRYPT_PARAMETERS.r,
+        p: SCRYPT_PARAMETERS.p,
+        maxmem: SCRYPT_PARAMETERS.maxmem,
+      });
+      timingSafeEqual(actual, Buffer.alloc(actual.length));
+    } catch (error) {
+      if (error instanceof ScryptCapacityError || error instanceof ScryptOperationError)
+        throw error;
+      throw new ScryptOperationError();
+    }
     return false;
   }
   const [, n, r, p, length, saltText, keyText] = match;
@@ -136,7 +146,8 @@ export async function verifyPassword(password: string, stored: string): Promise<
       maxmem: params.maxmem,
     })) as Buffer;
     return timingSafeEqual(actual, expected);
-  } catch {
+  } catch (error) {
+    if (error instanceof ScryptCapacityError || error instanceof ScryptOperationError) throw error;
     return false;
   }
 }

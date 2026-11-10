@@ -162,17 +162,32 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
 - **Scrypt (`api/passwords.ts`).** La API usa exclusivamente el `scrypt` asíncrono de `node:crypto`, con sal aleatoria
   de 16 bytes y comparación `timingSafeEqual`. El formato persistido es
   `$scrypt$v=1$N=32768,r=8,p=1,l=64$<sal-base64url>.<clave-base64url>`; `N`, `r`, `p` y la longitud de clave están
-  dentro del valor para permitir cambios de parámetros versionados. La memoria de trabajo nominal es 32 MiB por
-  operación y el límite de Node para cada llamada es 64 MiB. Los parámetros están centralizados y son ajustables en
-  `api/passwords.ts` y, opcionalmente, en `SCRYPT_N`, `SCRYPT_R`, `SCRYPT_P`, `SCRYPT_KEY_LENGTH` y
-  `SCRYPT_MAXMEM_MB`; los límites de verificación rechazan valores almacenados fuera del rango admitido. Una
-  configuración no válida impide arrancar.
-  El limitador distribuido de intentos S-01 sigue actuando antes de verificar el login. Node ejecuta scrypt asíncrono
-  en su pool de trabajo; varias solicitudes simultáneas pueden consumir memoria adicional y se debe medir la carga con
-  la memoria del servidor institucional antes de desplegar.
-  Los hashes previos no se verifican ni se sustituyen automáticamente: se conserva la cuenta, pero el usuario tendrá
-  que asignar una contraseña nueva mediante el flujo de recuperación configurado. Si el correo de recuperación no está
-  disponible, el operador debe acordar una recuperación de cuenta antes de actualizar el servidor.
+  dentro del valor para permitir cambios de parámetros versionados. La memoria aproximada es `128*N*r` más sobrecarga:
+  32 MiB por defecto; `p` eleva el coste de cálculo y puede afectar latencia. La opción `maxmem` por cálculo es 64 MiB.
+  Se conserva `N=32768, r=8, p=1` deliberadamente como un punto inicial de disponibilidad, no como cumplimiento de la
+  recomendación mínima publicada por OWASP (`N=2^17, r=8, p=1`); OWASP lista también `N=2^15, r=8, p=3` como una
+  alternativa con un presupuesto de memoria similar y más paralelismo. No se elevó el costo sin mediciones de latencia y
+  memoria del servidor objetivo ([OWASP Password Storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#scrypt)). Límites: `N` potencia de dos entre 16384
+  y 65536; `r` 1–8; `p` 1–2; clave 32–64 bytes; `maxmem` suficiente y no más de 128 MiB. Una configuración inválida
+  impide arrancar.
+  El semáforo único por proceso limita todas las generaciones y verificaciones: `SCRYPT_MAX_CONCURRENT` (predeterminado
+  2, permitido 1–16), `SCRYPT_MAX_WAITERS` (32, permitido 0–256) y `SCRYPT_WAIT_MS` (5000 ms, permitido 1–30000).
+  La cola llena o vencida devuelve indisponibilidad controlada, no contraseña incorrecta. Node ejecuta scrypt en el
+  pool de trabajo de libuv: el gate limita los KDF admitidos por esta aplicación, mientras `UV_THREADPOOL_SIZE` comparte
+  hilos con otras operaciones; se recomienda mantener el límite scrypt no mayor que el pool disponible y medir en el
+  servidor objetivo. Node documenta un pool predeterminado de 4 hilos y advierte que los KDF pueden degradar otras APIs
+  del pool ([`UV_THREADPOOL_SIZE`](https://nodejs.org/api/cli.html#uv_threadpool_sizesize)). Con valores por defecto,
+  hay como máximo 2 operaciones scrypt activas, aproximadamente 64 MiB nominales por proceso.
+  Los hashes Argon2 previos se identifican internamente, nunca se verifican ni sustituyen automáticamente; al usuario
+  se le responde igual que por cualquier contraseña incorrecta. El evento de auditoría distingue el caso sin almacenar
+  el hash. Para recuperarlo, un operador identifica la cuenta y verifica a la persona fuera de banda; genera un enlace
+  temporal de uso único con `npm run db:access-link -- <correo>`, lo entrega por canal seguro y la persona establece una
+  contraseña que queda en scrypt. Con `MAIL_PROVIDER=none`, esta es una recuperación manual para una cuenta, no un flujo
+  autoservicio. No copiar el enlace a logs, tickets ni canales públicos.
+
+  Las cuentas pendientes de invitación mantienen un marcador aleatorio SHA-256 heredado en `password_hash`; no es una
+  contraseña ni se acepta por el verificador scrypt. Sólo completar el token de invitación permite establecer la
+  contraseña definitiva, que se guarda en formato scrypt.
 
 - `auditoria`: `LOGIN`, `LOGOUT` e «Intento de acceso fallido» (módulo `auth`), como el `AuthService` del mock.
 

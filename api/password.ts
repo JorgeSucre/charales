@@ -9,6 +9,7 @@
  * - without a mail transport it answers 503 before reading anything (D4b); the console transport is dev-only (D4a).
  */
 import { randomBytes } from 'node:crypto';
+import { ScryptCapacityError } from './scrypt-gate.ts';
 import type { Pool, PoolConnection } from 'mariadb';
 import {
   NO_SESSION,
@@ -90,9 +91,31 @@ export async function changePassword(ctx: Ctx, db: Pool): Promise<Reply> {
   if (!reserved) return { status: 429, body: { error: TOO_MANY } };
   // 400, not 401: a typo in the current password must not look like an expired session to the client.
   if (currentPassword.length > 200) return { status: 400, body: { error: WRONG_CURRENT } };
-  const passwordMatches = await verifyPassword(currentPassword, s.user.password_hash);
+  let passwordMatches: boolean;
+  try {
+    passwordMatches = await verifyPassword(currentPassword, s.user.password_hash);
+  } catch (error) {
+    await releasePasswordChange(ctx.limiterDb, s.user.id);
+    console.error(
+      error instanceof ScryptCapacityError
+        ? 'Capacidad de scrypt agotada durante el cambio de contraseña.'
+        : 'Falló una operación scrypt durante el cambio de contraseña.',
+    );
+    return { status: 503, body: { error: CHANGE_UNAVAILABLE } };
+  }
   if (!passwordMatches) return { status: 400, body: { error: WRONG_CURRENT } };
-  const nextHash = await hashPassword(newPassword);
+  let nextHash: string;
+  try {
+    nextHash = await hashPassword(newPassword);
+  } catch (error) {
+    await releasePasswordChange(ctx.limiterDb, s.user.id);
+    console.error(
+      error instanceof ScryptCapacityError
+        ? 'Capacidad de scrypt agotada durante el cambio de contraseña.'
+        : 'Falló una operación scrypt durante el cambio de contraseña.',
+    );
+    return { status: 503, body: { error: CHANGE_UNAVAILABLE } };
+  }
   await releasePasswordChange(ctx.limiterDb, s.user.id);
   const hash = nextHash;
   let device = '';
@@ -241,7 +264,17 @@ export async function confirmPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
     );
   if (!ref || ref.usado_en || ref.expira_en <= localDateTime())
     return { status: 400, body: { error: INVALID_LINK } };
-  const hash = await hashPassword(newPassword);
+  let hash: string;
+  try {
+    hash = await hashPassword(newPassword);
+  } catch (error) {
+    console.error(
+      error instanceof ScryptCapacityError
+        ? 'Capacidad de scrypt agotada durante la recuperación.'
+        : 'Falló una operación scrypt durante la recuperación.',
+    );
+    return { status: 503, body: { error: UNAVAILABLE } };
+  }
   let device = '';
   const done = await transaction(db, async (tx) => {
     // Lock order usuarios → tokens_recuperacion → sesiones, the same as change and request (R1/R2); only locking

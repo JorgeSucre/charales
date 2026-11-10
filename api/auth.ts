@@ -9,7 +9,12 @@ import type { Ctx, Reply } from './server.ts';
 import { deviceCookieName, issueDevice } from './device-trust.ts';
 import { reserveLogin, settleLogin, type Reservation } from './login-limit.ts';
 import { transaction } from './password.ts';
-import { hashPassword, verifyPassword } from './passwords.ts';
+import {
+  hashPassword,
+  isLegacyPasswordHash,
+  ScryptCapacityError,
+  verifyPassword,
+} from './passwords.ts';
 export { hashPassword, verifyPassword } from './passwords.ts';
 
 /** Session policy (HU-002), same values as the mock AuthService. */
@@ -39,9 +44,6 @@ const countedVerifyPassword = async (password: string, stored: string) => {
   verifications++;
   return verifyPassword(password, stored);
 };
-
-/** Verified against when the e-mail doesn't exist, so response time doesn't reveal which accounts exist. */
-const DUMMY_HASH = hashPassword(randomBytes(16).toString('hex'));
 
 // ---------------------------------------------------------------- dates (school wall clock, MARIADB.md § 1)
 
@@ -85,9 +87,21 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
     'SELECT id, rol_id, nombre, apellido, email, password_hash, activo FROM usuarios WHERE email = ?',
     [email.trim()],
   );
-  // Unknown accounts run the same scrypt work against a process-local dummy hash.
-  const dummy = await DUMMY_HASH;
-  const passwordOk = await countedVerifyPassword(password, row?.password_hash ?? dummy);
+  // Unknown accounts use verifyPassword's dummy scrypt branch, with no account-dependent response.
+  const legacyHash = isLegacyPasswordHash(row?.password_hash);
+  let passwordOk: boolean;
+  try {
+    // Unknown accounts and legacy/malformed hashes each execute the same dummy scrypt work in verifyPassword.
+    passwordOk = await countedVerifyPassword(password, row?.password_hash ?? '');
+  } catch (error) {
+    console.error(
+      error instanceof ScryptCapacityError
+        ? 'Capacidad de scrypt agotada durante el login.'
+        : 'Falló una operación scrypt durante el login.',
+    );
+    await settleLogin(ctx.limiterDb, reservation, 'not-verified');
+    return { status: 503, body: { error: LOGIN_UNAVAILABLE } };
+  }
   // A right password on a disabled account costs its attempt like a wrong one: giving it back would reveal, through the
   // counters, that the password was right (audit IND-11).
   if (!row || !passwordOk || !row.activo) {
@@ -98,7 +112,7 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
       'OTRO',
       'usuarios',
       row?.id ?? null,
-      'Intento de acceso fallido',
+      legacyHash ? 'Intento de acceso con hash heredado' : 'Intento de acceso fallido',
       ctx.ip,
     );
     return { status: 401, body: { error: INVALID } };
