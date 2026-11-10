@@ -1,6 +1,6 @@
 /**
  * Domain bridge tests (D13): the Angular services running in the API over a real MariaDB, through HTTP with the
- * session cookie. Temporary database `ef_rpctest_<pid>` (schema + migrations + 010 + the MockDb demo seed), dropped
+ * session cookie. Temporary database `ef_rpctest_<pid>` (schema + application migrations + permissions + MockDb demo seed), dropped
  * at the end. Run: `npm run api:test`.
  */
 import { after, before, test } from 'node:test';
