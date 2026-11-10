@@ -162,8 +162,10 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
 - **Scrypt (`api/passwords.ts`).** La API usa exclusivamente el `scrypt` asíncrono de `node:crypto`, con sal aleatoria
   de 16 bytes y comparación `timingSafeEqual`. El formato persistido es
   `$scrypt$v=1$N=32768,r=8,p=1,l=64$<sal-base64url>.<clave-base64url>`; `N`, `r`, `p` y la longitud de clave están
-  dentro del valor para permitir cambios de parámetros versionados. La memoria aproximada es `128*N*r` más sobrecarga:
-  32 MiB por defecto; `p` eleva el coste de cálculo y puede afectar latencia. La opción `maxmem` por cálculo es 64 MiB.
+  dentro del valor para permitir cambios de parámetros versionados. Los valores por defecto son `SCRYPT_N=32768`,
+  `SCRYPT_R=8`, `SCRYPT_P=1`, `SCRYPT_KEY_LENGTH=64` bytes y `SCRYPT_MAXMEM_MB=64`. La memoria aproximada es
+  `128*N*r` más sobrecarga: 32 MiB por defecto; `p` aumenta el trabajo de cálculo y puede afectar latencia. El máximo
+  `maxmem` por cálculo predeterminado es 64 MiB, configurable hasta 128 MiB sólo si cubre el mínimo calculado.
   Se conserva `N=32768, r=8, p=1` deliberadamente como un punto inicial de disponibilidad, no como cumplimiento de la
   recomendación mínima publicada por OWASP (`N=2^17, r=8, p=1`); OWASP lista también `N=2^15, r=8, p=3` como una
   alternativa con un presupuesto de memoria similar y más paralelismo. No se elevó el costo sin mediciones de latencia y
