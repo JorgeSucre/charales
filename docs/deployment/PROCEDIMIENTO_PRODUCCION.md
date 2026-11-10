@@ -162,7 +162,14 @@ Revocar los de una cuenta, por ejemplo si se pierde un teléfono: `DELETE FROM d
 
 ### Acceso sin correo
 
-Si alguien no puede entrar y no hay correo disponible, quien administra el servidor puede generar un enlace de 60 minutos, tras confirmar la identidad de quien lo pide y para entregarlo por otro canal. Queda en `auditoria`:
+Para cuentas heredadas cuyo `password_hash` inicia con `$argon2`, la API no intenta verificarlas ni las cambia automáticamente. Al usuario se le da la respuesta normal de credenciales inválidas; auditoría interna registra el intento con hash heredado, sin guardar el hash. Para recuperar una cuenta:
+
+1. Identificar la cuenta y confirmar la identidad de la persona fuera de banda con el procedimiento institucional.
+2. Si `MAIL_PROVIDER=none` (o no hay correo utilizable), ejecutar el comando desde una terminal privada con acceso al servidor. El enlace se imprime una sola vez en stdout: no redirigirlo, pegarlo en tickets ni permitir que quede en logs públicos o compartidos.
+3. Entregar el enlace sólo a la persona verificada por otro canal seguro. Tiene vigencia de 60 minutos y el token sólo se almacena como SHA-256; la confirmación lo consume una vez, invalida otros enlaces y escribe la contraseña elegida en formato scrypt.
+4. Confirmar con la persona que pudo definir su contraseña y cerrar el incidente sin conservar el enlace.
+
+El comando deja registro de auditoría, pero no registra el token. No ejecutar recuperación masiva ni alterar cuentas en el despliegue:
 
 ```sh
 node --env-file=/etc/charales/api.env api/access-link.ts <correo>

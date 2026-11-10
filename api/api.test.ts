@@ -86,6 +86,53 @@ test('wrong password, unknown e-mail and disabled account → same 401, no cooki
   assert.equal(n, 3);
 });
 
+test('legacy Argon2 accounts get the same external refusal and an internal audit classification', async () => {
+  const [{ password_hash: original }] = await db.query(
+    "SELECT password_hash FROM usuarios WHERE email = 'admin@example.com'",
+  );
+  try {
+    await db.query("UPDATE usuarios SET password_hash = ? WHERE email = 'admin@example.com'", [
+      '$argon2id$v=19$m=65536,t=3,p=1$c2FsdHNhbHQ$Y29tcGF0aWJsZWtleQ',
+    ]);
+    const [legacy, unknown] = await Promise.all([
+      login('admin@example.com', 'demo1234'),
+      login('nobody@example.com', 'demo1234'),
+    ]);
+    assert.equal(legacy.status, 401);
+    assert.equal(unknown.status, 401);
+    assert.deepEqual(await legacy.json(), { error: 'Correo o contraseña incorrectos.' });
+    assert.deepEqual(await unknown.json(), { error: 'Correo o contraseña incorrectos.' });
+    assert.equal(legacy.headers.get('set-cookie'), null);
+    assert.equal(unknown.headers.get('set-cookie'), null);
+    assert.equal(
+      Number(
+        (
+          await db.query(
+            "SELECT COUNT(*) AS n FROM auditoria WHERE usuario_id = (SELECT id FROM usuarios WHERE email = 'admin@example.com') AND descripcion = 'Intento de acceso con hash heredado'",
+          )
+        )[0].n,
+      ),
+      1,
+    );
+    const request = await requestReset('admin@example.com');
+    assert.equal(request.status, 204);
+    const recovery = await confirmReset(tokenFor('admin@example.com'), 'LegacyRecuperada123');
+    assert.equal(recovery.status, 204);
+    const [{ password_hash: migrated }] = await db.query(
+      "SELECT password_hash FROM usuarios WHERE email = 'admin@example.com'",
+    );
+    assert.match(migrated, /^\$scrypt\$v=1\$/, 'recovery replaces the legacy hash with scrypt');
+    assert.equal((await login('admin@example.com', 'LegacyRecuperada123')).status, 200);
+  } finally {
+    await db.query(
+      "UPDATE sesiones s JOIN usuarios u ON u.id = s.usuario_id SET s.cerrada_en = NOW() WHERE u.email = 'admin@example.com' AND s.cerrada_en IS NULL",
+    );
+    await db.query("UPDATE usuarios SET password_hash = ? WHERE email = 'admin@example.com'", [
+      original,
+    ]);
+  }
+});
+
 test('valid login → AuthUser + HttpOnly cookie; only the token hash is stored', async () => {
   const res = await login('ADMIN@example.com');
   assert.equal(res.status, 200);
