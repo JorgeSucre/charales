@@ -11,7 +11,6 @@
 import { randomBytes } from 'node:crypto';
 import type { Pool, PoolConnection } from 'mariadb';
 import {
-  BUSY,
   NO_SESSION,
   audit,
   clearCookie,
@@ -73,7 +72,7 @@ export async function changePassword(ctx: Ctx, db: Pool): Promise<Reply> {
   if (typeof currentPassword !== 'string' || typeof newPassword !== 'string' || !currentPassword)
     return { status: 400, body: { error: 'La contraseña actual y la nueva son obligatorias.' } };
 
-  // S-02: what needs no Argon2id is checked first (the client knows both passwords: nothing is revealed).
+  // What needs no password hash work is checked first (the client knows both passwords: nothing is revealed).
   if (currentPassword === newPassword)
     return { status: 400, body: { error: 'La nueva contraseña debe ser distinta a la actual.' } };
   const problem = passwordProblem(newPassword);
@@ -91,20 +90,11 @@ export async function changePassword(ctx: Ctx, db: Pool): Promise<Reply> {
   if (!reserved) return { status: 429, body: { error: TOO_MANY } };
   // 400, not 401: a typo in the current password must not look like an expired session to the client.
   if (currentPassword.length > 200) return { status: 400, body: { error: WRONG_CURRENT } };
-  // S-02: verification and new hash in ONE slot of the Argon2id gate (no release in between). None in time: 503 and
-  // the C1 reservation is given back — nothing was checked.
-  const turn = await ctx.argon2.run(async () =>
-    (await verifyPassword(currentPassword, s.user.password_hash))
-      ? hashPassword(newPassword)
-      : null,
-  );
-  if (turn.busy) {
-    await releasePasswordChange(ctx.limiterDb, s.user.id);
-    return { status: 503, body: { error: BUSY } };
-  }
-  if (turn.value === null) return { status: 400, body: { error: WRONG_CURRENT } };
+  const passwordMatches = await verifyPassword(currentPassword, s.user.password_hash);
+  if (!passwordMatches) return { status: 400, body: { error: WRONG_CURRENT } };
+  const nextHash = await hashPassword(newPassword);
   await releasePasswordChange(ctx.limiterDb, s.user.id);
-  const hash = turn.value;
+  const hash = nextHash;
   let device = '';
   const outcome = await transaction(db, async (tx) => {
     // R1: lock order usuarios → sesiones (same as recovery). Re-check under the lock what was read before: the
@@ -242,7 +232,7 @@ export async function confirmPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
   // Find the account outside the transaction: with MariaDB's snapshot isolation (innodb_snapshot_isolation, on by
   // default since 11.6) a plain read inside it would fix a snapshot, and the locking reads below would then fail
   // with «Record has changed since last read» if a concurrent confirmation committed first.
-  // S-02: an unknown, used or expired token is refused HERE, before any Argon2id. This read only spares the work;
+  // An unknown, used or expired token is refused HERE, before any password hash work. This read only spares the work;
   // the transaction below checks the token again under its lock, so two confirmations can't both use it.
   const [ref]: { usuario_id: number; expira_en: string; usado_en: string | null }[] =
     await db.query(
@@ -251,9 +241,7 @@ export async function confirmPasswordReset(ctx: Ctx, db: Pool): Promise<Reply> {
     );
   if (!ref || ref.usado_en || ref.expira_en <= localDateTime())
     return { status: 400, body: { error: INVALID_LINK } };
-  const turn = await ctx.argon2.run(() => hashPassword(newPassword));
-  if (turn.busy) return { status: 503, body: { error: BUSY } }; // the token is untouched
-  const hash = turn.value;
+  const hash = await hashPassword(newPassword);
   let device = '';
   const done = await transaction(db, async (tx) => {
     // Lock order usuarios → tokens_recuperacion → sesiones, the same as change and request (R1/R2); only locking

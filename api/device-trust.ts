@@ -5,7 +5,7 @@
  *
  * It is not a shortcut to an account:
  * - the password is always verified; the secret only says «this attempt doesn't spend the shared limits»;
- * - every attempt reserves one of DEVICE_MAX_FAILURES on the row, atomically, before Argon2id. A success rotates the secret
+ * - every attempt reserves one of DEVICE_MAX_FAILURES on the row, atomically, before password verification. A success rotates the secret
  *   and starts over; 5 wrong passwords in a row and it trusts nothing. A stolen cookie is worth at most 5 guesses;
  * - bound to one account, so it is worth nothing for another;
  * - 90 days, renewed only by a successful login, which also replaces the secret (an older copy stops working);

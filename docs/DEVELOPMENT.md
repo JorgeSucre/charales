@@ -64,7 +64,7 @@ Todos son los que usa el proyecto (`package.json`, [`CONTRIBUTING.md`](../CONTRI
 | Typecheck                  | `npx tsc -p tsconfig.app.json --noEmit` y `npx tsc -p tsconfig.spec.json --noEmit` | Sin errores                          |
 | Formato                    | `npx prettier --check .` (aplicar: `npx prettier --write .`)                       | Todo con formato                     |
 | Build de producción        | `npm run build` (salida en `dist/`)                                                | Sin errores                          |
-| Esquema MariaDB + respaldo | `npm run db:mariadb:test-backup`                                                   | 42/42 checks; 45/45 tablas idénticas |
+| Esquema MariaDB + respaldo | `npm run db:mariadb:test-backup`                                                   | 42/42 checks; 44/44 tablas idénticas |
 | Pruebas de la API          | `npm run api:test` (bases temporales `ef_*` nuevas, que se conservan)              | 395/395                              |
 | E2E en navegador           | `npm run e2e` (necesita Google Chrome; base temporal `ef_e2e_*`)                   | 23/23                                |
 | Colección Postman          | `postman collection lint postman/` y `postman collection run …` (ver `API.md`)     | 37 requests, 42/42 aserciones        |

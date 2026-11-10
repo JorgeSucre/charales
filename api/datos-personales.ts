@@ -97,8 +97,6 @@ export const DATA_MAP: Record<string, { category: Category; columns: string[] }>
       'roles',
       'sedes',
       'temporadas',
-      'turnos_argon2',
-      'turnos_argon2_guarda',
       'variantes_uniforme',
       'version_datos',
     ].map((t) => [t, { category: 'SIN_DATOS_PERSONALES' as Category, columns: [] }]),

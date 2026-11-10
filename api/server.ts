@@ -9,7 +9,6 @@ import mariadb, { type Pool, type PoolConfig } from 'mariadb';
 import * as auth from './auth.ts';
 import * as password from './password.ts';
 import { rpc } from './rpc.ts';
-import { ARGON2_DEFAULTS, argon2Gate, argon2LimitsFrom, type Argon2Gate } from './argon2-guard.ts';
 import {
   canonicalIp,
   trustedProxies as proxyList,
@@ -43,8 +42,6 @@ export interface Ctx {
   mailer: password.Mailer | null;
   /** Pool of the login attempt limiter (S-01): its own small pool in production, the main one otherwise. */
   limiterDb: Pool;
-  /** Argon2id gate of this process (S-02, api/argon2-guard.ts). */
-  argon2: Argon2Gate;
 }
 export interface Reply {
   status: number;
@@ -104,14 +101,11 @@ export function createApp(
     trustedProxies?: readonly string[];
     /** Small pool for the login limiter, so a login flood can't take the connections of the rest of the API (M-1). */
     limiterDb?: Pool;
-    /** Argon2id gate of this process (S-02); one with ARGON2_DEFAULTS if omitted. */
-    argon2?: Argon2Gate;
     /** The course's plain-table endpoints (`labRoutes`). Off in production. */
     labApi?: boolean;
   },
 ): Server {
   const trusted = proxyList(options.trustedProxies ?? []);
-  const gate = options.argon2 ?? argon2Gate(ARGON2_DEFAULTS);
   const table = options.labApi === false ? routes : { ...routes, ...labRoutes };
   let warnedForwarded = false;
   return createServer(async (req, res) => {
@@ -142,7 +136,6 @@ export function createApp(
               secureCookie: options.secureCookie,
               mailer: options.mailer ?? null,
               limiterDb: options.limiterDb ?? db,
-              argon2: gate,
             },
             db,
           )
@@ -310,7 +303,6 @@ if (import.meta.main) {
     trustedProxies: trustedProxiesFromEnv(env['TRUSTED_PROXIES']),
     limiterDb,
     labApi: !production,
-    argon2: argon2Gate(argon2LimitsFrom(env)), // S-02, per process; an invalid value stops the start
   }).listen(port, env['HOST'] || undefined, () =>
     console.log(
       `Charales API en http://localhost:${port} (BD ${env['DB_NAME'] ?? 'escuela_futbol'})`,

@@ -1,6 +1,6 @@
 /**
  * S-01 · the login limits hold across API instances and survive a restart: two real `api/server.ts` processes on one
- * temporary database (real clock, like production), requests split between them, then one is restarted. Argon2id
+ * temporary database (real clock, like production), requests split between them, then one is restarted. Scrypt
  * counts are checked in-process in api/login-limit.test.ts; here a 401 is a verified attempt and a 429 a refused one.
  * Also on the real clock: the limiter's own pool (M-1), because the MariaDB driver measures its acquire timeout with
  * Date, which the fixed-clock harness freezes.

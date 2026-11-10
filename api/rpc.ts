@@ -15,7 +15,7 @@
  */
 import type { Pool, PoolConnection } from 'mariadb';
 import type { Ctx, Reply } from './server.ts';
-import { argon2Gate, type Argon2Gate } from './argon2-guard.ts';
+import { concurrencyGate, type ConcurrencyGate } from './concurrency-gate.ts';
 import { NO_SESSION, localDateTime, sessionUser } from './auth.ts';
 import { revokeDevices } from './device-trust.ts';
 import { deliverMail, enqueueMail, tokenHashOf } from './mail.ts';
@@ -168,10 +168,10 @@ async function runOperation(
 const SESSION_LIMITS = { limit: 3, waitMs: 5000 };
 const TOO_MANY_AT_ONCE = 'Demasiadas solicitudes a la vez. Espera un momento e inténtalo de nuevo.';
 /** Only sessions with operations running or queued are here, so it can't grow beyond what is in flight. */
-const gates = new Map<string, Argon2Gate>();
-function sessionGate(token: string): Argon2Gate {
+const gates = new Map<string, ConcurrencyGate>();
+function sessionGate(token: string): ConcurrencyGate {
   let gate = gates.get(token);
-  if (!gate) gates.set(token, (gate = argon2Gate(SESSION_LIMITS)));
+  if (!gate) gates.set(token, (gate = concurrencyGate(SESSION_LIMITS)));
   return gate;
 }
 

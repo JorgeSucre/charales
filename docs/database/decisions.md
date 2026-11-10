@@ -129,7 +129,7 @@ mostrará la fecha. No se modificó el frontend en esta fase.
 - El nombre y el correo de tutores y entrenadores se guardan en su propia tabla, aunque se repitan en `users`: no todos
   tienen cuenta. `users` guarda sólo el acceso. **Congelado en la fase 3.5: no habrá tabla `people`.** Sólo evitaría
   repetir nombre y correo, a cambio de más joins en todos los módulos y de reescribir el contrato probado.
-- Contraseñas: `password_hash` debe tener formato argon2id o bcrypt (`CHECK`), así un texto plano no se puede guardar
+- Contraseñas en el esquema PostgreSQL histórico: su `CHECK` acepta formatos de hash y rechaza texto plano. La API vigente usa el formato scrypt descrito en [`API.md`](../API.md).
   por error. `NULL` = cuenta invitada sin contraseña. El seed **no** contiene contraseñas.
 - Recuperación: `password_reset_tokens` guarda sólo el **hash** del token, con expiración y marca de uso.
 - No hay tabla de sesiones: depende de si el backend usa cookie de sesión o JWT. **⚠ Requiere acuerdo** en la fase de backend.

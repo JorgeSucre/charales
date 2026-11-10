@@ -248,7 +248,7 @@ test('change password (D2): keeps the current session, closes the others, only t
   const [row] = await db.query(
     "SELECT password_hash FROM usuarios WHERE email = 'coach@example.com'",
   );
-  assert.match(row.password_hash, /^\$argon2id\$/);
+  assert.match(row.password_hash, /^\$scrypt\$v=1\$/);
   assert.ok(!row.password_hash.includes('Nueva12345'));
   const [{ n }] = await db.query(
     "SELECT COUNT(*) AS n FROM auditoria WHERE accion = 'EDITAR' AND descripcion = 'Cambio de contraseña'",
@@ -298,6 +298,10 @@ test('reset (D3a/D3b/D8): a new request revokes the earlier token; single use; c
   assert.match(ok.headers.get('set-cookie') ?? '', /Max-Age=0/);
   assert.equal((await getSession(session)).status, 401, 'reset closes open sessions');
   assert.equal((await login('tutor@example.com', 'Recupera123')).status, 200);
+  const [updated] = await db.query(
+    "SELECT password_hash FROM usuarios WHERE email = 'tutor@example.com'",
+  );
+  assert.match(updated.password_hash, /^\$scrypt\$v=1\$/);
   assert.equal((await confirmReset(second, 'OtraVez123')).status, 400, 'single use');
 
   const [{ total, used }] = await db.query(

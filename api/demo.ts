@@ -1,7 +1,7 @@
 /**
  * Demo data for development: loads the frontend's MockDb seed (the people, categories, payments… the frontend tests
  * use) into an EMPTY schema through the same domain bridge as the API (api/rpc.ts). Fictitious data, example.com
- * accounts with the public demo password «demo1234» (argon2id here). NEVER on a production database.
+ * accounts with the public demo password «demo1234» (scrypt here). NEVER on a production database.
  *
  * Roles, permissions and rol_permiso are not copied: they come from the schema + db/mariadb/010_permisos_app.sql, the
  * production source; the seed only checks that both say the same (permissions.ts and 010 must stay in sync).

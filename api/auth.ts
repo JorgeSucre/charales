@@ -3,12 +3,14 @@
  * inactive and wrong password; `sesiones` stores only the token hash; 8 h lifetime and 30 min idle timeout;
  * LOGIN/LOGOUT and failed attempts go to `auditoria`. The token travels only in an HttpOnly cookie (MARIADB.md § 8.3).
  */
-import crypto, { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { Pool, PoolConnection } from 'mariadb';
 import type { Ctx, Reply } from './server.ts';
 import { deviceCookieName, issueDevice } from './device-trust.ts';
 import { reserveLogin, settleLogin, type Reservation } from './login-limit.ts';
 import { transaction } from './password.ts';
+import { hashPassword, verifyPassword } from './passwords.ts';
+export { hashPassword, verifyPassword } from './passwords.ts';
 
 /** Session policy (HU-002), same values as the mock AuthService. */
 export const SESSION_HOURS = 8;
@@ -22,63 +24,21 @@ process.env.TZ = SCHOOL_TZ;
 const INVALID = 'Correo o contraseña incorrectos.';
 const LOGIN_TOO_MANY =
   'Demasiados intentos. Intenta de nuevo más tarde o recupera tu contraseña con «¿Olvidaste tu contraseña?».';
-export const BUSY = 'El servicio está ocupado. Intenta de nuevo en unos segundos.';
 const LOGIN_UNAVAILABLE =
   'El inicio de sesión no está disponible. Intenta de nuevo en unos minutos.';
 export const NO_SESSION = 'Tu sesión no está iniciada o ya expiró. Inicia sesión de nuevo.';
 const NO_ROLE = 'Tu cuenta no tiene un rol o perfil activo. Contacta a la escuela.';
 const FORBIDDEN = 'No tienes permiso para realizar esta acción.';
 
-// ---------------------------------------------------------------- passwords (argon2id, PHC string)
+// ---------------------------------------------------------------- versioned scrypt password hashes (api/passwords.ts)
 
-/** OWASP minimum for argon2id: 19 MiB, 2 passes, 1 lane. */
-const ARGON = { memory: 19456, passes: 2, parallelism: 1, tagLength: 32 };
-const b64 = (b: Buffer) => b.toString('base64').replace(/=+$/, '');
-
-/** Argon2id runs of this process: total, running now and the most at once (S-02 tests read them). */
-let runs = 0;
-let running = 0;
-let peak = 0;
-export const argon2Stats = () => ({ runs, running, peak });
-export const resetArgon2Peak = () => void (peak = running);
-/** `crypto.argon2` is read at call time (not bound at import) so a test can make it fail. */
-function argon2id(params: Parameters<typeof crypto.argon2>[1]): Promise<Buffer> {
-  runs++;
-  peak = Math.max(peak, ++running);
-  return new Promise<Buffer>((resolve, reject) =>
-    crypto.argon2('argon2id', params, (e, key) => (e ? reject(e) : resolve(key))),
-  ).finally(() => void running--);
-}
-
-export async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16);
-  const hash = await argon2id({ message: password, nonce: salt, ...ARGON });
-  return `$argon2id$v=19$m=${ARGON.memory},t=${ARGON.passes},p=${ARGON.parallelism}$${b64(salt)}$${b64(hash)}`;
-}
-
-/** Argon2id verifications run by this process (S-01 tests check that a refused login never reaches one). */
+/** Verifications reached after the shared login limiter admitted an attempt. */
 let verifications = 0;
 export const passwordVerifications = () => verifications;
-
-export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+const countedVerifyPassword = async (password: string, stored: string) => {
   verifications++;
-  const m = /^\$argon2id\$v=19\$m=(\d+),t=(\d+),p=(\d+)\$([^$]+)\$([^$]+)$/.exec(stored);
-  // Not Argon2id (an account whose invitation is pending): the same work as any other, so time doesn't tell it apart.
-  if (!m) {
-    await verifyPassword(password, await DUMMY_HASH);
-    return false;
-  }
-  const expected = Buffer.from(m[5]!, 'base64');
-  const actual = await argon2id({
-    message: password,
-    nonce: Buffer.from(m[4]!, 'base64'),
-    memory: Number(m[1]),
-    passes: Number(m[2]),
-    parallelism: Number(m[3]),
-    tagLength: expected.length,
-  });
-  return timingSafeEqual(actual, expected);
-}
+  return verifyPassword(password, stored);
+};
 
 /** Verified against when the e-mail doesn't exist, so response time doesn't reveal which accounts exist. */
 const DUMMY_HASH = hashPassword(randomBytes(16).toString('hex'));
@@ -109,7 +69,7 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
     return { status: 400, body: { error: 'Correo y contraseña son obligatorios.' } };
   if (email.length > 150 || password.length > 200) return { status: 401, body: { error: INVALID } };
 
-  // S-01: the attempt is reserved (shared, in MariaDB) before Argon2id runs; at the limit, nothing is verified.
+  // S-01: the attempt is reserved (shared, in MariaDB) before the password hash is checked.
   // If the limiter can't be reached the login is refused: it never runs unlimited.
   const deviceSecret = ctx.cookie(deviceCookieName(email));
   let reservation: Reservation | null;
@@ -125,15 +85,9 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
     'SELECT id, rol_id, nombre, apellido, email, password_hash, activo FROM usuarios WHERE email = ?',
     [email.trim()],
   );
-  // S-02: the verification holds a slot of this process's Argon2id gate. None in time: 503, nothing verified, and the
-  // S-01 reservation is given back — the attempt never happened.
+  // Unknown accounts run the same scrypt work against a process-local dummy hash.
   const dummy = await DUMMY_HASH;
-  const turn = await ctx.argon2.run(() => verifyPassword(password, row?.password_hash ?? dummy));
-  if (turn.busy) {
-    await settleLogin(ctx.limiterDb, reservation, 'not-verified');
-    return { status: 503, body: { error: BUSY } };
-  }
-  const passwordOk = turn.value;
+  const passwordOk = await countedVerifyPassword(password, row?.password_hash ?? dummy);
   // A right password on a disabled account costs its attempt like a wrong one: giving it back would reveal, through the
   // counters, that the password was right (audit IND-11).
   if (!row || !passwordOk || !row.activo) {
@@ -156,7 +110,7 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
     return { status: 403, body: { error: NO_ROLE } };
   }
 
-  // Against the account as it is NOW, under its lock: what was verified may have stopped being true while Argon2id ran. A
+  // Against the account as it is NOW, under its lock: what was verified may have stopped being true while scrypt ran. A
   // password change or recovery takes the same lock and closes sessions and browsers, so either it sees this session, or
   // this login sees the change and is refused (audit IND-02).
   const token = randomBytes(32).toString('base64url');
@@ -387,5 +341,5 @@ export function audit(
   );
 }
 
-/** `node api/auth.ts <password>` prints an argon2id hash (used for db/mariadb/020_dev_seed.sql). */
+/** `node api/auth.ts <password>` prints a versioned scrypt hash for the local development seed. */
 if (import.meta.main) console.log(await hashPassword(process.argv[2] ?? ''));

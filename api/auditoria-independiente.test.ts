@@ -7,8 +7,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { argon2Gate } from './argon2-guard.ts';
-import { argon2Stats, localDateTime, sha256 } from './auth.ts';
+import { localDateTime, passwordVerifications, sha256 } from './auth.ts';
 import { checkEnvironment } from './config.ts';
 import { DEVICE_DAYS, deviceCookieName, reserveDevice } from './device-trust.ts';
 import {
@@ -34,7 +33,6 @@ async function appWith(mailer?: Mailer): Promise<string> {
     secureCookie: false,
     trustedProxies: ['127.0.0.1'],
     mailer: mailer ?? ((to, subject, text) => void t.mail.push({ to, subject, text })),
-    argon2: argon2Gate({ limit: 64, waitMs: 10_000 }),
   }).listen(0, '127.0.0.1');
   servers.push(s);
   await new Promise((resolve) => s.once('listening', resolve));
@@ -377,7 +375,7 @@ test('IND-04: a NODE_ENV that is not exactly one of the three stops the start: t
     assert.doesNotMatch(checkEnvironment({ NODE_ENV: good }).errors.join(), /NODE_ENV/);
 });
 
-test('IND-05: an account with a pending invitation takes the same Argon2id as any other', async () => {
+test('IND-05: an account with a pending invitation performs the same password hash work', async () => {
   const admin = await adminAt();
   const email = staff();
   await rpc(base, admin, 'UserService', 'save', {
@@ -386,9 +384,9 @@ test('IND-05: an account with a pending invitation takes the same Argon2id as an
     lastName: 'B',
     email,
   });
-  const before = argon2Stats().runs;
+  const before = passwordVerifications();
   assert.equal((await login(email, WRONG, '192.0.2.90')).status, 401);
-  assert.equal(argon2Stats().runs - before, 1);
+  assert.equal(passwordVerifications() - before, 1);
 });
 
 test('IND-06: a backup that fails exits with an error and leaves no file', () => {

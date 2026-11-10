@@ -2,7 +2,7 @@
  * S-01 · login attempt limits shared through MariaDB (api/login-limit.ts, migration 005), with the corrections of the
  * PR #26 audit: H-1 (the account is identified as MariaDB compares e-mails), H-2 (no counter per account alone, so
  * nobody can lock another user out) and M-1 (a refusal writes nothing; the limiter can have its own pool). Every case
- * counts the Argon2id verifications that really ran (`passwordVerifications`), not just the status codes, and reads the
+ * counts the password verifications that really ran (`passwordVerifications`), not just the status codes, and reads the
  * counters stored in MariaDB. Fixed clock (api/test-db.ts): the 15-minute window is moved with `advance`, never waited
  * for. Several instances and a restart, with real processes: api/login-limit-instances.test.ts.
  */
@@ -20,18 +20,12 @@ import {
   forgetRefusals,
   loginKeys,
 } from './login-limit.ts';
-import { argon2Gate } from './argon2-guard.ts';
 import { clientIp, createApp } from './server.ts';
 import { openTestDb, type TestDb } from './test-db.ts';
 
 let t: TestDb;
 const servers: Server[] = [];
-/**
- * These cases measure S-01 alone, with up to 60 simultaneous logins: their instances get an Argon2id gate with room for
- * that many (api/argon2-guard.ts; production keeps 3 per process), so S-02 never answers 503 here. How S-01 and S-02
- * interact at the default limits is tested in api/argon2-guard.test.ts.
- */
-const ARGON2_ROOM = { limit: 64, waitMs: 10_000 };
+/** These cases exercise the shared attempt limiter through HTTP, including simultaneous requests and restarts. */
 /** The instance of these cases (the harness one keeps the defaults). */
 let s01Base: string;
 /** Another instance on the same database, behind a trusted proxy at 127.0.0.1 (so X-Forwarded-For is believed). */
@@ -43,12 +37,11 @@ async function listen(server: Server): Promise<string> {
 }
 before(async () => {
   t = await openTestDb('ef_s01');
-  s01Base = await listen(createApp(t.db, { secureCookie: false, argon2: argon2Gate(ARGON2_ROOM) }));
+  s01Base = await listen(createApp(t.db, { secureCookie: false }));
   proxiedBase = await listen(
     createApp(t.db, {
       secureCookie: false,
       trustedProxies: ['127.0.0.1'],
-      argon2: argon2Gate(ARGON2_ROOM),
     }),
   );
 });
@@ -87,7 +80,7 @@ const statuses = (responses: Response[]) =>
     (n, r) => ({ ...n, [r.status]: (n[r.status] ?? 0) + 1 }),
     {},
   );
-/** Argon2id verifications run by `work`. */
+/** Password verifications run by `work`. */
 async function verified<T>(work: () => Promise<T>): Promise<[T, number]> {
   const before = passwordVerifications();
   const result = await work();
@@ -108,9 +101,9 @@ const rowCount = () => t.count('SELECT COUNT(*) AS n FROM limite_acceso');
 const WRONG = 'no-es-la-contraseña-1';
 const ZWSP = '​';
 
-// ------------------------------------------------------------------ S-01: reservation before Argon2id
+// ------------------------------------------------------------------ S-01: reservation before password verification
 
-test('S-01: five simultaneous wrong passwords use the whole allowance; a sixth gets 429 without running Argon2id', async () => {
+test('S-01: five simultaneous wrong passwords use the whole allowance; a sixth gets 429 without verification', async () => {
   const [first, n] = await verified(() =>
     Promise.all(Array.from({ length: 5 }, () => login('marta@example.com', WRONG))),
   );
@@ -125,7 +118,7 @@ test('S-01: five simultaneous wrong passwords use the whole allowance; a sixth g
   assert.equal(m, 0, 'a refused attempt never verifies');
 });
 
-test('S-01: 25 simultaneous wrong passwords → exactly 5 verified (401), 20 refused before Argon2id (429)', async () => {
+test('S-01: 25 simultaneous wrong passwords → exactly 5 verified (401), 20 refused before verification (429)', async () => {
   const [responses, n] = await verified(() =>
     Promise.all(Array.from({ length: 25 }, () => login('marta@example.com', WRONG))),
   );
@@ -256,7 +249,7 @@ test('H-1: variants of one e-mail (accents, full width, zero width, spaces, case
     responses.map((r) => r.status),
     [401, 401, 401, 401, 401, 429, 429],
   );
-  assert.equal(n, 5, 'only the allowance reached Argon2id');
+  assert.equal(n, 5, 'only the allowance reached password verification');
   assert.deepEqual(await counters('127.0.0.1', 'admin@example.com'), {
     IP: 5,
     CUENTA_IP: 5,
@@ -394,9 +387,7 @@ test('M-1: a refusal remembered by the process does not reach MariaDB at all', a
       return typeof v === 'function' ? v.bind(target) : v;
     },
   }) as Pool;
-  const base = await listen(
-    createApp(t.db, { secureCookie: false, limiterDb: counting, argon2: argon2Gate(ARGON2_ROOM) }),
-  );
+  const base = await listen(createApp(t.db, { secureCookie: false, limiterDb: counting }));
   await Promise.all(
     Array.from({ length: 50 }, (_, i) => login(`m${i}@example.com`, WRONG, { base })),
   );
@@ -468,7 +459,7 @@ test('S-01: clientIp — peer unless it is a trusted proxy; skips trusted hops; 
   );
 });
 
-test('S-01: malformed logins are answered before any query or Argon2id', async () => {
+test('S-01: malformed logins are answered before any query or password verification', async () => {
   const [responses, n] = await verified(() =>
     Promise.all([
       fetch(`${t.base}/auth/login`, { method: 'POST' }),

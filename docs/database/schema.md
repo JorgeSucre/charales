@@ -11,10 +11,10 @@ migraciones en `db/migrations/`; este documento las resume.
 
 ## Usuarios y acceso — `001`
 
-| Tabla                   | Propósito                           | FK                          | Campos importantes                                                    | Restricciones                                                                                                                               |
-| ----------------------- | ----------------------------------- | --------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `users`                 | Identidad de acceso (HU-004)        | —                           | `email`, `full_name`, `role`, `active`, `password_hash`, `created_at` | `email` único y en minúsculas; `role` ∈ admin/secretary/coach/tutor; `password_hash` con formato argon2id/bcrypt o NULL; `UNIQUE(id, role)` |
-| `password_reset_tokens` | Recuperación de contraseña (HU-005) | `user_id → users` (cascade) | `token_hash`, `expires_at`, `used_at`                                 | `token_hash` único; expira después de crearse                                                                                               |
+| Tabla                   | Propósito                           | FK                          | Campos importantes                                                    | Restricciones                                                                                                                                                            |
+| ----------------------- | ----------------------------------- | --------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `users`                 | Identidad de acceso (HU-004)        | —                           | `email`, `full_name`, `role`, `active`, `password_hash`, `created_at` | `email` único y en minúsculas; `role` ∈ admin/secretary/coach/tutor; `password_hash` con formato de hash (NULL = invitación) en el esquema histórico; `UNIQUE(id, role)` |
+| `password_reset_tokens` | Recuperación de contraseña (HU-005) | `user_id → users` (cascade) | `token_hash`, `expires_at`, `used_at`                                 | `token_hash` único; expira después de crearse                                                                                                                            |
 
 Además: función `business_date(timestamptz) → date` (hora de México).
 

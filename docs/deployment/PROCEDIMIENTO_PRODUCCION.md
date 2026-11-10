@@ -32,7 +32,7 @@ Antes de usarlo, lee el dictamen vigente en [`CIERRE_FINAL_REMEDIACION_2026.md`]
 
 **Software:** Node 24.15+ o 26, MariaDB 10.6+ (probado en 13.0.2; CI configurada con 11.8, sin ejecutar), nginx 1.25.1+ u otro proxy con TLS.
 
-**Dimensionamiento:** unos 19 MiB por operación de Argon2id, multiplicados por `ARGON2_MAX_CONCURRENT` y por el número de procesos, más 100–150 MiB de Node por proceso, más MariaDB. **No se ha medido bajo carga real.**
+**Dimensionamiento:** scrypt usa aproximadamente 32 MiB por operación (`N=32768`, `r=8`, `p=1`), con llamadas asíncronas concurrentes en el pool de trabajo de Node. Mide memoria y latencia con la carga esperada antes de habilitar tráfico institucional; suma además 100–150 MiB de Node por proceso y MariaDB. **No se ha medido bajo carga real.**
 
 ## 2. Separación de entornos
 
@@ -181,7 +181,7 @@ La versión anterior ignora las tablas y ámbitos nuevos. **Una API anterior a l
 
 **Con pérdida de datos,** sólo si los datos están dañados y con decisión expresa de quien sea responsable: detén la API, restaura el último respaldo en una base nueva, verifícala, apunta `DB_NAME` a ella y arranca. Lo escrito después de ese respaldo se pierde.
 
-**No hay migraciones de bajada.** Cada archivo indica en su cabecera cómo revertirse, pero **no elimines `turnos_argon2` ni `turnos_argon2_guarda`** (006) hasta confirmar el estado de todos los entornos.
+**No hay migraciones de bajada.** La migración 010 retira dos tablas temporales ya sin uso. Confirma los respaldos y el proceso institucional de recuperación de cuenta antes de desplegar la versión que sólo reconoce hashes scrypt.
 
 ## 10. Recuperación ante fallos
 
@@ -192,7 +192,6 @@ La versión anterior ignora las tablas y ámbitos nuevos. **Una API anterior a l
 | Todos reciben 429 al entrar                    | `TRUSTED_PROXIES` no incluye al proxy      | Revisa la IP real del proxy y el log `Llegó X-Forwarded-For`                                                                                                     |
 | Una cuenta recibe 429 desde un navegador nuevo | Ataque o muchos fallos (límite por cuenta) | Desde un navegador donde ya entró funciona. Si no: recuperar la contraseña por correo, o `access-link.ts` (§ 8). Tras un despliegue, todos son «navegador nuevo» |
 | Login 503                                      | MariaDB o el pool del limitador            | `/health`, estado de MariaDB; el login falla cerrado a propósito                                                                                                 |
-| 503 «El servicio está ocupado»                 | Semáforo de Argon2id saturado              | Tráfico anómalo; ajusta `limit_req` o el dimensionamiento                                                                                                        |
 | Invitaciones o recuperación 503                | `MAIL_PROVIDER=none`                       | Configura el proveedor                                                                                                                                           |
 | Correos en `PENDIENTE` sin salir               | Proveedor caído                            | Se reintentan solos, hasta 8 veces o hasta su vencimiento                                                                                                        |
 

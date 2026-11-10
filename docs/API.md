@@ -6,7 +6,7 @@ Estado: autenticación y contraseñas, **operaciones de dominio de toda la app**
 
 ## Ejecutar
 
-Requisitos: Node `^24.15.0` o `>=26` (usa `crypto.argon2` y TypeScript sin compilar; probado con 26.11) y MariaDB
+Requisitos: Node `^24.15.0` o `>=26` (usa `node:crypto.scrypt` y TypeScript sin compilar; probado con 26.11) y MariaDB
 10.6+ local. Paso a paso: [`SETUP.md`](SETUP.md).
 
 ```bash
@@ -65,15 +65,15 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
 - `sesiones` guarda sólo el SHA-256 del token. Expira a las **8 h** o tras **30 min** sin uso (HU-002); una sesión
   vencida, o de una cuenta desactivada, se cierra y se audita como «Sesión expirada».
 - **Límite de intentos del login (S-01, `api/login-limit.ts`, migración 005; corregido tras la auditoría de la PR #26).**
-  Cada intento se **reserva antes** de verificar la contraseña (Argon2id), en una transacción de MariaDB que bloquea los
+  Cada intento se **reserva antes** de verificar la contraseña (scrypt), en una transacción de MariaDB que bloquea los
   contadores (`SELECT … FOR UPDATE`, siempre la IP primero, `READ COMMITTED`). Así las solicitudes simultáneas no pueden
   superar el límite, y el límite se mantiene tras reiniciar la API y entre varias instancias. Hay dos contadores, cada
   uno con una ventana fija de 15 min que abre su primer intento:
 
-  | Contador                | Límite | Para qué                                                                                    |
-  | ----------------------- | ------ | ------------------------------------------------------------------------------------------- |
-  | Cuenta + IP del cliente | 5      | Una persona que se equivoca desde un equipo, y el freno a adivinar una cuenta desde una IP  |
-  | IP (cualquier cuenta)   | 50     | Una dirección no puede provocar Argon2id sin límite probando correos (holgura para una NAT) |
+  | Contador                | Límite | Para qué                                                                                                |
+  | ----------------------- | ------ | ------------------------------------------------------------------------------------------------------- |
+  | Cuenta + IP del cliente | 5      | Una persona que se equivoca desde un equipo, y el freno a adivinar una cuenta desde una IP              |
+  | IP (cualquier cuenta)   | 50     | Una dirección no puede provocar hashes de contraseña sin límite probando correos (holgura para una NAT) |
   - Al alcanzar cualquiera de los dos, la respuesta es `429` sin verificar nada.
   - **Sin contador sólo por cuenta (H-2):** con él, quien conociera un correo podía dejar fuera a su dueño desde unas
     pocas direcciones, mientras siguiera intentándolo, y ni restablecer la contraseña lo resolvía. Ahora los intentos
@@ -128,7 +128,7 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
     secreto en una cookie `HttpOnly; SameSite=Strict; Path=/auth`, y `Secure` en producción. MariaDB sólo guarda su SHA-256,
     ligado a la cuenta. Ese navegador no gasta los límites compartidos, en ninguna red, así que un atacante no puede
     bloquear a la persona desde donde suele entrar (H-2).
-    - **Nunca evita la contraseña.** Cada intento reserva 1 de 5 de forma atómica, antes de Argon2id; 5 errores seguidos y
+    - **Nunca evita la contraseña.** Cada intento reserva 1 de 5 de forma atómica, antes de scrypt; 5 errores seguidos y
       deja de valer. Una cookie robada vale 5 adivinanzas como máximo.
     - Cada inicio de sesión correcto reemplaza el secreto (una copia antigua deja de funcionar) y renueva los 90 días.
     - Un cambio o una recuperación de contraseña, desactivar la cuenta o cambiar su correo **revocan todos**; como máximo 10 por cuenta. Revocar a mano:
@@ -159,48 +159,20 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
     - **Memoria de rechazos:** un rechazo recordado puede durar hasta 10 s más que la ventana.
     - **Seudónimos, no anónimos:** los hashes se revierten con un diccionario de correos o enumerando las IPv4.
 
-- **Argon2id (S-02, `api/argon2-guard.ts`).** Las contraseñas siguen protegidas con Argon2id (m=19456 KiB, t=2, p=1).
-  Cada operación usa unos **19 MiB** y un hilo del pool de libuv durante decenas de milisegundos. Para que muchas
-  operaciones a la vez no agoten la memoria ni la CPU, cada verificación o hash de una solicitud pasa por un
-  **semáforo local del proceso**, sin MariaDB:
-
-  | Ruta                                | Argon2id                                   | Qué se comprueba antes, sin Argon2id                                                                         |
-  | ----------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-  | `POST /auth/login`                  | 1 verificación                             | Cuerpo y longitudes; límite de intentos de S-01 (un 429 nunca ocupa el semáforo)                             |
-  | `POST /auth/password`               | verificación + hash nuevo, en **un** turno | Sesión; contraseña nueva distinta y con política válida; límite C1; longitudes                               |
-  | `POST /auth/password-reset/confirm` | 1 hash                                     | Política; **token existente, vigente y sin usar**; después, la transacción vuelve a comprobarlo bajo bloqueo |
-  | `POST /auth/password-reset/request` | ninguno                                    | —                                                                                                            |
-  - **Límite por proceso:** `ARGON2_MAX_CONCURRENT` operaciones a la vez, por defecto **3** (unos 57 MiB). **No es un
-    límite global**: con varios procesos de la API, el máximo total es aproximadamente
-    `procesos × ARGON2_MAX_CONCURRENT`. Charales corre **un solo proceso** (`node api/server.ts`, sin cluster, PM2 ni
-    réplicas en el repositorio); si eso cambia, hay que dividir el presupuesto entre los procesos.
-  - **Dimensionamiento:** la memoria de Argon2id es `ARGON2_MAX_CONCURRENT × 19 MiB` por proceso. A eso se suma, por
-    proceso, la memoria base de Node (unos 100–150 MiB), más el buffer pool de MariaDB, los buffers del sistema y un
-    margen; el total debe caber en la memoria real del servidor. Node ejecuta Argon2id en el pool de libuv (4 hilos por
-    defecto, compartidos con archivos y DNS): más de 4 no aporta en un proceso, y 3 deja un hilo libre. Para subirlo,
-    sube también `UV_THREADPOOL_SIZE`. **3 es un valor conservador, no una cifra validada para el servidor de
-    producción**, cuya memoria no se conoce.
-  - **Espera acotada:** sin turno libre, una solicitud espera como mucho `ARGON2_WAIT_MS` (por defecto 2000 ms), y un
-    turno liberado pasa al que lleva más tiempo esperando. Como mucho **32** esperan por proceso; las demás reciben
-    `503` de inmediato. **No hay cola ilimitada.**
-  - **Saturación:** cola llena o espera agotada → **`503`** («El servicio está ocupado. Intenta de nuevo en unos
-    segundos.») sin ejecutar Argon2id.
-    - En el login, el intento de S-01 se devuelve. Mientras espera, el intento cuenta para el límite correo + IP: otros
-      intentos simultáneos de la misma pareja pueden recibir 429.
-    - En el cambio de contraseña se devuelve la reserva C1.
-    - En la recuperación, el token queda sin usar.
-  - **Liberación:** un turno se libera en `finally`, también si Argon2id falla (la solicitud responde el `500`
-    genérico). Liberarlo dos veces no tiene efecto. Al no depender de MariaDB, no hay turnos huérfanos ni vencimientos.
-  - **Configuración:** `ARGON2_MAX_CONCURRENT` (1–64) y `ARGON2_WAIT_MS` (0–10000). Un valor inválido (0, negativo,
-    decimal, NaN o fuera de rango) impide arrancar la API; nunca desactiva la protección.
-  - **Fuera del semáforo:** el hash señuelo del login (uno por proceso, al arrancar) y las herramientas de consola
-    (`create-admin.ts`, `demo.ts`, `node api/auth.ts`). Son una operación cada una, fuera de las solicitudes. La creación
-    de cuentas del dominio usa un hash de prueba con SHA-256, no Argon2id.
-  - **Riesgos residuales:**
-    - Muchas solicitudes admitidas desde muchas IP pueden mantener ocupado el semáforo: los usuarios legítimos reciben
-      503 mientras dure (se pierde disponibilidad, pero el servidor no se agota). El límite de S-01 por IP lo acota,
-      salvo un ataque distribuido (R-1).
-    - Con varios procesos, el límite total crece con su número.
+- **Scrypt (`api/passwords.ts`).** La API usa exclusivamente el `scrypt` asíncrono de `node:crypto`, con sal aleatoria
+  de 16 bytes y comparación `timingSafeEqual`. El formato persistido es
+  `$scrypt$v=1$N=32768,r=8,p=1,l=64$<sal-base64url>.<clave-base64url>`; `N`, `r`, `p` y la longitud de clave están
+  dentro del valor para permitir cambios de parámetros versionados. La memoria de trabajo nominal es 32 MiB por
+  operación y el límite de Node para cada llamada es 64 MiB. Los parámetros están centralizados y son ajustables en
+  `api/passwords.ts` y, opcionalmente, en `SCRYPT_N`, `SCRYPT_R`, `SCRYPT_P`, `SCRYPT_KEY_LENGTH` y
+  `SCRYPT_MAXMEM_MB`; los límites de verificación rechazan valores almacenados fuera del rango admitido. Una
+  configuración no válida impide arrancar.
+  El limitador distribuido de intentos S-01 sigue actuando antes de verificar el login. Node ejecuta scrypt asíncrono
+  en su pool de trabajo; varias solicitudes simultáneas pueden consumir memoria adicional y se debe medir la carga con
+  la memoria del servidor institucional antes de desplegar.
+  Los hashes previos no se verifican ni se sustituyen automáticamente: se conserva la cuenta, pero el usuario tendrá
+  que asignar una contraseña nueva mediante el flujo de recuperación configurado. Si el correo de recuperación no está
+  disponible, el operador debe acordar una recuperación de cuenta antes de actualizar el servidor.
 
 - `auditoria`: `LOGIN`, `LOGOUT` e «Intento de acceso fallido» (módulo `auth`), como el `AuthService` del mock.
 
@@ -428,8 +400,8 @@ con su request, ejemplos y `pm.test` en la misma PR; las pruebas propias del bac
 | Planificador de MariaDB        | `event_scheduler=ON` en la configuración del servidor para el trabajo diario de VENCIDO (migración 002). Ver [`MARIADB.md`](database/MARIADB.md#migraciones).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Zona horaria                   | Servidor de base de datos y API en la hora de la escuela (`America/Mexico_City`): `DATETIME` guarda hora local sin zona (`MARIADB.md` § 1).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Correo (D4c: **Resend**)       | `MAIL_PROVIDER=resend`, `RESEND_API_KEY`, `MAIL_FROM` y `APP_URL` con https. Falta la cuenta, el dominio verificado y **una prueba real**: sin ellos no se puede dar por funcional el envío (HU-004, HU-012, HU-022).                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Una sola instancia o varias    | Varias instancias son seguras para los datos (`version_datos`, candado por base) y para el límite del login (en MariaDB, S-01; cada instancia tiene además su pool de 2 conexiones para el limitador). El semáforo de Argon2id (S-02) es **por proceso**: con N procesos, el máximo es N × `ARGON2_MAX_CONCURRENT`. Los límites de cambio de contraseña y de recuperación también están en MariaDB. El reparto de operaciones por sesión del puente RPC y el semáforo son por proceso.                                                                                                                                                         |
-| Memoria y Argon2id (S-02)      | Fijar `ARGON2_MAX_CONCURRENT` por proceso según la memoria del servidor (`× 19 MiB` más Node, MariaDB y margen, multiplicado por el número de procesos) y `ARGON2_WAIT_MS` según la espera aceptable al iniciar sesión.                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Una sola instancia o varias    | Varias instancias son seguras para los datos (`version_datos`, candado por base) y para el límite del login (en MariaDB, S-01; cada instancia tiene además su pool de 2 conexiones para el limitador). Los límites de cambio de contraseña y de recuperación también están en MariaDB. El gate de concurrencia del puente RPC es por sesión y proceso.                                                                                                                                                                                                                                                                                         |
+| Memoria y scrypt               | Cada hash usa aproximadamente 32 MiB; mide consumo y latencia bajo la concurrencia esperada con la memoria real del servidor. El pool de trabajo de Node comparte scrypt con otras operaciones asíncronas.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Respaldo                       | `db/mariadb/scripts/backup.sh` diario; periodicidad y restauración en [`MARIADB.md` § 6](database/MARIADB.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 **Seguridad de la sesión:** cookie `HttpOnly; SameSite=Strict; Path=/` de 8 h (30 min de inactividad), sólo el SHA-256
@@ -441,7 +413,7 @@ formulario de otro sitio no puede enviar sin una solicitud previa de CORS (que l
 
 - **Sin framework HTTP:** `node:http` y una tabla de rutas exactas; el dominio entra por un solo endpoint (D13), así
   que sigue sin hacer falta un router.
-- **argon2id con `node:crypto`** (m=19 MiB, t=2, p=1; formato PHC). Sin dependencia nativa.
+- **scrypt asíncrono con `node:crypto`** (`N=32768`, `r=8`, `p=1`, clave de 64 bytes; formato versionado). Sin dependencia externa.
 - **Permisos recalculados en cada `GET /auth/session` y en cada operación de dominio.** `sesiones` no tiene columna para guardar la foto de permisos
   del login, así que un cambio de permisos (HU-006) o de perfil se refleja ya en las sesiones abiertas, no sólo en las
   nuevas. Es más estricto que el mock; si se quiere la foto exacta hace falta una columna (cambio de esquema).

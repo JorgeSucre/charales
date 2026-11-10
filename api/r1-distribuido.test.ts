@@ -6,8 +6,7 @@ import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { argon2Gate } from './argon2-guard.ts';
-import { argon2Stats } from './auth.ts';
+import { passwordVerifications } from './auth.ts';
 import { ACCOUNT_REFILL_MS, LOGIN_LIMITS, forgetRefusals } from './login-limit.ts';
 import { createApp } from './server.ts';
 import { openTestDb, type TestDb } from './test-db.ts';
@@ -25,7 +24,6 @@ before(async () => {
     secureCookie: false,
     trustedProxies: ['127.0.0.1'],
     mailer: (to, subject, text) => void t.mail.push({ to, subject, text }),
-    argon2: argon2Gate({ limit: 64, waitMs: 10_000 }),
   }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -52,9 +50,9 @@ const login = (email: string, password: string, client: string) =>
 const tally = (statuses: number[]) =>
   statuses.reduce<Record<number, number>>((m, s) => ((m[s] = (m[s] ?? 0) + 1), m), {});
 async function verified<T>(work: () => Promise<T>): Promise<[T, number]> {
-  const runs = argon2Stats().runs;
+  const runs = passwordVerifications();
   const result = await work();
-  return [result, argon2Stats().runs - runs];
+  return [result, passwordVerifications() - runs];
 }
 async function sequence(n: number, client: (i: number) => string, email = OWNER) {
   const out: number[] = [];
@@ -68,7 +66,7 @@ test('R-1: 150 wrong passwords, one account, 30 addresses of one /64 → the /64
   );
   assert.deepEqual(tally(statuses), { 401: 5, 429: 145 });
   assert.equal(statuses.indexOf(429), 5);
-  assert.equal(runs, 5, 'Argon2id ran only for the 5 admitted');
+  assert.equal(runs, 5, 'hash verification ran only for the 5 admitted');
 });
 
 test('R-1: 150 wrong passwords from 150 different /64 → the account takes its budget and no more', async () => {

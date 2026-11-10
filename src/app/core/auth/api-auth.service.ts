@@ -4,7 +4,7 @@ import { PermissionKey } from './permissions';
 import { AuthUser, SessionStore, grants, homeUrlOf } from './session.store';
 
 /**
- * Authentication of the app against the real API (HU-001..003, HU-005, HU-072; docs/API.md): argon2id and the
+ * Authentication of the app against the real API (HU-001..003, HU-005, HU-072; docs/API.md): scrypt and the
  * session live on the server; the browser only holds the HttpOnly cookie (never readable here) and a copy of the
  * AuthUser for menus and guards. Provided as `AuthService` in app.config.ts, so pages and guards don't change.
  */

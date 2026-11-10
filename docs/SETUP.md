@@ -17,7 +17,7 @@ frontend. Nada de esto es producción (ver [`API.md` § Producción y despliegue
 
 | Herramienta   | Versión                                 | Notas                                                                                           |
 | ------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Node.js       | `^24.15.0` o `>=26` (probado con 26.11) | La API usa `crypto.argon2` y ejecuta TypeScript sin compilar (`package.json` → `engines`)       |
+| Node.js       | `^24.15.0` o `>=26` (probado con 26.11) | La API usa `node:crypto.scrypt` y ejecuta TypeScript sin compilar (`package.json` → `engines`)  |
 | npm           | 11 (incluido con Node 24/26)            | `npm ci` instala exactamente lo de `package-lock.json`                                          |
 | MariaDB       | 10.6 o superior (probado con 13.0.2)    | **MySQL no sirve**: el esquema usa columnas generadas `PERSISTENT` y otras funciones de MariaDB |
 | Git           | reciente                                |                                                                                                 |

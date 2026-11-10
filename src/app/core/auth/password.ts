@@ -1,7 +1,7 @@
 /**
  * Password and token helpers for the MOCK backend (HU-005, HU-072). Passwords are never stored or compared in plain
- * text, even here. ponytail: salted SHA-256 via WebCrypto is enough for a mock; the real API must hash with
- * argon2id/bcrypt server-side and the browser must never see a hash.
+ * text, even here. ponytail: salted SHA-256 via WebCrypto is enough for a mock; the real API uses native scrypt
+ * server-side and the browser must never see a hash.
  */
 
 const encoder = new TextEncoder();

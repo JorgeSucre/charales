@@ -48,6 +48,7 @@ test('db:setup creates and prepares a new database; a second run changes nothing
     '007_correo_y_limites.sql',
     '008_retencion_y_dispositivos.sql',
     '009_cupo_correo.sql',
+    '010_eliminar_turnos_hash_antiguo.sql',
   ]);
   assert.deepEqual(first.counts, { usuarios: 0, jugadores: 0, rol_permiso: 106 });
   const second = await setupDatabase(env(FRESH));
@@ -260,7 +261,7 @@ test('SQL files with DELIMITER blocks are split the way the server needs', () =>
   ]);
 });
 
-test('db:admin creates the first administrator (argon2id) and never overwrites an existing account', async () => {
+test('db:admin creates the first administrator (scrypt) and never overwrites an existing account', async () => {
   const db = createPool(env(FRESH));
   const server = createApp(db, { secureCookie: false }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
@@ -290,7 +291,7 @@ test('db:admin creates the first administrator (argon2id) and never overwrites a
       id,
     ]);
     assert.equal(row.email, 'direccion@escuela.example');
-    assert.match(row.password_hash, /^\$argon2id\$/);
+    assert.match(row.password_hash, /^\$scrypt\$v=1\$/);
     const res = await login('Inicial2026');
     assert.equal(res.status, 200);
     assert.deepEqual((await res.json()).roles, ['ADMINISTRADOR']);

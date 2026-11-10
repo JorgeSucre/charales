@@ -87,8 +87,8 @@ SELECT pg_temp.check('participation does not depend on a coach assignment (C2)',
 -- ── Users / tutors / coaches ──
 SELECT pg_temp.expect_error('passwords must be stored as a hash, never plain text',
   format('UPDATE users SET password_hash = %L WHERE id = %L', 'hunter2', pg_temp.sid('user', 1)), '23514');
-UPDATE users SET password_hash = '$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA' WHERE id = pg_temp.sid('user', 1);
-SELECT pg_temp.check('an argon2id hash is accepted', true);
+UPDATE users SET password_hash = '$2b$12$012345678901234567890u0123456789012345678901234567890' WHERE id = pg_temp.sid('user', 1);
+SELECT pg_temp.check('a bcrypt-format hash is accepted', true);
 SELECT pg_temp.expect_error('emails are unique case-insensitively (stored lowercase)',
   $$INSERT INTO users (email, full_name, role) VALUES ('Admin@Example.com', 'X', 'admin')$$, '23514');
 SELECT pg_temp.expect_error('a tutor can only be linked to a user with role tutor',

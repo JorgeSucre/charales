@@ -12,7 +12,6 @@ import type { AddressInfo } from 'node:net';
 import type { Pool, PoolConnection } from 'mariadb';
 import { passwordVerifications } from './auth.ts';
 import { forgetRefusals, loginKeys, reserveLogin } from './login-limit.ts';
-import { argon2Gate } from './argon2-guard.ts';
 import { createApp, createLimiterPool } from './server.ts';
 import { openTestDb, type TestDb } from './test-db.ts';
 
@@ -243,14 +242,12 @@ test('retries: a deadlock that never clears gives up within the budget (≤ 6 at
 
 test('bursts of 50: one IP with many accounts, one account from many IPs, one pair, two instances — no 503, exact counters', async () => {
   const listen = async () => {
-    // These bursts measure S-01 alone: an Argon2id gate with room for all of them (S-02's default, 3 at once and 32
-    // waiting, answers 503 to the rest — api/s01-s02.test.ts covers that combination).
+    // These bursts measure the shared attempt limiter independently of password hashing.
     const limiterDb = createLimiterPool({ ...process.env, DB_NAME: t.name });
     const s = createApp(t.db, {
       secureCookie: false,
       trustedProxies: ['127.0.0.1'],
       limiterDb,
-      argon2: argon2Gate({ limit: 64, waitMs: 10_000 }),
     }).listen(0, '127.0.0.1');
     await new Promise((resolve) => s.once('listening', resolve));
     return { s, limiterDb, base: `http://127.0.0.1:${(s.address() as AddressInfo).port}` };
@@ -295,7 +292,11 @@ test('bursts of 50: one IP with many accounts, one account from many IPs, one pa
         {},
       );
       assert.deepEqual(got, expected, name);
-      assert.equal(passwordVerifications() - before, expected[401], `${name}: Argon2id = 401s`);
+      assert.equal(
+        passwordVerifications() - before,
+        expected[401],
+        `${name}: verifications = 401s`,
+      );
       assert.equal(
         await t.count(
           "SELECT COUNT(*) AS n FROM limite_acceso WHERE (ambito = 'CUENTA_IP' AND intentos > 5) OR (ambito = 'IP' AND intentos > 50)",

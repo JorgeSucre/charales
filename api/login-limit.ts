@@ -8,7 +8,7 @@
  * (api/client-ip.ts): one customer usually holds a whole /64, so counting addresses would be no limit at all (R-1).
  * - CUENTA_IP (account + network): 5 in a fixed 15-minute window — one person mistyping on one device, and the brake on
  *   guessing from one network;
- * - IP (network, any account): 50 in a fixed 15-minute window — caps the Argon2id work one network can trigger, with room
+ * - IP (network, any account): 50 in a fixed 15-minute window — caps password-hash work one network can trigger, with room
  *   for an office behind NAT;
  * - CUENTA (account, every network): a budget of 10 that recovers 1 every 30 minutes — the brake on guessing one account
  *   from many networks. At most 58 guesses the first day and 48 a day after that, however many addresses the attacker has.
@@ -389,7 +389,7 @@ export async function clearPasswordChange(db: Pool, userId: number): Promise<voi
  * counter only gets its one attempt back too: the owner logging in doesn't reset an attack from elsewhere. A right password
  * on an account without a role is not a guess either: its attempts go back, nothing is cleared. On a disabled account it
  * costs its attempt: giving it back would reveal, through the counters, that it was right (audit IND-11).
- * `not-verified` (S-02: no Argon2id turn, the password was never checked) gives the attempt back the same way.
+ * `not-verified` (the password was never checked) gives the attempt back the same way.
  * A failure here only leaves the counters one higher (the safe side), so it is logged and the login goes on.
  */
 export async function settleLogin(

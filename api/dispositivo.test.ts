@@ -6,8 +6,7 @@ import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { argon2Gate } from './argon2-guard.ts';
-import { argon2Stats } from './auth.ts';
+import { passwordVerifications } from './auth.ts';
 import { DEVICE_DAYS, DEVICE_MAX_FAILURES } from './device-trust.ts';
 import { LOGIN_LIMITS, forgetRefusals } from './login-limit.ts';
 import { recoveriesSettled } from './password.ts';
@@ -27,7 +26,6 @@ async function instance(secureCookie = false): Promise<string> {
     secureCookie,
     trustedProxies: ['127.0.0.1'],
     mailer: (to, subject, text) => void t.mail.push({ to, subject, text }),
-    argon2: argon2Gate({ limit: 64, waitMs: 10_000 }),
   }).listen(0, '127.0.0.1');
   servers.push(s);
   await new Promise((resolve) => s.once('listening', resolve));
@@ -137,10 +135,10 @@ test('with its own network at the limit too: a shared office, or a proxy misconf
 test('a NEW browser during an attack: refused, unverified, right password or not — the limit is no oracle', async () => {
   await attack(LOGIN_LIMITS.CUENTA);
   forgetRefusals();
-  const runs = argon2Stats().runs;
+  const runs = passwordVerifications();
   assert.equal(await login(OWNER, RIGHT, '203.0.113.7'), 429);
   assert.equal(await login(OWNER, WRONG, '203.0.113.8'), 429);
-  assert.equal(argon2Stats().runs, runs, 'no Argon2id ran');
+  assert.equal(passwordVerifications(), runs, 'no password hash check ran');
 });
 
 test('a NEW browser after the attack: the budget refills, within 30 minutes one attempt fits, and it is trusted', async () => {
@@ -208,12 +206,12 @@ test('concurrent guesses with a stolen cookie can not pass the 5: each one reser
   const stolen = await trusted();
   await attack(LOGIN_LIMITS.CUENTA); // the shared budget is spent: only the cookie could let anything through
   forgetRefusals();
-  const runs = argon2Stats().runs;
+  const runs = passwordVerifications();
   const statuses = await Promise.all(
     Array.from({ length: 40 }, () => login(OWNER, WRONG, nextPrefix(), stolen)),
   );
   assert.deepEqual(tally(statuses), { 401: DEVICE_MAX_FAILURES, 429: 40 - DEVICE_MAX_FAILURES });
-  assert.equal(argon2Stats().runs - runs, DEVICE_MAX_FAILURES);
+  assert.equal(passwordVerifications() - runs, DEVICE_MAX_FAILURES);
 });
 
 test('a success starts the count over, and replaces the secret: the older copy stops working', async () => {
@@ -332,22 +330,4 @@ test('no enumeration: an existing and an unknown e-mail answer the same under at
     r.headers.getSetCookie().filter((c) => c.startsWith('charales_disp_')),
     [],
   );
-});
-
-test('a 503 from the gate gives the browser its attempt back', async () => {
-  const gate = argon2Gate({ limit: 1, waitMs: 10 });
-  const hold = await gate.acquire();
-  const s = createApp(t.db, {
-    secureCookie: false,
-    trustedProxies: ['127.0.0.1'],
-    argon2: gate,
-  }).listen(0, '127.0.0.1');
-  servers.push(s);
-  await new Promise((resolve) => s.once('listening', resolve));
-  const at = `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
-  const jar = await trusted();
-  for (let i = 0; i < DEVICE_MAX_FAILURES + 2; i++)
-    assert.equal(await login(OWNER, RIGHT, '203.0.113.22', jar, at), 503);
-  hold!();
-  assert.equal(await login(OWNER, RIGHT, '203.0.113.22', jar, at), 200);
 });
