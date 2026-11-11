@@ -87,6 +87,11 @@ test('wrong password, unknown e-mail and disabled account → same 401, no cooki
 });
 
 test('legacy Argon2 accounts get the same external refusal and an internal audit classification', async () => {
+  const [{ id: adminId }] = await db.query("SELECT id FROM usuarios WHERE email = 'admin@example.com'");
+  const [{ lastTokenId }] = await db.query(
+    'SELECT COALESCE(MAX(id), 0) AS lastTokenId FROM tokens_recuperacion WHERE usuario_id = ?',
+    [adminId],
+  );
   const [{ password_hash: original }] = await db.query(
     "SELECT password_hash FROM usuarios WHERE email = 'admin@example.com'",
   );
@@ -124,6 +129,12 @@ test('legacy Argon2 accounts get the same external refusal and an internal audit
     assert.match(migrated, /^\$scrypt\$v=1\$/, 'recovery replaces the legacy hash with scrypt');
     assert.equal((await login('admin@example.com', 'LegacyRecuperada123')).status, 200);
   } finally {
+    // This test alone creates a recovery token for the shared demo administrator. Remove only rows
+    // created by this test; leave any pre-existing recovery history untouched.
+    await db.query('DELETE FROM tokens_recuperacion WHERE usuario_id = ? AND id > ?', [
+      adminId,
+      lastTokenId,
+    ]);
     await db.query(
       "UPDATE sesiones s JOIN usuarios u ON u.id = s.usuario_id SET s.cerrada_en = NOW() WHERE u.email = 'admin@example.com' AND s.cerrada_en IS NULL",
     );
