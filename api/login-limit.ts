@@ -417,6 +417,9 @@ export async function settleLogin(
           [key],
         );
     });
+    // A refusal may have been cached while this reservation was in flight and at the limit. Once
+    // this process commits a refund, its own cache must not keep refusing against stale counters.
+    for (const { key } of reservation.keys) refused.delete(key);
   } catch (e) {
     console.error('No se pudo devolver la reserva del límite de intentos:', (e as Error).message);
   }
