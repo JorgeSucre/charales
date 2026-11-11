@@ -1,8 +1,8 @@
 /**
  * Attempt limits shared through MariaDB (S-01, migrations 005, 007 and 008, `limite_acceso`), so they survive a restart and
  * hold across several API instances. An attempt is RESERVED before the slow or sensitive work, in one transaction that
- * locks the counters (FOR UPDATE): N simultaneous requests can never all pass the check. A correct password gives the
- * reservation back (see `settleLogin`).
+ * locks the counters (FOR UPDATE): N simultaneous requests can never all pass the check. A correct password or work that
+ * never verified a password gives the reservation back (see `settleLogin`).
  *
  * The login has four counters. "Network" is an IPv4 address or the /64 of an IPv6 one, and "wide network" its /24 or /48
  * (api/client-ip.ts): one customer usually holds a whole /64, so counting addresses would be no limit at all (R-1).
@@ -389,7 +389,8 @@ export async function clearPasswordChange(db: Pool, userId: number): Promise<voi
  * counter only gets its one attempt back too: the owner logging in doesn't reset an attack from elsewhere. A right password
  * on an account without a role is not a guess either: its attempts go back, nothing is cleared. On a disabled account it
  * costs its attempt: giving it back would reveal, through the counters, that it was right (audit IND-11).
- * `not-verified` (the password was never checked) gives the attempt back the same way.
+ * `not-verified` (the password was never checked, including a full scrypt queue) gives the attempt back. A capacity
+ * refusal is 503, not a failed guess: charging it could let queue pressure lock out a user without testing a password.
  * A failure here only leaves the counters one higher (the safe side), so it is logged and the login goes on.
  */
 export async function settleLogin(

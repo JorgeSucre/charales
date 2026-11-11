@@ -75,6 +75,9 @@ Cuentas de desarrollo: las de [`DEVELOPMENT.md`](DEVELOPMENT.md) (`@example.com`
   | Cuenta + IP del cliente | 5      | Una persona que se equivoca desde un equipo, y el freno a adivinar una cuenta desde una IP              |
   | IP (cualquier cuenta)   | 50     | Una dirección no puede provocar hashes de contraseña sin límite probando correos (holgura para una NAT) |
   - Al alcanzar cualquiera de los dos, la respuesta es `429` sin verificar nada.
+  - **Capacidad de scrypt:** si la cola limitada está llena, el login responde `503` genérico sin verificar. Ese intento
+    se devuelve a los contadores porque no fue una adivinanza; cobrarlo permitiría que una saturación accidental o
+    provocada agotara el presupuesto de la víctima sin probar contraseñas. Los `503` no se convierten en `429`.
   - **Sin contador sólo por cuenta (H-2):** con él, quien conociera un correo podía dejar fuera a su dueño desde unas
     pocas direcciones, mientras siguiera intentándolo, y ni restablecer la contraseña lo resolvía. Ahora los intentos
     de otras direcciones no afectan a la del dueño.

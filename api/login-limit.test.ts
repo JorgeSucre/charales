@@ -131,12 +131,27 @@ test('S-01: 25 simultaneous wrong passwords → exactly 5 verified (401), 20 ref
   });
 });
 
-test('S-01: the IP limit holds across e-mails — 60 simultaneous unknown accounts from one address → 50 verified, 10 refused', async () => {
+test('S-01: the IP limit holds under load; scrypt-capacity refusals are 503 and do not spend attempts', async () => {
   const [responses, n] = await verified(() =>
     Promise.all(Array.from({ length: 60 }, (_, i) => login(`nadie${i}@example.com`, WRONG))),
   );
-  assert.deepEqual(statuses(responses), { 401: LOGIN_LIMITS.IP, 429: 10 });
-  assert.equal(n, 50);
+  const burst = statuses(responses);
+  assert.equal(Object.values(burst).reduce((sum, count) => sum + count, 0), 60);
+  assert.ok((burst[401] ?? 0) <= LOGIN_LIMITS.IP, 'the network budget bounds completed guesses');
+  assert.equal(burst[200] ?? 0, 0);
+  assert.equal(burst[503] ?? 0, n - (burst[401] ?? 0), '503 capacity refusals did no password work');
+  assert.ok((burst[429] ?? 0) >= 0);
+
+  // Once queue pressure is gone, sequential requests consume only the remaining real guess budget.
+  let verifiedGuesses = burst[401] ?? 0;
+  while (verifiedGuesses < LOGIN_LIMITS.IP) {
+    const [res, calls] = await verified(() => login(`despues${verifiedGuesses}@example.com`, WRONG));
+    if (res.status === 429) break;
+    assert.equal(res.status, 401);
+    assert.equal(calls, 1);
+    verifiedGuesses++;
+  }
+  assert.equal(verifiedGuesses, LOGIN_LIMITS.IP);
   const [real, m] = await verified(() => login('admin@example.com', 'demo1234'));
   assert.equal(real.status, 429);
   assert.equal(m, 0);
@@ -368,7 +383,8 @@ test('M-1: a 429 writes nothing — neither when MariaDB decides it nor when thi
 });
 
 test('M-1: random e-mails from an address at its limit add no rows', async () => {
-  await Promise.all(Array.from({ length: 50 }, (_, i) => login(`azar${i}@example.com`, WRONG)));
+  for (let i = 0; i < LOGIN_LIMITS.IP; i++)
+    assert.equal((await login(`azar${i}@example.com`, WRONG)).status, 401);
   const rows = await rowCount();
   forgetRefusals();
   const responses = await Promise.all(
@@ -388,9 +404,8 @@ test('M-1: a refusal remembered by the process does not reach MariaDB at all', a
     },
   }) as Pool;
   const base = await listen(createApp(t.db, { secureCookie: false, limiterDb: counting }));
-  await Promise.all(
-    Array.from({ length: 50 }, (_, i) => login(`m${i}@example.com`, WRONG, { base })),
-  );
+  for (let i = 0; i < LOGIN_LIMITS.IP; i++)
+    assert.equal((await login(`m${i}@example.com`, WRONG, { base })).status, 401);
   assert.equal((await login('m-extra@example.com', WRONG, { base })).status, 429); // MariaDB decides, remembered
   const before = queries;
   // 100 at once: more simultaneous new connections than the OS accept queue (128 on macOS) get reset by the OS itself
