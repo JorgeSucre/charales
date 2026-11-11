@@ -50,7 +50,10 @@ test('db:setup creates and prepares a new database; a second run changes nothing
     '009_cupo_correo.sql',
     '010_eliminar_turnos_hash_antiguo.sql',
   ]);
-  const legacyTables = await mariadb.createConnection({ ...serverOptions(process.env), database: FRESH });
+  const legacyTables = await mariadb.createConnection({
+    ...serverOptions(process.env),
+    database: FRESH,
+  });
   try {
     const rows = await legacyTables.query(
       `SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?

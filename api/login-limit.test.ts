@@ -136,16 +136,25 @@ test('S-01: the IP limit holds under load; scrypt-capacity refusals are 503 and 
     Promise.all(Array.from({ length: 60 }, (_, i) => login(`nadie${i}@example.com`, WRONG))),
   );
   const burst = statuses(responses);
-  assert.equal(Object.values(burst).reduce((sum, count) => sum + count, 0), 60);
+  assert.equal(
+    Object.values(burst).reduce((sum, count) => sum + count, 0),
+    60,
+  );
   assert.ok((burst[401] ?? 0) <= LOGIN_LIMITS.IP, 'the network budget bounds completed guesses');
   assert.equal(burst[200] ?? 0, 0);
-  assert.equal(burst[503] ?? 0, n - (burst[401] ?? 0), '503 capacity refusals did no password work');
+  assert.equal(
+    burst[503] ?? 0,
+    n - (burst[401] ?? 0),
+    '503 capacity refusals did no password work',
+  );
   assert.ok((burst[429] ?? 0) >= 0);
 
   // Once queue pressure is gone, sequential requests consume only the remaining real guess budget.
   let verifiedGuesses = burst[401] ?? 0;
   while (verifiedGuesses < LOGIN_LIMITS.IP) {
-    const [res, calls] = await verified(() => login(`despues${verifiedGuesses}@example.com`, WRONG));
+    const [res, calls] = await verified(() =>
+      login(`despues${verifiedGuesses}@example.com`, WRONG),
+    );
     if (res.status === 429) break;
     assert.equal(res.status, 401);
     assert.equal(calls, 1);

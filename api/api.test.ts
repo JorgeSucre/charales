@@ -87,7 +87,9 @@ test('wrong password, unknown e-mail and disabled account → same 401, no cooki
 });
 
 test('legacy Argon2 accounts get the same external refusal and an internal audit classification', async () => {
-  const [{ id: adminId }] = await db.query("SELECT id FROM usuarios WHERE email = 'admin@example.com'");
+  const [{ id: adminId }] = await db.query(
+    "SELECT id FROM usuarios WHERE email = 'admin@example.com'",
+  );
   const [{ lastTokenId }] = await db.query(
     'SELECT COALESCE(MAX(id), 0) AS lastTokenId FROM tokens_recuperacion WHERE usuario_id = ?',
     [adminId],
