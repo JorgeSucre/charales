@@ -9,24 +9,14 @@ const env = { ...process.env, DB_NAME: DB };
 
 after(() => releaseTestDatabase(DB));
 
-test('optional Argon turn cleanup is repeatable with empty and populated legacy tables', async () => {
+test('migration 010 removes obsolete Argon turn tables from upgraded schemas', async () => {
   await setupDatabase(env);
   const db = createPool(env);
   try {
-    const cleanup = 'db/mariadb/maintenance/010_eliminar_turnos_hash_antiguo.sql';
     const oldSchema = 'db/mariadb/migrations/006_turnos_argon2.sql';
+    const cleanup = 'db/mariadb/migrations/010_eliminar_turnos_hash_antiguo.sql';
 
-    // Missing tables are harmless, including a second execution.
-    await runSqlFile(env, DB, cleanup);
-    await runSqlFile(env, DB, cleanup);
-
-    // Existing but empty tables are removed safely too.
-    await runSqlFile(env, DB, oldSchema);
-    assert.equal(Number((await db.query('SELECT COUNT(*) AS n FROM turnos_argon2'))[0].n), 0);
-    await runSqlFile(env, DB, cleanup);
-    await runSqlFile(env, DB, cleanup);
-
-    // Recreate the historical schema with live transient rows to confirm their exact effect.
+    // Simulate a database upgraded through 009 where 006 left its transient tables behind.
     await runSqlFile(env, DB, oldSchema);
     await db.query('INSERT INTO turnos_argon2 (vence_en) VALUES (NOW(3))');
     assert.equal(
@@ -49,6 +39,7 @@ test('optional Argon turn cleanup is repeatable with empty and populated legacy 
       'fixture includes transient data before cleanup',
     );
 
+    // Migration is idempotent and removes only these two obsolete transient tables.
     await runSqlFile(env, DB, cleanup);
     await runSqlFile(env, DB, cleanup);
     const remaining = await db.query(
@@ -56,7 +47,7 @@ test('optional Argon turn cleanup is repeatable with empty and populated legacy 
         WHERE TABLE_SCHEMA = ? AND TABLE_NAME IN ('turnos_argon2', 'turnos_argon2_guarda')`,
       [DB],
     );
-    assert.deepEqual(remaining, [], 'cleanup removes both tables and is idempotent');
+    assert.deepEqual(remaining, [], 'migration removes both legacy tables and is idempotent');
   } finally {
     await db.end();
   }

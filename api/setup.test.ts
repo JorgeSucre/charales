@@ -48,7 +48,19 @@ test('db:setup creates and prepares a new database; a second run changes nothing
     '007_correo_y_limites.sql',
     '008_retencion_y_dispositivos.sql',
     '009_cupo_correo.sql',
+    '010_eliminar_turnos_hash_antiguo.sql',
   ]);
+  const legacyTables = await mariadb.createConnection({ ...serverOptions(process.env), database: FRESH });
+  try {
+    const rows = await legacyTables.query(
+      `SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?
+       AND TABLE_NAME IN ('turnos_argon2', 'turnos_argon2_guarda')`,
+      [FRESH],
+    );
+    assert.deepEqual(rows, [], 'fresh setup applies the obsolete-table migration');
+  } finally {
+    await legacyTables.end();
+  }
   assert.deepEqual(first.counts, { usuarios: 0, jugadores: 0, rol_permiso: 106 });
   const second = await setupDatabase(env(FRESH));
   assert.equal(second.created, false);
