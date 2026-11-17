@@ -5,6 +5,7 @@ import {
   afterNextRender,
   computed,
   inject,
+  isDevMode,
   signal,
   viewChild,
 } from '@angular/core';
@@ -91,7 +92,11 @@ export function activeNavPath(url: string, paths: readonly string[]): string | n
             <span class="sep" aria-hidden="true">/</span><span class="page">{{ c.page }}</span>
           }
         </p>
-        <span class="demo-badge" title="Entorno de desarrollo con datos de demostración">DEMO</span>
+        @if (devMode) {
+          <span class="demo-badge" title="Entorno de desarrollo con datos de demostración"
+            >DEMO</span
+          >
+        }
         <div class="spacer"></div>
         @if (auth.user(); as user) {
           <details #userMenu class="user-menu" (keydown.escape)="closeUserMenu(true)">
@@ -188,6 +193,8 @@ export function activeNavPath(url: string, paths: readonly string[]): string | n
 export class Shell {
   protected auth = inject(AuthService);
   protected notice = inject(AppNotice);
+  /** Development builds only (ng serve, tests): a production build never shows the DEMO badge. */
+  protected readonly devMode = isDevMode();
   private router = inject(Router);
   protected icons = SECTION_ICONS;
   protected ui = UI_ICONS;
