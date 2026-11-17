@@ -24,7 +24,8 @@
     "db:mail-purge": "node --env-file-if-exists=.env api/mail-purge.ts",
     "db:access-link": "node --env-file-if-exists=.env api/access-link.ts",
     "db:datos-personales": "node --env-file-if-exists=.env api/datos-personales.ts",
-    "test:all": "ng test --watch=false && npm run api:typecheck && npm run api:test"
+    "test:all": "ng test --watch=false && npm run api:typecheck && npm run api:test",
+    "build:servidor": "ng build --configuration production,servidor"
   },
   "private": true,
   "packageManager": "npm@11.19.1",

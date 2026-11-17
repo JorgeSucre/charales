@@ -54,12 +54,23 @@ export function checkEnvironment(env: Record<string, string | undefined>): Envir
     warnings.push(
       'TRUSTED_PROXIES=none: se cuenta la IP de la conexión. Correcto sólo si ningún proxy atiende a la API.',
     );
-  if (env['COOKIE_SECURE'] === 'false')
-    errors.push('COOKIE_SECURE=false contradice NODE_ENV=production: quítalo.');
-  if (!/^https:\/\/[^/\s]+/.test(env['APP_URL'] ?? ''))
-    errors.push(
-      'APP_URL debe ser la dirección https:// de la aplicación (enlaces de los correos).',
+  // A server without TLS (a course server reached by IP): allowed only when BOTH settings say so, never by accident.
+  const plainHttp =
+    env['COOKIE_SECURE'] === 'false' && /^http:\/\/[^/\s]+/.test(env['APP_URL'] ?? '');
+  if (plainHttp)
+    warnings.push(
+      'Sin HTTPS (COOKIE_SECURE=false y APP_URL http://): la cookie de sesión y las contraseñas viajan sin cifrar.',
     );
+  else {
+    if (env['COOKIE_SECURE'] === 'false')
+      errors.push(
+        'COOKIE_SECURE=false contradice NODE_ENV=production: quítalo (o, en un servidor sin HTTPS, usa APP_URL http://).',
+      );
+    if (!/^https:\/\/[^/\s]+/.test(env['APP_URL'] ?? ''))
+      errors.push(
+        'APP_URL debe ser la dirección https:// de la aplicación (enlaces de los correos), o http:// con COOKIE_SECURE=false.',
+      );
+  }
   if (env['MAIL_CONSOLE'] === 'true')
     errors.push(
       'MAIL_CONSOLE=true imprime enlaces de acceso en el log: no se admite en producción.',

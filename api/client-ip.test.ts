@@ -106,6 +106,14 @@ test('production configuration: what is wrong stops the start, and says why', ()
   );
 });
 
+test('production without HTTPS: only when COOKIE_SECURE=false and APP_URL http:// agree, with a warning', () => {
+  const http = { ...production, APP_URL: 'http://45.80.152.66', COOKIE_SECURE: 'false' };
+  assert.deepEqual(checkEnvironment(http).errors, []);
+  assert.match(checkEnvironment(http).warnings.join(' '), /Sin HTTPS/);
+  assert.match(checkEnvironment({ ...http, COOKIE_SECURE: undefined }).errors.join(' '), /APP_URL/);
+  assert.match(checkEnvironment({ ...http, APP_URL: 'ftp://x' }).errors.join(' '), /COOKIE_SECURE/);
+});
+
 test('development configuration: warns about the cookie, refuses only a broken proxy list', () => {
   const dev = checkEnvironment({});
   assert.deepEqual(dev.errors, []);

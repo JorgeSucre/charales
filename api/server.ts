@@ -50,6 +50,8 @@ export interface Reply {
 }
 type Handler = (ctx: Ctx, db: Pool) => Promise<Reply>;
 
+export const FOREIGN_ORIGIN = 'Solicitud rechazada: no viene de la aplicación.';
+
 const MAX_BODY_BYTES = 10_000;
 /** Domain operations carry whole forms (attendance lists, notice texts). */
 const MAX_RPC_BODY_BYTES = 200_000;
@@ -103,12 +105,31 @@ export function createApp(
     limiterDb?: Pool;
     /** The course's plain-table endpoints (`labRoutes`). Off in production. */
     labApi?: boolean;
+    /**
+     * Origin of the app when it is served apart from the API (Apache on :80, API on :3002): the only one CORS lets
+     * read answers and send the cookie. It must be same-site (same host), or the SameSite=Strict cookie won't travel.
+     */
+    allowedOrigin?: string | null;
   },
 ): Server {
   const trusted = proxyList(options.trustedProxies ?? []);
   const table = options.labApi === false ? routes : { ...routes, ...labRoutes };
   let warnedForwarded = false;
   return createServer(async (req, res) => {
+    if (options.allowedOrigin) {
+      res.setHeader('Vary', 'Origin');
+      if (req.headers.origin === options.allowedOrigin) {
+        res.setHeader('Access-Control-Allow-Origin', options.allowedOrigin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        if (req.method === 'OPTIONS') {
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+          res.setHeader('Access-Control-Max-Age', '600');
+          res.writeHead(204).end();
+          return;
+        }
+      }
+    }
     let reply: Reply;
     try {
       const path = new URL(req.url ?? '/', 'http://localhost').pathname;
@@ -125,21 +146,35 @@ export function createApp(
             'se ignora. Si hay un proxy, configúralo: si no, todos sus clientes comparten un solo límite de intentos.',
         );
       }
-      reply = handler
-        ? await handler(
-            {
-              body: await readJson(req, path === '/api/rpc' ? MAX_RPC_BODY_BYTES : MAX_BODY_BYTES),
-              token: cookieValue(req.headers.cookie, auth.COOKIE),
-              cookie: (name) => cookieValue(req.headers.cookie, name),
-              ip: clientIp(req, trusted),
-              userAgent: req.headers['user-agent']?.slice(0, 500) ?? null,
-              secureCookie: options.secureCookie,
-              mailer: options.mailer ?? null,
-              limiterDb: options.limiterDb ?? db,
-            },
-            db,
-          )
-        : { status: 404, body: { error: 'Recurso no encontrado.' } };
+      // CSRF (DEPLOYMENT.md § 8): other apps on the same host are "same-site", so SameSite=Strict lets their forms
+      // carry the cookie. Browsers always send Origin on a POST ("null" from sandboxes and no-referrer forms): with
+      // APP_URL set, any request that can change something must come from the app or from a non-browser client.
+      const origin = req.headers.origin;
+      reply =
+        options.allowedOrigin &&
+        req.method !== 'GET' &&
+        req.method !== 'HEAD' &&
+        origin !== undefined &&
+        origin !== options.allowedOrigin
+          ? { status: 403, body: { error: FOREIGN_ORIGIN } }
+          : handler
+            ? await handler(
+                {
+                  body: await readJson(
+                    req,
+                    path === '/api/rpc' ? MAX_RPC_BODY_BYTES : MAX_BODY_BYTES,
+                  ),
+                  token: cookieValue(req.headers.cookie, auth.COOKIE),
+                  cookie: (name) => cookieValue(req.headers.cookie, name),
+                  ip: clientIp(req, trusted),
+                  userAgent: req.headers['user-agent']?.slice(0, 500) ?? null,
+                  secureCookie: options.secureCookie,
+                  mailer: options.mailer ?? null,
+                  limiterDb: options.limiterDb ?? db,
+                },
+                db,
+              )
+            : { status: 404, body: { error: 'Recurso no encontrado.' } };
     } catch (e) {
       if (e instanceof BadRequest) reply = { status: e.status, body: { error: e.message } };
       else {
@@ -207,6 +242,12 @@ export function clientIp(req: IncomingMessage, trusted: TrustedProxies): string 
     if (!trusted.has(hop)) return hop;
   }
   return peer;
+}
+
+/** `http(s)://host[:port]` of APP_URL, or null (an opaque origin is the string "null": it must never match). */
+export function appOrigin(appUrl: string | undefined): string | null {
+  const url = URL.parse(appUrl ?? '');
+  return url && /^https?:$/.test(url.protocol) ? url.origin : null;
 }
 
 function cookieValue(header: string | undefined, name: string): string | null {
@@ -289,7 +330,9 @@ if (import.meta.main) {
     if (production) process.exit(1);
   }
   const port = Number(env['PORT'] ?? 3000);
-  const secureCookie = production || env['COOKIE_SECURE'] === 'true';
+  // In production only the plain-HTTP setup checkEnvironment accepts (COOKIE_SECURE=false + APP_URL http://) drops it.
+  const secureCookie =
+    env['COOKIE_SECURE'] === 'true' || (production && env['COOKIE_SECURE'] !== 'false');
   const limiterDb = createLimiterPool(env);
   const mailer = password.mailerFromEnv(env);
   setMailQuota(mailQuotaFrom(env));
@@ -303,6 +346,7 @@ if (import.meta.main) {
     trustedProxies: trustedProxiesFromEnv(env['TRUSTED_PROXIES']),
     limiterDb,
     labApi: !production,
+    allowedOrigin: appOrigin(env['APP_URL']),
   }).listen(port, env['HOST'] || undefined, () =>
     console.log(
       `Charales API en http://localhost:${port} (BD ${env['DB_NAME'] ?? 'escuela_futbol'})`,

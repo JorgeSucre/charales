@@ -1,4 +1,4 @@
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { Observable, firstValueFrom } from 'rxjs';
@@ -7,14 +7,29 @@ import { Category, Player } from '../models';
 import { AppNotice } from '../services/app-notice.service';
 import { UNEXPECTED_MESSAGE } from '../../shared/validate';
 
+declare const CHARALES_API_URL: string | undefined;
+/**
+ * Where the API is when the app is served apart from it (Apache + PM2, DEPLOYMENT.md): set at build time by the
+ * `servidor` configuration (angular.json `define`). Empty = same origin (dev-server proxy, nginx), as before.
+ */
+export const API_URL = typeof CHARALES_API_URL === 'string' ? CHARALES_API_URL : '';
+
+/** Sends the API paths to API_URL, with the cookie (cross-origin, same-site: the API answers CORS for APP_URL). */
+export const apiUrlInterceptor: HttpInterceptorFn = (req, next) =>
+  next(
+    API_URL && req.url.startsWith('/')
+      ? req.clone({ url: API_URL + req.url, withCredentials: true })
+      : req,
+  );
+
 /** The operation happened; its e-mail is queued (F5-08). Said plainly: nobody should repeat the operation. */
 export const MAIL_PENDING_NOTICE =
   'Los datos se guardaron, pero el correo de acceso todavía no se pudo enviar. El sistema lo reintentará; si no llega, la persona puede usar «¿Olvidaste tu contraseña?» con ese correo.';
 
 /**
  * HTTP layer to the Charales REST API (docs/API.md). Same-origin through the dev-server proxy (proxy.conf.json), so
- * the browser sends the HttpOnly `charales_sid` cookie by itself: Angular never reads or stores it, and needs no
- * CORS nor `withCredentials`. Returns Promises and throws `Error` with the API's message, like every other service,
+ * the browser sends the HttpOnly `charales_sid` cookie by itself: Angular never reads or stores it (with API_URL set,
+ * apiUrlInterceptor adds `withCredentials`). Returns Promises and throws `Error` with the API's message, like every other service,
  * so `Submission` and `<app-load-state>` show it as is.
  *
  * The app's session IS the API session: ApiAuthService logs in here and every domain service of the app is a client

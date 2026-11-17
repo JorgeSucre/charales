@@ -51,6 +51,14 @@
                 "fonts": true
               }
             },
+            "servidor": {
+              "outputPath": { "base": "dist/servidor", "browser": "" },
+              "define": { "CHARALES_API_URL": "'http://45.80.152.66:3002'" },
+              "assets": [
+                { "glob": "**/*", "input": "public" },
+                { "glob": ".htaccess", "input": "deploy/servidor", "output": "/" }
+              ]
+            },
             "development": {
               "optimization": false,
               "extractLicenses": false,
