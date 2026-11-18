@@ -48,6 +48,8 @@ jobs:
         image: mariadb:11.8
         env:
           MARIADB_ROOT_PASSWORD: ci-solo-pruebas
+          # La hora de la escuela, como pide docs/SETUP.md § 10.1; en UTC, NOW() va 6 h adelante de la API.
+          TZ: America/Mexico_City
         ports: ['3306:3306']
         options: >-
           --health-cmd="healthcheck.sh --connect --innodb_initialized"
@@ -91,6 +93,8 @@ jobs:
         image: mariadb:11.8
         env:
           MARIADB_ROOT_PASSWORD: ci-solo-pruebas
+          # La hora de la escuela, como pide docs/SETUP.md § 10.1; en UTC, NOW() va 6 h adelante de la API.
+          TZ: America/Mexico_City
         ports: ['3306:3306']
         options: >-
           --health-cmd="healthcheck.sh --connect --innodb_initialized"
