@@ -26,9 +26,11 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '26'
+          node-version-file: .nvmrc
           cache: npm
-      - run: npm ci --no-audit --no-fund
+      - run: npm ci --engine-strict --no-audit --no-fund
+      - name: El npm que trae el Node de .nvmrc es el de packageManager
+        run: test "npm@$(npm --version)" = "$(node -p "require('./package.json').packageManager")"
       - run: sh scripts/check-sensitive-files.sh
       - run: npx prettier --check .
       - run: git diff --check "$(git merge-base origin/main HEAD)" HEAD
@@ -54,9 +56,9 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '26'
+          node-version-file: .nvmrc
           cache: npm
-      - run: npm ci --no-audit --no-fund
+      - run: npm ci --engine-strict --no-audit --no-fund
       - run: sudo apt-get update && sudo apt-get install -y mariadb-client
       - name: Cliente de MariaDB para los scripts de respaldo
         run: |
@@ -65,6 +67,21 @@ jobs:
       - run: npm run api:test
       - run: npx ng test --watch=false
       - run: npm run db:mariadb:test-backup
+      - name: db:setup desde cero con la cuenta de privilegios mínimos de docs/SETUP.md § 3
+        # La misma lista de GRANT que SETUP.md: si una migración nueva necesita otro privilegio, falla aquí.
+        run: |
+          mariadb <<'SQL'
+          CREATE DATABASE escuela_futbol CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+          CREATE USER 'charales'@'%' IDENTIFIED BY 'ci-solo-pruebas';
+          GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES, CREATE ROUTINE, ALTER ROUTINE,
+                EXECUTE, EVENT, TRIGGER, LOCK TABLES, SHOW VIEW, CREATE TEMPORARY TABLES
+             ON escuela_futbol.* TO 'charales'@'%';
+          SQL
+          npm run db:setup
+          npm run db:setup
+        env:
+          DB_USER: charales
+          DB_NAME: escuela_futbol
   e2e:
     name: E2E
     runs-on: ubuntu-24.04
@@ -82,9 +99,9 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '26'
+          node-version-file: .nvmrc
           cache: npm
-      - run: npm ci --no-audit --no-fund
+      - run: npm ci --engine-strict --no-audit --no-fund
       - run: npm run e2e
         env:
           CHROME_PATH: /usr/bin/google-chrome
