@@ -844,14 +844,18 @@ test('the login form tells the limit without saying whether the account exists',
   await page.size(1280, 900);
   await page.goto(`${app}/login`);
   await page.until(`document.querySelector('input[type=email]')`);
+  // Waits for each answer (scrypt can take longer than a fixed pause on a busy machine), then for the render.
+  const logins = `performance.getEntriesByType('resource').filter((e) => e.name.endsWith('/auth/login')).length`;
   const attempt = async () => {
+    const before = await page.eval<number>(logins);
     await page.eval(`(() => {
       const set = (sel, v) => { const i = document.querySelector(sel); i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })); };
       set('input[type=email]', 'nadie.aqui@example.com');
       set('input[type=password]', 'incorrecta-1');
       document.querySelector('button[type=submit]').click();
     })()`);
-    await new Promise((r) => setTimeout(r, 300));
+    await page.until(`${logins} > ${before}`, 10_000);
+    await new Promise((r) => setTimeout(r, 150));
     return page.eval<string>(`document.querySelector('form').innerText`);
   };
   let text = '';

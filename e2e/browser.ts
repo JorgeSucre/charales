@@ -72,11 +72,19 @@ export async function openBrowser(): Promise<Page> {
   const send = (method: string, params: Record<string, unknown> = {}) =>
     new Promise<Record<string, unknown>>((resolve, reject) => {
       const id = nextId++;
-      pending.set(id, (msg) =>
-        msg.error
-          ? reject(new Error(msg.error.message))
-          : resolve(msg.result as Record<string, unknown>),
-      );
+      // A dialog left open blocks the page and Chrome never answers: fail the test instead of hanging the suite.
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(
+          new Error(`CDP ${method}: sin respuesta en 30 s (¿un diálogo abierto en la página?)`),
+        );
+      }, 30_000);
+      pending.set(id, (msg) => {
+        clearTimeout(timer);
+        pending.delete(id);
+        if (msg.error) reject(new Error(msg.error.message));
+        else resolve(msg.result as Record<string, unknown>);
+      });
       ws.send(JSON.stringify({ id, method, params }));
     });
   const once = (method: string) =>

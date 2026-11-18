@@ -13,7 +13,7 @@ body:
       "token": "token-inexistente",
       "newPassword": "{{tempPassword}}"
     }
-examples: './.resources/Reset-confirm.resources/examples'
+examples: './.resources/Reset-confirm-invalid.resources/examples'
 scripts:
   - type: afterResponse
     language: text/javascript

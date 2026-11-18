@@ -12,7 +12,7 @@ body:
     {
       "email": "{{coachEmail}}"
     }
-examples: './.resources/Reset-request.resources/examples'
+examples: './.resources/Reset-request-existing.resources/examples'
 scripts:
   - type: afterResponse
     language: text/javascript
