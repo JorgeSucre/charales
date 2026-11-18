@@ -57,5 +57,5 @@ postman/environments/*.local.environment.yaml
 # API: dominio empaquetado por npm run api:build
 /api/.build
 
-# Paquete de entrega (deploy/servidor/empaquetar.sh): lleva el .env real del servidor
+# Entrega para el profesor (deploy/servidor/empaquetar.sh): artefactos generados, nunca en Git
 /entrega

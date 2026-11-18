@@ -146,7 +146,7 @@ export function createApp(
             'se ignora. Si hay un proxy, configúralo: si no, todos sus clientes comparten un solo límite de intentos.',
         );
       }
-      // CSRF (DEPLOYMENT.md § 8): other apps on the same host are "same-site", so SameSite=Strict lets their forms
+      // CSRF (DEPLOYMENT.md § 15): other apps on the same host are "same-site", so SameSite=Strict lets their forms
       // carry the cookie. Browsers always send Origin on a POST ("null" from sandboxes and no-referrer forms): with
       // APP_URL set, any request that can change something must come from the app or from a non-browser client.
       const origin = req.headers.origin;

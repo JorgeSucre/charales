@@ -1,13 +1,15 @@
 #!/bin/sh
-# En el servidor, dentro de backend/: dependencias, dominio empaquetado, verificación del .env y arranque con PM2.
-# No toca la base de datos: `npm run db:setup` y `npm run db:admin` se ejecutan aparte (DEPLOYMENT.md § 5).
-#   sh deploy/servidor/instalar.sh
+# Paso 7 de DEPLOYMENT.md: dependencias, comprobación del .env y de la base, y arranque de la API con PM2. Como el
+# usuario de aplicación (charales), NUNCA como root:
+#   sh ~/charales/backend/deploy/servidor/instalar.sh
+# No crea ni migra la base (eso es `npm run db:setup`, paso 6); si la base no está al día, se detiene antes de PM2.
 set -eu
 cd "$(dirname "$0")/../.."
 
-[ -f .env ] || { echo "Falta backend/.env (copia .env.example y complétalo)."; exit 1; }
+[ "$(id -u)" != 0 ] || { echo "Ejecútalo como el usuario de aplicación (su - charales), no como root." >&2; exit 1; }
+[ -f .env ] || { echo "Falta $(pwd)/.env: cp -n .env.example .env y complétalo (paso 6)." >&2; exit 1; }
 chmod 600 .env
-command -v pm2 >/dev/null || { echo "Falta PM2: sudo npm install -g pm2"; exit 1; }
+command -v pm2 >/dev/null || { echo "Falta PM2: como root, npm install -g pm2 (paso 2)." >&2; exit 1; }
 
 npm install --legacy-peer-deps --no-audit --no-fund
 npm run api:build
@@ -16,4 +18,4 @@ node --env-file=.env deploy/servidor/verificar-env.ts
 pm2 delete charales-api >/dev/null 2>&1 || true
 pm2 start ecosystem.config.cjs
 pm2 save
-echo "Listo. Arranque automático tras reiniciar: ejecuta UNA vez lo que imprime «pm2 startup systemd» y luego «pm2 save» (DEPLOYMENT.md § 6)."
+echo "API iniciada con PM2. Siguiente: arranque automático con systemd (DEPLOYMENT.md paso 7.3)."

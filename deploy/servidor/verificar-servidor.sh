@@ -1,6 +1,7 @@
 #!/bin/sh
-# Comprueba la API (PM2, puerto, /health, CORS) y Apache (index, ruta interna, .htaccess). Sólo lee; nada cambia.
-#   sh deploy/servidor/verificar-servidor.sh [API] [APP]
+# Paso 11 de DEPLOYMENT.md: comprueba la API (PM2, /health, CORS, CSRF) y Apache (index, rutas internas, .htaccess).
+# Sólo lee; nada cambia. Como el usuario de aplicación (charales), para ver su PM2:
+#   sh ~/charales/backend/deploy/servidor/verificar-servidor.sh [API] [APP]
 #   por defecto API=http://45.80.152.66:3002  APP=http://45.80.152.66
 set -u
 API=${1:-http://45.80.152.66:3002}
@@ -11,7 +12,7 @@ ko() { echo "FAIL  $1"; status=1; }
 code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 
 if command -v pm2 >/dev/null; then
-  pm2 jlist 2>/dev/null | node -e 'const l=JSON.parse(require("fs").readFileSync(0,"utf8"));
+  pm2 jlist 2>/dev/null | tail -n 1 | node -e 'const l=JSON.parse(require("fs").readFileSync(0,"utf8"));
     process.exit(l.some((p)=>p.name==="charales-api"&&p.pm2_env.status==="online")?0:1)' 2>/dev/null &&
     ok "PM2: charales-api online" || ko "PM2: charales-api no está online (pm2 logs charales-api)"
 else
