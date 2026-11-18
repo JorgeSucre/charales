@@ -1092,6 +1092,7 @@ export class MockDb {
       paidAt: '2026-09-08T10:15:00',
       amountCents: 60000,
       method: 'EFECTIVO',
+      reference: null, // recorded before HU-045 asked for it
       status: 'APLICADO',
       cancellationReason: null,
       recordedBy: 2,
@@ -1105,6 +1106,7 @@ export class MockDb {
       paidAt: '2026-08-20T12:00:00',
       amountCents: 50000,
       method: 'TRANSFERENCIA',
+      reference: null, // recorded before HU-045 asked for it
       status: 'APLICADO',
       cancellationReason: null,
       recordedBy: 2,
@@ -1118,6 +1120,7 @@ export class MockDb {
       paidAt: '2026-09-09T11:00:00',
       amountCents: 30000,
       method: 'TARJETA',
+      reference: null, // recorded before HU-045 asked for it
       status: 'APLICADO',
       cancellationReason: null,
       recordedBy: 2,

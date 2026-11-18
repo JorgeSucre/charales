@@ -129,6 +129,9 @@ PlayerCategory  = player + category + [start, end) "juega en Sub-10 desde el 5 d
 - Un pago no puede aplicarse al cargo de **otro jugador**, ni quedar aplicado por más o menos de su monto.
 - La única forma de registrar pagos desde la app es `BillingService.registerPayment(PaymentDraft)`
   (ver `docs/PLAN.md` › Pagos).
+- `PaymentDraft.reference` (HU-045, criterio 5 pendiente de ratificación): obligatoria con `TRANSFERENCIA` o `TARJETA`,
+  opcional con `EFECTIVO` u `OTRO`; se guarda recortada en `pagos.referencia` (migración 004) y vuelve en `Payment`
+  (recibo). Los pagos anteriores tienen `NULL` (R22 de [`DOMAIN_RULES.md`](../DOMAIN_RULES.md)).
 
 ### Qué capa valida qué
 

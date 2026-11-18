@@ -138,6 +138,7 @@ test('HU-045: payment — payer, concept, date, amount, method; partial; balance
       tutorId: 1,
       amountCents: 25_000,
       method: 'TRANSFERENCIA',
+      reference: 'SPEI-HU045',
       chargeIds: [5],
       paidAt: '2026-10-12T18:30:00',
     }),

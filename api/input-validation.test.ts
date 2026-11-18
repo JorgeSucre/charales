@@ -495,6 +495,7 @@ test('T2 catalog values: the valid ones keep working and are stored as sent', as
       tutorId: null,
       amountCents: 100,
       method: 'TRANSFERENCIA',
+      reference: 'SPEI-T2',
       chargeIds: [ids['charge']],
     }),
   );
