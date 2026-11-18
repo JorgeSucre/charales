@@ -19,9 +19,9 @@ Contexto, equipo y estado por área: [`../PROJECT_CONTEXT.md`](../PROJECT_CONTEX
 
 | Herramienta | Versión                                                                       | Para qué                                           |
 | ----------- | ----------------------------------------------------------------------------- | -------------------------------------------------- |
-| Node.js     | `^24.15.0` o `>=26.0.0` (Angular 22 y la API; probado con 26.11)              | Frontend, API y pruebas                            |
-| npm         | 11 (fijado en `packageManager`: `npm@11.19.1`)                                | Dependencias y scripts. No se usa pnpm ni yarn     |
-| MariaDB     | 10.6+ local (probado con 13.0.2); el cliente `mariadb` sólo para scripts `sh` | Base de la app, pruebas, checks y respaldo         |
+| Node.js     | la de [`.nvmrc`](../.nvmrc); admitida: `engines` ([`SETUP.md` § 1](SETUP.md)) | Frontend, API y pruebas                            |
+| npm         | la de `packageManager` (viene con el Node de `.nvmrc`)                        | Dependencias y scripts. No se usa pnpm ni yarn     |
+| MariaDB     | 10.6+ local ([`SETUP.md` § 1](SETUP.md)); el cliente `mariadb` para `sh`      | Base de la app, pruebas, checks y respaldo         |
 | Postman CLI | Opcional (probado con 1.71.0, sin iniciar sesión)                             | Correr la colección `postman/` contra la API       |
 | `sh`        | macOS/Linux; en Windows, Git Bash o WSL                                       | Scripts de base de datos                           |
 | PostgreSQL  | 16                                                                            | Sólo para el esquema **histórico** (no hace falta) |
