@@ -8,6 +8,27 @@
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
   </head>
   <body>
-    <app-root></app-root>
+    <app-root>
+      <!-- Angular reemplaza este contenido al arrancar. Si se queda, la app no cargó: en vez de una página en blanco,
+           se explica la causa habitual. HTML puro (la CSP no permite scripts en línea). -->
+      <noscript>Charales necesita JavaScript activado en el navegador.</noscript>
+      <div
+        style="
+          font-family: sans-serif;
+          max-width: 40rem;
+          margin: 3rem auto;
+          padding: 0 1rem;
+          line-height: 1.5;
+        "
+      >
+        <p><strong>Cargando Charales…</strong></p>
+        <p style="color: #555">
+          Si este mensaje no desaparece en unos segundos, la aplicación no pudo cargar sus archivos.
+          Lo habitual: los archivos de <code>dist/</code> deben estar en la raíz del sitio (el
+          DocumentRoot de Apache, p. ej. <code>/var/www/html</code>), no en un subdirectorio, y la
+          página debe abrirse por <code>http://</code>, no como archivo. Ver DEPLOYMENT.md, paso 8.
+        </p>
+      </div>
+    </app-root>
   </body>
 </html>

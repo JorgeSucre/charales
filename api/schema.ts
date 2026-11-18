@@ -7,6 +7,7 @@
  * the idempotent migrations and the permission catalog (its role matrix only on a first install, so an administrator's
  * changes are kept); any other non-empty database is refused.
  */
+import { randomBytes } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import mariadb, { type Connection, type ConnectionConfig } from 'mariadb';
 
@@ -282,16 +283,51 @@ export async function loadDevSeed(env: Record<string, string | undefined>): Prom
  * Drops a TEMPORARY test database. Refuses any name not starting with `ef_` (the prefix of every test database), so a
  * mistake can never drop escuela_futbol or another real database.
  */
-export async function dropTestDatabase(
-  env: Record<string, string | undefined>,
-  name: string,
-): Promise<void> {
+/** What the running code needs from the latest migrations and this database lacks (F5-06). Reads metadata only. */
+export async function missingSchema(db: {
+  query(sql: string, params?: unknown[]): Promise<unknown>;
+}): Promise<string[]> {
+  const rows = (await db.query(
+    `SELECT TABLE_NAME AS t, COLUMN_NAME AS c, COLUMN_TYPE AS ct FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME IN ('version_datos', 'limite_acceso', 'dispositivo_confiable', 'correo_saliente', 'correo_cupo', 'pagos')`,
+  )) as { t: string; c: string; ct: string }[];
+  const has = (t: string, c?: string) => rows.some((r) => r.t === t && (!c || r.c === c));
+  return [
+    ...[
+      'version_datos',
+      'limite_acceso',
+      'dispositivo_confiable',
+      'correo_saliente',
+      'correo_cupo',
+    ].filter((t) => !has(t)),
+    ...(has('pagos', 'referencia') ? [] : ['pagos.referencia']),
+    ...(rows.some(
+      (r) => r.t === 'limite_acceso' && r.c === 'ambito' && !r.ct.includes("'CUENTA_RED'"),
+    )
+      ? ['limite_acceso.ambito (CUENTA_RED)']
+      : []),
+    ...(has('correo_saliente') && !has('correo_saliente', 'cerrado_en')
+      ? ['correo_saliente.cerrado_en']
+      : []),
+  ];
+}
+
+/**
+ * A test database name no earlier run can have used. Never built from the pid alone: pids repeat, and a repeated name
+ * would make a suite reuse a database an earlier run or person left behind.
+ */
+export function uniqueTestDatabase(prefix: string): string {
+  return `${prefix}_${process.pid}_${randomBytes(4).toString('hex')}`;
+}
+
+/**
+ * The end of a suite with its test database: the database is KEPT, never dropped (decision of 2026-11-05, so every
+ * run leaves its evidence), and its name is printed so each run records what it created. Still refuses any name that
+ * is not a test database (ef_*): a suite must never end on someone else's.
+ */
+export async function releaseTestDatabase(name: string): Promise<void> {
   if (!/^ef_[A-Za-z0-9_]+$/.test(name))
-    throw new SetupError(`Sólo se borran bases de prueba ef_*, no «${name}».`);
-  const conn = await mariadb.createConnection(serverOptions(env));
-  try {
-    await conn.query(`DROP DATABASE IF EXISTS \`${name}\``);
-  } finally {
-    await conn.end();
-  }
+    throw new SetupError(`Sólo se usan bases de prueba ef_*, no «${name}».`);
+  console.error(`Base de prueba conservada: ${name}`);
 }

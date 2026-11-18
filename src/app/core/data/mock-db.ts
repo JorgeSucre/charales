@@ -57,7 +57,7 @@ export interface OutboxMessage {
 }
 
 const T0 = '2026-08-01T09:00:00';
-/** Mock-only salted SHA-256 of 'demo1234' (salt 'charales-demo'). The real backend uses argon2/bcrypt. */
+/** Mock-only salted SHA-256 of 'demo1234' (salt 'charales-demo'). The real backend uses native scrypt. */
 const DEMO_HASH =
   'sha256$charales-demo$bae467a27eb25473688afda13ab3bad86b1db12cea53ae219357c7b396244c65';
 

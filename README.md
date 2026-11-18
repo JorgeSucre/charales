@@ -5,7 +5,7 @@ inscripciones, entrenadores, cobranza, uniformes, portal para padres y reportes.
 organizadas por épicas y responsables.
 
 > **Estado:** las 76 historias (HU-001…076) funcionan sobre una **API Node + MariaDB**: la app inicia sesión contra
-> la API (cookie HttpOnly, argon2id) y cada pantalla llama a su servicio de dominio, que corre en el servidor (decisión
+> la API (cookie HttpOnly, scrypt) y cada pantalla llama a su servicio de dominio, que corre en el servidor (decisión
 > D13, [`docs/database/MARIADB.md`](docs/database/MARIADB.md)). Trazabilidad y evidencia por HU:
 > [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md). Contexto completo: [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).
 >
@@ -14,10 +14,13 @@ organizadas por épicas y responsables.
 
 ## Requisitos
 
+Versiones oficiales y admitidas, con su fuente: **[`docs/SETUP.md` § 1](docs/SETUP.md#1-requisitos)**. Recuperar el
+proyecto en otra computadora: [`docs/SETUP.md` § 12](docs/SETUP.md#12-recuperar-el-proyecto-en-una-computadora-nueva).
+
 | Herramienta | Versión                                            | Para qué                                                              |
 | ----------- | -------------------------------------------------- | --------------------------------------------------------------------- |
-| Node.js     | `^24.15.0` o `>=26` (`engines`; probado con 26.11) | Frontend, API (`crypto.argon2`) y pruebas                             |
-| npm         | 11 (probado con 11.19.1)                           | Dependencias y scripts                                                |
+| Node.js     | la de [`.nvmrc`](.nvmrc) (admitida: `engines`)     | Frontend, API (`node:crypto.scrypt`) y pruebas                        |
+| npm         | la de `packageManager` (viene con ese Node)        | Dependencias y scripts                                                |
 | MariaDB     | 10.6+, con `mariadb` y `mariadb-dump` en el `PATH` | La base de la app (la API la necesita), checks del esquema y respaldo |
 | PostgreSQL  | 16, con `psql`, `createdb` y `dropdb` en el `PATH` | Sólo el esquema histórico de `db/migrations`                          |
 | Git         | reciente                                           | —                                                                     |

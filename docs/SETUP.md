@@ -9,20 +9,32 @@ Navegador → Angular (ng serve, :4200) ─proxy /api, /auth, /health─▶ API 
 Los datos que crees en la app se guardan en tu MariaDB: siguen ahí al recargar la página y al reiniciar la API o el
 frontend. Nada de esto es producción (ver [`API.md` § Producción y despliegue](API.md#producción-y-despliegue)).
 
-> **Qué está probado (2026-10-15):** macOS con MariaDB 13.0.2 (Homebrew) y Node 26.11, conexión por socket y por TCP
-> con una cuenta de privilegios mínimos (los de la sección 3). **No probado:** Windows y Linux; los pasos para ellos
-> siguen la documentación oficial de MariaDB y los comandos del proyecto son multiplataforma salvo los marcados `sh`.
+> **Qué está probado (2026-11-18):** macOS (Apple Silicon), Node 26.13.1 con npm 11.20.0, desde un clon limpio con
+> `npm ci` y caché de npm vacía, contra instancias de MariaDB **13.0.2** y **10.6.28** nuevas, por TCP, con la cuenta de
+> privilegios mínimos de la sección 3: `db:setup` (dos veces), `db:mariadb:test-backup`, `api:test`, `ng test` y `e2e`
+> (este último sólo con 13.0.2). **No probado:** Windows y Linux; los pasos para ellos siguen la documentación oficial
+> de MariaDB y los comandos del proyecto son multiplataforma salvo los marcados `sh`.
 
 ## 1. Requisitos
 
-| Herramienta   | Versión                                 | Notas                                                                                           |
-| ------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Node.js       | `^24.15.0` o `>=26` (probado con 26.11) | La API usa `crypto.argon2` y ejecuta TypeScript sin compilar (`package.json` → `engines`)       |
-| npm           | 11 (incluido con Node 24/26)            | `npm ci` instala exactamente lo de `package-lock.json`                                          |
-| MariaDB       | 10.6 o superior (probado con 13.0.2)    | **MySQL no sirve**: el esquema usa columnas generadas `PERSISTENT` y otras funciones de MariaDB |
-| Git           | reciente                                |                                                                                                 |
-| Google Chrome | opcional                                | Sólo para `npm run e2e`                                                                         |
-| `sh`          | macOS/Linux; en Windows, Git Bash       | Sólo para los scripts de respaldo (`db/mariadb/scripts/*.sh`)                                   |
+**Matriz oficial de versiones.** Cada versión tiene una sola fuente en el repositorio; las tablas de otros documentos
+remiten a ésta.
+
+| Herramienta   | Versión oficial (desarrollo y CI)      | Admitida                                | Fuente / notas                                                                                       |
+| ------------- | -------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Node.js       | **26.13.1** (LTS)                      | `^24.15.0 \|\| >=26.0.0`                | Exacta: [`.nvmrc`](../.nvmrc) (la usa la CI). Rango: `package.json` → `engines` (Angular 22, scrypt) |
+| npm           | **11.20.0** (la que trae Node 26.13.1) | 11                                      | `package.json` → `packageManager`; la CI falla si no coincide. `npm ci` instala sólo lo del lockfile |
+| MariaDB       | 13.0.2 (Homebrew); la CI usa 11.8      | 10.6 o superior (probado con 10.6.28)   | **MySQL no sirve**: columnas generadas `PERSISTENT` y otras funciones de MariaDB                     |
+| Cliente       | el que trae MariaDB                    | `mariadb` y `mariadb-dump` en el `PATH` | Sólo para los scripts `sh` de `db/mariadb/scripts` (respaldo y su prueba)                            |
+| Git           | reciente                               |                                         |                                                                                                      |
+| Google Chrome | estable                                | opcional                                | Sólo para `npm run e2e` (ver § 8, `CHROME_PATH`)                                                     |
+| `sh`          | macOS/Linux; en Windows, Git Bash      |                                         | Sólo para los scripts de respaldo (`db/mariadb/scripts/*.sh`)                                        |
+| Postman CLI   | opcional                               |                                         | `postman collection lint postman/` y correr la colección contra la API local ([`API.md`](API.md))    |
+
+Angular, TypeScript, RxJS, Vitest, esbuild y el driver `mariadb` no se instalan aparte: sus versiones exactas están en
+`package-lock.json` y llegan con `npm ci` (Angular 22.2, TypeScript 6.0, RxJS 7.8, Vitest 5.0, esbuild 0.28,
+`mariadb` 3.5). No hace falta nada instalado globalmente con npm: `ng`, `tsc` y `prettier` se llaman con `npx` o
+desde los scripts de `package.json`.
 
 ## 2. Instalar MariaDB
 
@@ -54,22 +66,32 @@ Como administrador de MariaDB (`mariadb`, `sudo mariadb` o `mariadb -u root -p`)
 CREATE DATABASE escuela_futbol CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER 'charales'@'localhost' IDENTIFIED BY 'elige-una-contraseña';
 -- Lo que necesitan la API y `npm run db:setup` (tablas, migraciones, procedimiento y evento), sólo en esta base:
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES, CREATE ROUTINE, ALTER ROUTINE, EXECUTE,
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES, CREATE ROUTINE, ALTER ROUTINE, EXECUTE,
       EVENT, TRIGGER, LOCK TABLES, SHOW VIEW, CREATE TEMPORARY TABLES
    ON escuela_futbol.* TO 'charales'@'localhost';
--- Sólo si vas a correr las pruebas (crean y borran bases temporales ef_*):
+-- Sólo si vas a correr las pruebas (crean bases temporales ef_* nuevas y las conservan):
 GRANT ALL PRIVILEGES ON `ef\_%`.* TO 'charales'@'localhost';
 ```
 
-Esa lista de privilegios es la que se probó con `db:setup`, `db:admin` y la API. La cuenta no puede tocar otras bases.
+Esa lista de privilegios es la que se probó con `db:setup`, `db:admin` y la API (y la que usa la CI para correr
+`db:setup` desde cero). La cuenta no puede tocar otras bases. `DROP` hace falta porque las migraciones 008 y 010
+eliminan tablas obsoletas (`DROP TABLE IF EXISTS`); sin él, `db:setup` se detiene con «DROP command denied». Si tu
+cuenta se creó antes con la lista anterior: `GRANT DROP ON escuela_futbol.* TO 'charales'@'localhost';`.
 
 ## 4. Obtener el proyecto e instalar dependencias
+
+Instala la versión de Node de [`.nvmrc`](../.nvmrc) con un gestor de versiones que la lea (nvm o fnm); `brew install
+node` instala la más reciente, que puede no ser la oficial:
 
 ```bash
 git clone https://github.com/JorgeSucre/charales.git
 cd charales                           # queda en main, la rama de trabajo del equipo
-npm ci                                # dependencias exactas del lockfile
+nvm install && nvm use                # lee .nvmrc (con fnm: fnm use --install-if-missing)
+node --version && npm --version       # v26.13.1 y 11.20.0 (§ 1)
+npm ci                                # dependencias exactas del lockfile; falla si el lockfile no cuadra
 ```
+
+No uses `npm install` para «arreglar» un `npm ci` que falla: cambiaría `package-lock.json` y ocultaría el problema.
 
 ## 5. Configurar `.env`
 
@@ -133,14 +155,14 @@ nuevo: los datos siguen ahí (es lo que prueba `e2e/app.e2e.ts`, «persistence»
 ## 8. Pruebas
 
 ```bash
-npm run test:all          # frontend (Vitest) + typecheck + API sobre MariaDB (bases temporales ef_*, se borran)
+npm run test:all          # frontend (Vitest) + typecheck + API sobre MariaDB (bases temporales ef_* nuevas, se conservan)
 npm run e2e               # navegador (Google Chrome headless) sobre una base temporal
 npx prettier --check .    # formato
 npm run db:mariadb:test-backup   # sh: checks del esquema y respaldo/restauración (usa el cliente `mariadb` del sistema)
 ```
 
-Las pruebas de la API y el E2E nunca usan `escuela_futbol`: crean bases `ef_*` y sólo pueden borrar bases con ese
-prefijo. Necesitan el permiso sobre `ef\_%` de la sección 3. Detalle: [`TESTING.md`](TESTING.md).
+Las pruebas de la API y el E2E nunca usan `escuela_futbol`: crean bases `ef_*` con nombre único y nunca borran
+ninguna: se conservan al terminar; bórralas a mano cuando ya no hagan falta (cada suite imprime «Base de prueba conservada: …»). Necesitan el permiso sobre `ef\_%` de la sección 3. Detalle: [`TESTING.md`](TESTING.md).
 
 **Chrome para `npm run e2e`.** Por omisión se busca en la ruta de macOS
 (`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`); si no está ahí, la prueba falla con «Google Chrome
@@ -195,4 +217,40 @@ valores por omisión `CURRENT_TIMESTAMP` y para el trabajo diario de VENCIDO (`C
 | `La base ya tiene datos: la demostración sólo se carga…`  | `--demo` sólo en una base sin usuarios ni jugadores                                            |
 | El login dice «No se pudo conectar con la API»            | La API no está corriendo (`npm run api:start`) o no está en el puerto 3000                     |
 | Crear personal o vincular un tutor responde 503           | Falta `MAIL_CONSOLE=true` en `.env` (no hay proveedor de correo; ver «Producción» en `API.md`) |
-| `npm warn EBADENGINE`                                     | Tu Node no cumple `^24.15.0 \|\| >=26`: actualízalo                                            |
+| `npm warn EBADENGINE`                                     | Tu Node no cumple `^24.15.0 \|\| >=26`: `nvm install && nvm use` (§ 4)                         |
+| `DROP command denied to user …` en `db:setup`             | A tu cuenta le falta `DROP` (sección 3): concédelo y repite `db:setup` (es seguro repetirlo)   |
+
+## 12. Recuperar el proyecto en una computadora nueva
+
+Todo lo necesario para reconstruir, probar y desplegar Charales está en GitHub. **No** está en GitHub, a propósito:
+`.env` (contraseñas), los datos de tu MariaDB local y los respaldos `.sql.gz` (datos de personas, también de menores).
+Las contraseñas del servidor del curso viven en ese servidor (ver [`DEPLOYMENT.md`](../DEPLOYMENT.md)).
+
+**En la computadora anterior, antes de borrarla:**
+
+1. `git status` y `git log --branches --not --remotes` en cada clon y worktree: nada sin commit ni sin publicar.
+2. Si quieres conservar los datos de tu base local: `sh db/mariadb/scripts/backup.sh escuela_futbol ~/respaldo` y
+   guarda el `.sql.gz` **fuera de Git** (disco cifrado o gestor de contraseñas para `.env`).
+
+**En la computadora nueva** (los mismos pasos de las secciones 2 a 8):
+
+```bash
+brew install git mariadb nvm          # nvm: sigue las instrucciones que imprime brew para tu shell
+brew services start mariadb
+git clone https://github.com/JorgeSucre/charales.git && cd charales
+nvm install && nvm use                # Node de .nvmrc; trae el npm de packageManager
+npm ci
+cp .env.example .env                  # DB_PASSWORD de tu cuenta (sección 3)
+# como administrador de MariaDB: los CREATE/GRANT de la sección 3
+npm run db:setup                      # base nueva; para recuperar tus datos, ver abajo
+npm run db:admin                      # o: npm run db:setup -- --demo
+npm run api:start                     # terminal 1
+npm start                             # terminal 2 → http://localhost:4200
+npm run test:all && npm run e2e && npx prettier --check . && npm run db:mariadb:test-backup
+npm run build                         # producción en dist/; para el servidor del curso: DEPLOYMENT.md
+```
+
+**Recuperar tus datos locales** en lugar de empezar vacío: como administrador de MariaDB (en macOS, tu usuario del
+sistema), **antes** del `CREATE DATABASE` de la sección 3, `sh db/mariadb/scripts/restore.sh <archivo.sql.gz>
+escuela_futbol` (sólo restaura en una base que no existe); después crea la cuenta y sus `GRANT` de la sección 3 y corre
+`npm run db:setup`, que aplica las migraciones que le falten al respaldo sin borrar nada.

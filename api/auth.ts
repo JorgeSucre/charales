@@ -3,10 +3,19 @@
  * inactive and wrong password; `sesiones` stores only the token hash; 8 h lifetime and 30 min idle timeout;
  * LOGIN/LOGOUT and failed attempts go to `auditoria`. The token travels only in an HttpOnly cookie (MARIADB.md § 8.3).
  */
-import crypto, { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { Pool, PoolConnection } from 'mariadb';
 import type { Ctx, Reply } from './server.ts';
+import { deviceCookieName, issueDevice } from './device-trust.ts';
 import { reserveLogin, settleLogin, type Reservation } from './login-limit.ts';
+import { transaction } from './password.ts';
+import {
+  hashPassword,
+  isLegacyPasswordHash,
+  ScryptCapacityError,
+  verifyPassword,
+} from './passwords.ts';
+export { hashPassword, verifyPassword } from './passwords.ts';
 
 /** Session policy (HU-002), same values as the mock AuthService. */
 export const SESSION_HOURS = 8;
@@ -18,80 +27,23 @@ const SCHOOL_TZ = 'America/Mexico_City';
 process.env.TZ = SCHOOL_TZ;
 
 const INVALID = 'Correo o contraseña incorrectos.';
-const TOO_MANY = 'Demasiados intentos. Intenta de nuevo más tarde.';
-export const BUSY = 'El servicio está ocupado. Intenta de nuevo en unos segundos.';
+const LOGIN_TOO_MANY =
+  'Demasiados intentos. Intenta de nuevo más tarde o recupera tu contraseña con «¿Olvidaste tu contraseña?».';
 const LOGIN_UNAVAILABLE =
   'El inicio de sesión no está disponible. Intenta de nuevo en unos minutos.';
 export const NO_SESSION = 'Tu sesión no está iniciada o ya expiró. Inicia sesión de nuevo.';
 const NO_ROLE = 'Tu cuenta no tiene un rol o perfil activo. Contacta a la escuela.';
 const FORBIDDEN = 'No tienes permiso para realizar esta acción.';
 
-// ---------------------------------------------------------------- passwords (argon2id, PHC string)
+// ---------------------------------------------------------------- versioned scrypt password hashes (api/passwords.ts)
 
-/** OWASP minimum for argon2id: 19 MiB, 2 passes, 1 lane. */
-const ARGON = { memory: 19456, passes: 2, parallelism: 1, tagLength: 32 };
-const b64 = (b: Buffer) => b.toString('base64').replace(/=+$/, '');
-
-/** Argon2id runs of this process: total, running now and the most at once (S-02 tests read them). */
-let runs = 0;
-let running = 0;
-let peak = 0;
-export const argon2Stats = () => ({ runs, running, peak });
-export const resetArgon2Peak = () => void (peak = running);
-/** `crypto.argon2` is read at call time (not bound at import) so a test can make it fail. */
-function argon2id(params: Parameters<typeof crypto.argon2>[1]): Promise<Buffer> {
-  runs++;
-  peak = Math.max(peak, ++running);
-  return new Promise<Buffer>((resolve, reject) =>
-    crypto.argon2('argon2id', params, (e, key) => (e ? reject(e) : resolve(key))),
-  ).finally(() => void running--);
-}
-
-export async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16);
-  const hash = await argon2id({ message: password, nonce: salt, ...ARGON });
-  return `$argon2id$v=19$m=${ARGON.memory},t=${ARGON.passes},p=${ARGON.parallelism}$${b64(salt)}$${b64(hash)}`;
-}
-
-/** Argon2id verifications run by this process (S-01 tests check that a refused login never reaches one). */
+/** Verifications reached after the shared login limiter admitted an attempt. */
 let verifications = 0;
 export const passwordVerifications = () => verifications;
-
-export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+const countedVerifyPassword = async (password: string, stored: string) => {
   verifications++;
-  const m = /^\$argon2id\$v=19\$m=(\d+),t=(\d+),p=(\d+)\$([^$]+)\$([^$]+)$/.exec(stored);
-  if (!m) return false;
-  const expected = Buffer.from(m[5]!, 'base64');
-  const actual = await argon2id({
-    message: password,
-    nonce: Buffer.from(m[4]!, 'base64'),
-    memory: Number(m[1]),
-    passes: Number(m[2]),
-    parallelism: Number(m[3]),
-    tagLength: expected.length,
-  });
-  return timingSafeEqual(actual, expected);
-}
-
-/** Verified against when the e-mail doesn't exist, so response time doesn't reveal which accounts exist. */
-const DUMMY_HASH = hashPassword(randomBytes(16).toString('hex'));
-
-// ---------------------------------------------------------------- attempt limiting of HU-005 (MARIADB.md § 8.3)
-// The login has its own shared limits in MariaDB (api/login-limit.ts, S-01).
-
-export const MAX_FAILURES = 5;
-const FAILURE_WINDOW_MS = 15 * 60_000;
-// ponytail: in-memory per process; the password change and recovery request would need the shared store of
-// api/login-limit.ts if the API ever runs as several instances (S-02 and later).
-const failures = new Map<string, number[]>();
-
-/** Attempts of `key` in the last 15 min; callers push `Date.now()` to count one (password change and recovery). */
-export function recentFailures(key: string): number[] {
-  const since = Date.now() - FAILURE_WINDOW_MS;
-  const list = (failures.get(key) ?? []).filter((t) => t > since);
-  failures.set(key, list);
-  return list;
-}
+  return verifyPassword(password, stored);
+};
 
 // ---------------------------------------------------------------- dates (school wall clock, MARIADB.md § 1)
 
@@ -119,57 +71,98 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
     return { status: 400, body: { error: 'Correo y contraseña son obligatorios.' } };
   if (email.length > 150 || password.length > 200) return { status: 401, body: { error: INVALID } };
 
-  // S-01: the attempt is reserved (shared, in MariaDB) before Argon2id runs; at the limit, nothing is verified.
+  // S-01: the attempt is reserved (shared, in MariaDB) before the password hash is checked.
   // If the limiter can't be reached the login is refused: it never runs unlimited.
+  const deviceSecret = ctx.cookie(deviceCookieName(email));
   let reservation: Reservation | null;
   try {
-    reservation = await reserveLogin(ctx.limiterDb, ctx.ip, email);
+    reservation = await reserveLogin(ctx.limiterDb, ctx.ip, email, deviceSecret);
   } catch (e) {
     console.error('Límite de intentos no disponible:', (e as Error).message);
     return { status: 503, body: { error: LOGIN_UNAVAILABLE } };
   }
-  if (!reservation) return { status: 429, body: { error: TOO_MANY } };
+  if (!reservation) return { status: 429, body: { error: LOGIN_TOO_MANY } };
 
   const [row]: UserRow[] = await db.query(
     'SELECT id, rol_id, nombre, apellido, email, password_hash, activo FROM usuarios WHERE email = ?',
     [email.trim()],
   );
-  // S-02: the verification holds a slot of this process's Argon2id gate. None in time: 503, nothing verified, and the
-  // S-01 reservation is given back — the attempt never happened.
-  const dummy = await DUMMY_HASH;
-  const turn = await ctx.argon2.run(() => verifyPassword(password, row?.password_hash ?? dummy));
-  if (turn.busy) {
+  // Unknown accounts use verifyPassword's dummy scrypt branch, with no account-dependent response.
+  const legacyHash = isLegacyPasswordHash(row?.password_hash);
+  let passwordOk: boolean;
+  try {
+    // Unknown accounts and legacy/malformed hashes each execute the same dummy scrypt work in verifyPassword.
+    passwordOk = await countedVerifyPassword(password, row?.password_hash ?? '');
+  } catch (error) {
+    console.error(
+      error instanceof ScryptCapacityError
+        ? 'Capacidad de scrypt agotada durante el login.'
+        : 'Falló una operación scrypt durante el login.',
+    );
     await settleLogin(ctx.limiterDb, reservation, 'not-verified');
-    return { status: 503, body: { error: BUSY } };
+    return { status: 503, body: { error: LOGIN_UNAVAILABLE } };
   }
-  const passwordOk = turn.value;
+  // A right password on a disabled account costs its attempt like a wrong one: giving it back would reveal, through the
+  // counters, that the password was right (audit IND-11).
   if (!row || !passwordOk || !row.activo) {
-    // A correct password on a disabled account isn't a guess: only wrong passwords keep their reservation.
-    await settleLogin(ctx.limiterDb, reservation, passwordOk ? 'right-password' : 'failed');
+    await settleLogin(ctx.limiterDb, reservation, 'failed');
     await audit(
       db,
       row?.id ?? null,
       'OTRO',
       'usuarios',
       row?.id ?? null,
-      'Intento de acceso fallido',
+      legacyHash ? 'Intento de acceso con hash heredado' : 'Intento de acceso fallido',
       ctx.ip,
     );
     return { status: 401, body: { error: INVALID } };
   }
-  await settleLogin(ctx.limiterDb, reservation, 'success');
 
   const access = await accessOf(db, row);
-  if (!access.roles.length) return { status: 403, body: { error: NO_ROLE } };
+  if (!access.roles.length) {
+    await settleLogin(ctx.limiterDb, reservation, 'right-password');
+    return { status: 403, body: { error: NO_ROLE } };
+  }
 
+  // Against the account as it is NOW, under its lock: what was verified may have stopped being true while scrypt ran. A
+  // password change or recovery takes the same lock and closes sessions and browsers, so either it sees this session, or
+  // this login sees the change and is refused (audit IND-02).
   const token = randomBytes(32).toString('base64url');
   const now = localDateTime();
   const expiresAt = localDateTime(Date.now() + SESSION_HOURS * 3_600_000);
-  const { insertId } = await db.query(
-    `INSERT INTO sesiones (usuario_id, token_hash, inicio_en, expira_en, ultimo_uso_en, ip, user_agent)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [row.id, sha256(token), now, expiresAt, now, ctx.ip, ctx.userAgent],
-  );
+  // Its own short lock wait: nothing in the API holds this row long, and a stuck one must not take the general pool.
+  let created: { insertId: number; device: string } | null;
+  try {
+    created = await transaction(db, async (tx) => {
+      const [current]: { password_hash: string; activo: number; email: string }[] = await tx.query(
+        'SELECT password_hash, activo, email FROM usuarios WHERE id = ? FOR UPDATE WAIT 2',
+        [row.id],
+      );
+      if (
+        !current?.activo ||
+        current.password_hash !== row.password_hash ||
+        current.email !== row.email
+      )
+        return null;
+      const device = await issueDevice(tx, row.id, email, deviceSecret, ctx.secureCookie);
+      const { insertId } = await tx.query(
+        `INSERT INTO sesiones (usuario_id, token_hash, inicio_en, expira_en, ultimo_uso_en, ip, user_agent)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [row.id, sha256(token), now, expiresAt, now, ctx.ip, ctx.userAgent],
+      );
+      return { insertId, device };
+    });
+  } catch (e) {
+    console.error('No se pudo abrir la sesión:', (e as Error).message);
+    await settleLogin(ctx.limiterDb, reservation, 'not-verified');
+    return { status: 503, body: { error: LOGIN_UNAVAILABLE } };
+  }
+  if (!created) {
+    await settleLogin(ctx.limiterDb, reservation, 'failed');
+    return { status: 401, body: { error: INVALID } };
+  }
+  await settleLogin(ctx.limiterDb, reservation, 'success');
+  const { insertId, device } = created;
   await audit(
     db,
     row.id,
@@ -189,7 +182,7 @@ export async function login(ctx: Ctx, db: Pool): Promise<Reply> {
       expiresAt: toJson(expiresAt),
       lastUsedAt: toJson(now),
     },
-    cookie: sessionCookie(token, SESSION_HOURS * 3600, ctx.secureCookie),
+    cookie: [sessionCookie(token, SESSION_HOURS * 3600, ctx.secureCookie), device],
   };
 }
 
@@ -362,5 +355,5 @@ export function audit(
   );
 }
 
-/** `node api/auth.ts <password>` prints an argon2id hash (used for db/mariadb/020_dev_seed.sql). */
+/** `node api/auth.ts <password>` prints a versioned scrypt hash for the local development seed. */
 if (import.meta.main) console.log(await hashPassword(process.argv[2] ?? ''));

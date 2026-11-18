@@ -93,6 +93,7 @@ export class UserService {
         email,
         updatedAt: now,
       });
+      if (before.email !== email) await this.afterEmailChange(row);
       this.audit.log(
         'EDITAR',
         'usuarios',
@@ -128,6 +129,23 @@ export class UserService {
     return this.db.respond(this.view(row));
   }
 
+  /**
+   * The address that received access links may no longer be this person's: those links stop working and other sessions
+   * close. A pending invitation is sent again, to the new address (audit IND-01) — only to an account that never set a
+   * password: the API stores every password it sets as scrypt, and an operator link (`db:access-link`, issued as
+   * INVITACION) for an account that has one is not an invitation (audit IND3-05).
+   */
+  private async afterEmailChange(row: UserRow): Promise<void> {
+    const now = nowDateTime();
+    const mine = this.session.user()?.sessionId;
+    for (const s of this.db.sessions.filter(
+      (s) => s.userId === row.id && !s.closedAt && s.id !== mine,
+    ))
+      this.db.update(this.db.sessions, s.id, { closedAt: now });
+    if (this.auth.revokeAccessTokens(row.id) && !row.passwordHash.startsWith('$scrypt$'))
+      await this.auth.issueResetToken(row, 'Tu cuenta en Charales', 'INVITACION');
+  }
+
   /** HU-004.3: a deactivated account can't log in; its open sessions are closed. */
   async setActive(id: Id, active: boolean): Promise<void> {
     this.authz.require(active ? 'usuarios.editar' : 'usuarios.cancelar');
@@ -145,6 +163,7 @@ export class UserService {
       if (!active)
         for (const s of this.db.sessions.filter((s) => s.userId === id && !s.closedAt))
           this.db.update(this.db.sessions, s.id, { closedAt: now });
+      if (!active) this.auth.revokeAccessTokens(id);
       this.audit.log(
         active ? 'EDITAR' : 'CANCELAR',
         'usuarios',

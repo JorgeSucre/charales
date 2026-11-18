@@ -134,12 +134,12 @@ test('reservation: held past the lock wait it fails once, without a retry (the 1
     console.log(`reserveLogin: 1205 tras ${Math.round(ms)} ms`);
     // one wait of 2 s; a retry would start a second one (the budget only lets a retry START before 1.5 s)
     assert.ok(ms < 2 * LIMITER_LOCK_WAIT_S * 1000 - 500, `${ms} ms: no second lock wait`);
-    // the same over HTTP: 503, no Argon2id, and the counters as they were
+    // the same over HTTP: 503, no password verification, and the counters as they were
     const server: Server = createApp(t.db, {
       secureCookie: false,
       trustedProxies: ['127.0.0.1'], // the request comes from IP, whose row is held
       limiterDb: limiter,
-    }).listen(0);
+    }).listen(0, '127.0.0.1');
     await new Promise((resolve) => server.once('listening', resolve));
     try {
       const verified = passwordVerifications();

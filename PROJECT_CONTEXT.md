@@ -30,38 +30,36 @@ Las historias de usuario se organizan por épicas (EP01–EP12) y cada una tiene
 
 ## Estado del proyecto
 
-| Área                  | Estado          | Detalle                                                                                                                                                                                           |
-| --------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Arquitectura frontend | **COMPLETADO**  | Angular standalone por dominio, RBAC por permisos, capa de servicios                                                                                                                              |
-| Frontend              | **COMPLETADO**  | Las 76 HU sobre la API real (D13), revisadas en navegador a 375/768/1280 px ([`TRACEABILITY.md`](docs/TRACEABILITY.md))                                                                           |
-| Base de datos         | **COMPLETADO**  | Modelo **MariaDB** ([`MARIADB.md`](docs/database/MARIADB.md)) + migraciones (`db/mariadb/migrations`); 42/42 checks; es la persistencia real de la app                                            |
-| Backend               | **COMPLETADO**  | `api/` (Node `node:http` + MariaDB): autenticación, contraseñas y los servicios de dominio en el servidor (D13), con caché por versión (HU-075)                                                   |
-| API                   | **EN PROGRESO** | `/health`, `/auth/*` (login, sesión, logout, contraseñas), `POST /api/rpc` (126 operaciones de 22 servicios), `GET /api/jugadores` y `/api/categorias` de la práctica ([`API.md`](docs/API.md))   |
-| Autenticación         | **COMPLETADO**  | La app usa la API: argon2id, cookie HttpOnly, 8 h / 30 min, límite de intentos, auditoría, cambio y recuperación de contraseña, invitaciones de 24 h (sin proveedor de correo en producción: D4c) |
-| Autorización          | **COMPLETADO**  | Permiso + alcance en cada servicio, que ahora corre en la API con la sesión de la cookie; matriz D12 ([`AUTHORIZATION.md`](docs/AUTHORIZATION.md))                                                |
-| Cobranza              | **EN REVISIÓN** | Conceptos, cargos, mensualidades, pagos parciales, folios, cancelación, estado de cuenta, adeudos, descuentos/becas, sobre la API                                                                 |
-| Uniformes             | **EN REVISIÓN** | Catálogo, pedidos con precio histórico, cargo vinculado (`cargo_id`), pagado derivado, entrega, cancelación, sobre la API                                                                         |
-| Portal del tutor      | **EN REVISIÓN** | Tarjetas por hijo, datos deportivos, partidos/resultados por plantel, estado de cuenta, asistencia, uniformes, avisos, perfil                                                                     |
-| Reportes              | **EN REVISIÓN** | Tablero con fuentes, jugadores por categoría, ingresos, agenda global                                                                                                                             |
-| Agenda                | **EN REVISIÓN** | Sesiones (también desde horarios), partidos con reprogramación y resultados                                                                                                                       |
-| Pruebas               | **COMPLETADO**  | 241 Angular + 192 de la API sobre MariaDB (criterios por HU) + 18 E2E en Chrome headless + Postman ([`TESTING.md`](docs/TESTING.md))                                                              |
-| Deployment            | **NO INICIADO** | —                                                                                                                                                                                                 |
+| Área                  | Estado          | Detalle                                                                                                                                                                                                |
+| --------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Arquitectura frontend | **COMPLETADO**  | Angular standalone por dominio, RBAC por permisos, capa de servicios                                                                                                                                   |
+| Frontend              | **COMPLETADO**  | Las 76 HU sobre la API real (D13), revisadas en navegador a 375/768/1280 px ([`TRACEABILITY.md`](docs/TRACEABILITY.md))                                                                                |
+| Base de datos         | **COMPLETADO**  | Modelo **MariaDB** ([`MARIADB.md`](docs/database/MARIADB.md)) + migraciones (`db/mariadb/migrations`); 42/42 checks; es la persistencia real de la app                                                 |
+| Backend               | **COMPLETADO**  | `api/` (Node `node:http` + MariaDB): autenticación, contraseñas y los servicios de dominio en el servidor (D13), con caché por versión (HU-075)                                                        |
+| API                   | **EN PROGRESO** | `/health`, `/auth/*` (login, sesión, logout, contraseñas), `POST /api/rpc` (126 operaciones de 22 servicios), `GET /api/jugadores` y `/api/categorias` de la práctica ([`API.md`](docs/API.md))        |
+| Autenticación         | **COMPLETADO**  | La app usa la API: scrypt nativo, cookie HttpOnly, 8 h / 30 min, límite de intentos, auditoría, cambio y recuperación de contraseña, invitaciones de 24 h (sin proveedor de correo en producción: D4c) |
+| Autorización          | **COMPLETADO**  | Permiso + alcance en cada servicio, que ahora corre en la API con la sesión de la cookie; matriz D12 ([`AUTHORIZATION.md`](docs/AUTHORIZATION.md))                                                     |
+| Cobranza              | **EN REVISIÓN** | Conceptos, cargos, mensualidades, pagos parciales, folios, cancelación, estado de cuenta, adeudos, descuentos/becas, sobre la API                                                                      |
+| Uniformes             | **EN REVISIÓN** | Catálogo, pedidos con precio histórico, cargo vinculado (`cargo_id`), pagado derivado, entrega, cancelación, sobre la API                                                                              |
+| Portal del tutor      | **EN REVISIÓN** | Tarjetas por hijo, datos deportivos, partidos/resultados por plantel, estado de cuenta, asistencia, uniformes, avisos, perfil                                                                          |
+| Reportes              | **EN REVISIÓN** | Tablero con fuentes, jugadores por categoría, ingresos, agenda global                                                                                                                                  |
+| Agenda                | **EN REVISIÓN** | Sesiones (también desde horarios), partidos con reprogramación y resultados                                                                                                                            |
+| Pruebas               | **COMPLETADO**  | 251 Angular + 395 de la API sobre MariaDB (criterios por HU) + 23 E2E en Chrome headless + Postman ([`TESTING.md`](docs/TESTING.md))                                                                   |
+| Deployment            | **EN PROGRESO** | ZIP para que el profesor instale en el servidor del curso (AlmaLinux, Apache + PM2, HTTP), probado localmente; falta la instalación real ([`DEPLOYMENT.md`](DEPLOYMENT.md))                            |
 
 ### Terminado
 
 - Las 76 HU conectadas a la API y MariaDB (D13), con autorización por permiso y alcance ejecutada en el servidor.
 - Las 76 HU con estado técnico **Completada** y evidencia sobre la API y MariaDB ([`TRACEABILITY.md`](docs/TRACEABILITY.md)).
-- Modelo MariaDB (39 tablas, 42/42 checks), permisos de la app (106 filas de `rol_permiso`), respaldo y restauración
+- Modelo MariaDB (39 tablas base, 45 con migraciones; 42/42 checks), permisos de la app (106 filas de `rol_permiso`), respaldo y restauración
   probados.
 - Matriz de roles D12 y corrección de la escalada por perfiles vinculados (`18178ba`).
-- 241 pruebas Angular, 192 de la API y 18 E2E (2026-10-29); documentación de handoff ([`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md),
+- 251 pruebas Angular, 395 de la API y 23 E2E (2026-11-05); documentación de handoff ([`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md),
   [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)).
 
 ### Pendiente
 
-- B-2 (PR #17): un entrenador distingue una sesión inexistente de una ajena; en revisión en GitHub.
-- Proveedor de correo (D4c) y despliegue (fuera del alcance actual).
-- Decisión de negocio: si un jugador en baja temporal conserva su cupo en la categoría (HU-021).
+- Prueba real del correo y despliegue: [`CIERRE_FINAL_REMEDIACION_2026.md`](docs/audits/CIERRE_FINAL_REMEDIACION_2026.md).
 - Limitaciones conocidas P2/P3 (E2E, validación visual, decisiones de modelo):
   [`ROADMAP.md` › Limitaciones conocidas](docs/ROADMAP.md#limitaciones-conocidas-y-siguiente-fase).
 
@@ -75,7 +73,8 @@ el mismo `ROADMAP.md`.
 
 ### Fuera de alcance actual
 
-Correo real, pagos en línea, almacenamiento de archivos, Docker, CI/CD y deployment.
+Correo real, pagos en línea, almacenamiento de archivos, Docker y CI/CD. El despliegue de producción real (HTTPS,
+dominio) tampoco; sólo el del servidor del curso ([`DEPLOYMENT.md`](DEPLOYMENT.md)).
 
 ## Historias de usuario
 
@@ -129,7 +128,7 @@ Angular (src/app)        páginas → clientes de los servicios (rpcProviders) +
                                              ↓ HTTP, cookie HttpOnly
 API / Backend            api/: /auth/* y /api/rpc → servicios de dominio (+ AuthorizationService) en el servidor (D13)
                                              ↓ transacción
-MariaDB 10.6+            docs/escuela_futbol_mariadb.sql (39 tablas) + db/mariadb/migrations + 010   ← persistencia real
+MariaDB 10.6+            docs/escuela_futbol_mariadb.sql (39 tablas base) + db/mariadb/migrations + 010   ← persistencia real
 (histórico) PostgreSQL 16 en db/migrations: diseño anterior, ya no es la fuente de verdad
 ```
 
@@ -142,7 +141,7 @@ MariaDB 10.6+            docs/escuela_futbol_mariadb.sql (39 tablas) + db/mariad
 | Autenticación y permisos | `src/app/core/auth/`: `ApiAuthService` (sesión por cookie de la API), `permissions.ts` (catálogo y matriz D12), `grants()`, `AuthorizationService`, guards           |
 | Rutas                    | `src/app/app.routes.ts` (áreas `/admin`, `/sports`, `/coach`, `/portal`)                                                                                             |
 | Base de datos            | MariaDB: `docs/escuela_futbol_mariadb*.sql`, `db/mariadb/`. Histórico PostgreSQL: `db/migrations`, `db/seed`, `db/tests`…                                            |
-| Pruebas                  | Angular: `src/**/*.spec.ts` (Vitest, 241). API: `api/*.test.ts` (192). E2E: `e2e/` (18). MariaDB: `npm run db:mariadb:test-backup` ([`TESTING.md`](docs/TESTING.md)) |
+| Pruebas                  | Angular: `src/**/*.spec.ts` (Vitest, 251). API: `api/*.test.ts` (395). E2E: `e2e/` (23). MariaDB: `npm run db:mariadb:test-backup` ([`TESTING.md`](docs/TESTING.md)) |
 
 ## Stack
 

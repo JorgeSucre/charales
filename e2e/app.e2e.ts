@@ -38,6 +38,15 @@ let page: Page;
 /** Where the proxy sends API requests; a test can point it at a new API process (restart). */
 let apiBase = '';
 
+/** The headers the production proxy sends: the CSP tested here on every page is the one that gets deployed. */
+const PRODUCTION_HEADERS: Record<string, string> = Object.fromEntries(
+  [
+    ...readFileSync('deploy/nginx/security-headers.conf', 'utf8').matchAll(
+      /^add_header (\S+) "([^"]*)" always;$/gm,
+    ),
+  ].map((m) => [m[1]!, m[2]!]),
+);
+
 function serve(): Server {
   return createServer((req, res) => {
     const api = new URL(apiBase);
@@ -61,9 +70,12 @@ function serve(): Server {
     }
     const file = join(DIST, path);
     const target = existsSync(file) && extname(file) ? file : join(DIST, 'index.html');
-    res.writeHead(200, { 'Content-Type': TYPES[extname(target)] ?? 'application/octet-stream' });
+    res.writeHead(200, {
+      'Content-Type': TYPES[extname(target)] ?? 'application/octet-stream',
+      ...PRODUCTION_HEADERS,
+    });
     res.end(readFileSync(target));
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
 }
 
 before(async () => {
@@ -84,6 +96,13 @@ after(async () => {
 });
 
 const settled = `document.querySelector('main') && !document.querySelector('[role=status]')?.textContent?.includes('Cargando')`;
+
+/**
+ * `settled` is true as soon as `<main>` has content, which at «/» can be before the guard's redirect to the role's home
+ * ends: that redirect closes an open menu (a real behaviour, see shell.ts). A test that goes on to open one waits for
+ * it: the cause of the intermittent focus failures measured in the 2026-11 series (13/40 rounds, on main too).
+ */
+const landed = `(${settled}) && location.pathname !== '/'`;
 
 /** Ends any session (server and local copy) on the app's origin. */
 async function logoutAll(): Promise<void> {
@@ -355,7 +374,7 @@ test('persistence: a player created and edited in the UI survives a page reload 
 
   // 4) A new API process: its own pool and an empty memory, same MariaDB. The session cookie is still valid.
   const pool = createPool({ ...process.env, DB_NAME: t.name });
-  const restarted = createApp(pool, { secureCookie: false }).listen(0);
+  const restarted = createApp(pool, { secureCookie: false }).listen(0, '127.0.0.1');
   await new Promise((resolve) => restarted.once('listening', resolve));
   const previous = apiBase;
   apiBase = `http://127.0.0.1:${(restarted.address() as AddressInfo).port}`;
@@ -381,7 +400,7 @@ test('user menu: its button opens it, Escape closes it back on its button, an ou
   for (const width of [1280, 375]) {
     await page.size(width, 900);
     await page.goto(`${app}/`);
-    await page.until(settled);
+    await page.until(landed);
     await page.eval(`document.querySelector('.user-menu summary').click()`);
     await page.until(`document.querySelector('.user-menu').open`);
     assert.deepEqual(
@@ -467,7 +486,7 @@ test('Tablero: six indicators in full rows (3 × 2 desktop, 2 × 3 tablet/phone)
   // Phone: «Menú» opens the menu, Escape inside it closes it and focus returns to «Menú» (DOM event, as in the user
   // menu test).
   await page.goto(`${app}/`);
-  await page.until(settled);
+  await page.until(landed);
   await page.eval(`document.querySelector('.menu-toggle').click()`);
   await page.until(`document.querySelector('#nav-links a')?.offsetParent`);
   await page.eval(
@@ -542,14 +561,14 @@ test('side menu: compact mode on desktop (remembered) and tablet, tooltips, coll
   // Tablet: always starts compact.
   await page.size(768, 900);
   await page.goto(`${app}/`);
-  await page.until(settled);
+  await page.until(landed);
   assert.equal(await width('.sidenav'), 72);
   if (SHOTS) writeFileSync(join(SHOTS, 'nav_rail_768.png'), await page.screenshot());
 
   // Phone: hamburger → panel with focus on «Cerrar menú» and the page inert; backdrop, Escape and a link close it.
   await page.size(375, 900);
   await page.goto(`${app}/`);
-  await page.until(settled);
+  await page.until(landed);
   const isOpen = () =>
     page.eval<boolean>(`document.querySelector('.sidenav').classList.contains('open')`);
   const openPanel = async () => {
@@ -728,3 +747,120 @@ async function partialPaymentFlow(): Promise<void> {
   );
   assert.deepEqual(page.errors(), []);
 }
+
+test('the production headers are really applied here, and the app works under its CSP', async () => {
+  assert.match(PRODUCTION_HEADERS['Content-Security-Policy'] ?? '', /script-src 'self'/);
+  const res = await fetch(`${app}/login`);
+  assert.equal(res.headers.get('x-frame-options'), 'DENY');
+  assert.equal(res.headers.get('referrer-policy'), 'no-referrer');
+  assert.match(res.headers.get('content-security-policy') ?? '', /frame-ancestors 'none'/);
+  page.errors();
+  await login('admin@example.com');
+  await page.goto(`${app}/admin/players`);
+  await page.until(settled);
+  assert.deepEqual(page.errors(), []);
+});
+
+test('HU-005 through the UI: forgot password, the link in the e-mail, a new password, the old one no longer works', async () => {
+  const email = 'secretaria@example.com';
+  const [{ password_hash: original }] = await t.db.query(
+    'SELECT password_hash FROM usuarios WHERE email = ?',
+    [email],
+  );
+  try {
+    await logoutAll();
+    await page.goto(`${app}/forgot-password`);
+    await page.until(`document.querySelector('input[type=email]')`);
+    const sent = t.mail.length;
+    await page.eval(`(() => {
+      const i = document.querySelector('input[type=email]');
+      i.value = ${JSON.stringify(email)};
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+      document.querySelector('button[type=submit]').click();
+    })()`);
+    await page.until(`document.querySelector('main, app-root')?.innerText.length > 0`);
+    for (let i = 0; i < 50 && t.mail.length === sent; i++)
+      await new Promise((r) => setTimeout(r, 100));
+    const message = t.mail.at(-1)!;
+    assert.equal(message.to, email);
+    const token = /token=([\w-]+)/.exec(message.text)![1]!;
+    await page.goto(`${app}/reset-password?token=${token}`);
+    await page.until(`document.querySelectorAll('input[type=password]').length === 2`);
+    await page.eval(`(() => {
+      for (const i of document.querySelectorAll('input[type=password]')) {
+        i.value = 'Recuperada-2847';
+        i.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      document.querySelector('button[type=submit]').click();
+    })()`);
+    const tryLogin = (password: string) =>
+      fetch(`${t.base}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      }).then((r) => r.status);
+    for (let i = 0; i < 50; i++) {
+      const [row] = await t.db.query('SELECT password_hash FROM usuarios WHERE email = ?', [email]);
+      if (row.password_hash !== original) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.equal(await tryLogin('Recuperada-2847'), 200);
+    assert.equal(await tryLogin('demo1234'), 401);
+  } finally {
+    await t.db.query('UPDATE usuarios SET password_hash = ? WHERE email = ?', [original, email]);
+    await t.db.query('DELETE FROM limite_acceso');
+  }
+});
+
+test('stored markup is shown as text: a notice with a script runs nothing, in a real browser', async () => {
+  const admin = await t.login('admin@example.com');
+  const payload = `<img src=x onerror="window.__xss=1"><script>window.__xss=1</script>`;
+  await t.ok(
+    t.call(admin, 'NoticeService', 'save', {
+      title: payload,
+      message: payload,
+      startsAt: '2020-01-01T00:00:00',
+      endsAt: '2099-12-31T23:59:59',
+      published: true,
+      categoryIds: [],
+      tutorIds: [],
+      coachIds: [],
+    }),
+  );
+  await login('admin@example.com');
+  await page.goto(`${app}/admin/notices`);
+  await page.until(settled);
+  await page.until(`document.querySelector('main').innerText.includes('onerror')`);
+  assert.equal(
+    await page.eval<boolean>(`document.querySelector('main img[src="x"]') !== null`),
+    false,
+  );
+  assert.equal(await page.eval<unknown>(`window.__xss ?? null`), null);
+});
+
+test('the login form tells the limit without saying whether the account exists', async () => {
+  await t.db.query('DELETE FROM limite_acceso');
+  await logoutAll();
+  await page.size(1280, 900);
+  await page.goto(`${app}/login`);
+  await page.until(`document.querySelector('input[type=email]')`);
+  // Waits for each answer (scrypt can take longer than a fixed pause on a busy machine), then for the render.
+  const logins = `performance.getEntriesByType('resource').filter((e) => e.name.endsWith('/auth/login')).length`;
+  const attempt = async () => {
+    const before = await page.eval<number>(logins);
+    await page.eval(`(() => {
+      const set = (sel, v) => { const i = document.querySelector(sel); i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })); };
+      set('input[type=email]', 'nadie.aqui@example.com');
+      set('input[type=password]', 'incorrecta-1');
+      document.querySelector('button[type=submit]').click();
+    })()`);
+    await page.until(`${logins} > ${before}`, 10_000);
+    await new Promise((r) => setTimeout(r, 150));
+    return page.eval<string>(`document.querySelector('form').innerText`);
+  };
+  let text = '';
+  for (let i = 0; i < 6; i++) text = await attempt();
+  assert.match(text, /Demasiados intentos/);
+  assert.doesNotMatch(text, /nadie\.aqui|no existe/);
+  await t.db.query('DELETE FROM limite_acceso');
+});

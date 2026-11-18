@@ -1,9 +1,10 @@
 import { registerLocaleData } from '@angular/common';
-import { provideHttpClient, withFetch } from '@angular/common/http';
+import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import localeEsMx from '@angular/common/locales/es-MX';
 import { ApplicationConfig, LOCALE_ID, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideRouter, withComponentInputBinding, withInMemoryScrolling } from '@angular/router';
 import { routes } from './app.routes';
+import { apiUrlInterceptor } from './core/api/charales-api.service';
 import { rpcProviders } from './core/api/rpc-services';
 import { ApiAuthService } from './core/auth/api-auth.service';
 import { AuthService } from './core/auth/auth.service';
@@ -20,8 +21,9 @@ export const baseProviders = [
     withComponentInputBinding(),
     withInMemoryScrolling({ scrollPositionRestoration: 'enabled' }),
   ),
-  // REST API (core/api): same-origin through proxy.conf.json, the session cookie travels by itself.
-  provideHttpClient(withFetch()),
+  // REST API (core/api): same-origin through proxy.conf.json, the session cookie travels by itself; on a server
+  // where the API has its own port, apiUrlInterceptor points the requests there.
+  provideHttpClient(withFetch(), withInterceptors([apiUrlInterceptor])),
   { provide: LOCALE_ID, useValue: 'es-MX' },
 ];
 

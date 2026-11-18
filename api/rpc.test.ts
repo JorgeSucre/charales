@@ -1,6 +1,6 @@
 /**
  * Domain bridge tests (D13): the Angular services running in the API over a real MariaDB, through HTTP with the
- * session cookie. Temporary database `ef_rpctest_<pid>` (schema + migrations + 010 + the MockDb demo seed), dropped
+ * session cookie. Temporary database `ef_rpctest_<pid>` (schema + application migrations + permissions + MockDb demo seed), dropped
  * at the end. Run: `npm run api:test`.
  */
 import { after, before, test } from 'node:test';
@@ -236,7 +236,7 @@ test('responses never carry password or token hashes', async () => {
   const admin = await login('admin@example.com');
   const text = await (await call(admin, 'UserService', 'list', {})).text();
   assert.ok(text.includes('admin@example.com'));
-  assert.doesNotMatch(text, /passwordHash|tokenHash|argon2/);
+  assert.doesNotMatch(text, /passwordHash|tokenHash|scrypt/);
 });
 
 test('HU-004: a new staff account gets a 24 h invitation (D3c/D3e), usable once through the API', async () => {
@@ -269,7 +269,7 @@ test('HU-004: a new staff account gets a 24 h invitation (D3c/D3e), usable once 
 });
 
 test('HU-004: without a mail transport the account is not created (503, rolled back)', async () => {
-  const noMail = createApp(db, { secureCookie: false }).listen(0);
+  const noMail = createApp(db, { secureCookie: false }).listen(0, '127.0.0.1');
   await new Promise((resolve) => noMail.once('listening', resolve));
   const url = `http://127.0.0.1:${(noMail.address() as AddressInfo).port}`;
   try {
@@ -454,12 +454,12 @@ test('audit: session cookie attributes — HttpOnly, SameSite=Strict, Path=/, 8 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: 'admin@example.com', password: 'demo1234' }),
   });
-  const cookie = res.headers.get('set-cookie')!;
+  const cookie = res.headers.getSetCookie()[0]!;
   assert.match(
     cookie,
     /^charales_sid=[\w-]{40,}; HttpOnly; SameSite=Strict; Path=\/; Max-Age=28800$/,
   );
-  const secure = createApp(db, { secureCookie: true }).listen(0);
+  const secure = createApp(db, { secureCookie: true }).listen(0, '127.0.0.1');
   await new Promise((resolve) => secure.once('listening', resolve));
   try {
     const r = await fetch(`http://127.0.0.1:${(secure.address() as AddressInfo).port}/auth/login`, {
@@ -467,7 +467,7 @@ test('audit: session cookie attributes — HttpOnly, SameSite=Strict, Path=/, 8 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'admin@example.com', password: 'demo1234' }),
     });
-    assert.match(r.headers.get('set-cookie')!, /; Secure$/);
+    assert.match(r.headers.getSetCookie()[0]!, /; Secure$/);
   } finally {
     secure.close();
   }

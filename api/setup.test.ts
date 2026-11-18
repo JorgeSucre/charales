@@ -12,7 +12,8 @@ import { createAdmin } from './create-admin.ts';
 import {
   SetupError,
   baseSchema,
-  dropTestDatabase,
+  releaseTestDatabase,
+  uniqueTestDatabase,
   loadDevSeed,
   serverOptions,
   setupDatabase,
@@ -21,19 +22,19 @@ import {
 import { cachedTables, unitOfWork } from './rpc.ts';
 import { createApp, createPool } from './server.ts';
 
-const FRESH = `ef_setup_${process.pid}_a`;
-const FOREIGN = `ef_setup_${process.pid}_b`;
-const SEED = `ef_setup_${process.pid}_c`;
+const RUN = uniqueTestDatabase('ef_setup');
+const FRESH = `${RUN}_a`;
+const FOREIGN = `${RUN}_b`;
+const SEED = `${RUN}_c`;
 const env = (name: string) => ({ ...process.env, DB_NAME: name });
 
 after(async () => {
-  await dropTestDatabase(process.env, FRESH);
-  await dropTestDatabase(process.env, FOREIGN);
-  await dropTestDatabase(process.env, SEED);
+  await releaseTestDatabase(FRESH);
+  await releaseTestDatabase(FOREIGN);
+  await releaseTestDatabase(SEED);
 });
 
 test('db:setup creates and prepares a new database; a second run changes nothing', async () => {
-  await dropTestDatabase(process.env, FRESH);
   const first = await setupDatabase(env(FRESH));
   assert.equal(first.created, true);
   assert.equal(first.schemaApplied, true);
@@ -44,7 +45,25 @@ test('db:setup creates and prepares a new database; a second run changes nothing
     '004_pago_referencia.sql',
     '005_limite_acceso.sql',
     '006_turnos_argon2.sql',
+    '007_correo_y_limites.sql',
+    '008_retencion_y_dispositivos.sql',
+    '009_cupo_correo.sql',
+    '010_eliminar_turnos_hash_antiguo.sql',
   ]);
+  const legacyTables = await mariadb.createConnection({
+    ...serverOptions(process.env),
+    database: FRESH,
+  });
+  try {
+    const rows = await legacyTables.query(
+      `SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?
+       AND TABLE_NAME IN ('turnos_argon2', 'turnos_argon2_guarda')`,
+      [FRESH],
+    );
+    assert.deepEqual(rows, [], 'fresh setup applies the obsolete-table migration');
+  } finally {
+    await legacyTables.end();
+  }
   assert.deepEqual(first.counts, { usuarios: 0, jugadores: 0, rol_permiso: 106 });
   const second = await setupDatabase(env(FRESH));
   assert.equal(second.created, false);
@@ -109,11 +128,10 @@ test('db:mariadb:dev-seed is db:setup -- --dev-seed; these tests only use ef_* d
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   // The old script piped all of 010 (initial matrix included, INSERT IGNORE) and 020 with `sh`, on any database.
   assert.equal(pkg.scripts['db:mariadb:dev-seed'], 'npm run db:setup -- --dev-seed');
-  for (const name of [FRESH, FOREIGN, SEED]) assert.match(name, /^ef_setup_\d+_[a-z]$/);
+  for (const name of [FRESH, FOREIGN, SEED]) assert.match(name, /^ef_setup_\d+_[0-9a-f]{8}_[a-z]$/);
 });
 
 test('dev-seed: a seed that cannot land whole is refused and leaves nothing behind', async () => {
-  await dropTestDatabase(process.env, SEED);
   await setupDatabase(env(SEED));
   const db = createPool(env(SEED));
   try {
@@ -209,7 +227,6 @@ test('dev-seed is refused on a database with players but no users', async () => 
 });
 
 test('db:setup refuses a non-empty database that is not Charales, without touching it', async () => {
-  await dropTestDatabase(process.env, FOREIGN);
   const conn = await mariadb.createConnection(serverOptions(process.env));
   try {
     await conn.query(`CREATE DATABASE \`${FOREIGN}\``);
@@ -242,9 +259,9 @@ test('db:setup fails clearly on a bad name or an unreachable server; the schema 
   assert.doesNotMatch(baseSchema(), /CREATE DATABASE|USE escuela_futbol/);
 });
 
-test('test databases are the only ones the harness may drop', async () => {
+test('test databases are the only ones a suite may end on (kept, never dropped)', async () => {
   for (const name of ['escuela_futbol', 'charales_dev', 'ef', 'x_ef_1'])
-    await assert.rejects(dropTestDatabase(process.env, name), SetupError);
+    await assert.rejects(releaseTestDatabase(name), SetupError);
 });
 
 test('SQL files with DELIMITER blocks are split the way the server needs', () => {
@@ -258,9 +275,9 @@ test('SQL files with DELIMITER blocks are split the way the server needs', () =>
   ]);
 });
 
-test('db:admin creates the first administrator (argon2id) and never overwrites an existing account', async () => {
+test('db:admin creates the first administrator (scrypt) and never overwrites an existing account', async () => {
   const db = createPool(env(FRESH));
-  const server = createApp(db, { secureCookie: false }).listen(0);
+  const server = createApp(db, { secureCookie: false }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   const login = (password: string) =>
     fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/auth/login`, {
@@ -288,7 +305,7 @@ test('db:admin creates the first administrator (argon2id) and never overwrites a
       id,
     ]);
     assert.equal(row.email, 'direccion@escuela.example');
-    assert.match(row.password_hash, /^\$argon2id\$/);
+    assert.match(row.password_hash, /^\$scrypt\$v=1\$/);
     const res = await login('Inicial2026');
     assert.equal(res.status, 200);
     assert.deepEqual((await res.json()).roles, ['ADMINISTRADOR']);

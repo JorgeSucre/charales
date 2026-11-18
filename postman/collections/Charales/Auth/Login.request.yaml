@@ -28,7 +28,7 @@ scripts:
         pm.collectionVariables.set('sessionId', String(user.sessionId));
       });
       pm.test('cookie de sesión HttpOnly', () => {
-        const setCookie = pm.response.headers.get('Set-Cookie');
+        const setCookie = pm.response.headers.all().filter((h) => h.key.toLowerCase() === 'set-cookie').map((h) => h.value).find((v) => v.startsWith('charales_sid='));
         pm.expect(setCookie).to.match(/^charales_sid=[\w-]+;/);
         pm.expect(setCookie).to.include('HttpOnly');
         pm.expect(setCookie).to.include('SameSite=Strict');

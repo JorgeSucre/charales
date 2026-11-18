@@ -14,4 +14,9 @@ for t in $tables; do
   printf '%-34s filas %6s / %6s  checksum %12s / %12s  %s\n' "$t" "$a" "$b" "$ca" "$cb" "$s"
 done
 echo "Tablas comparadas: $n"
+# El volcado puede salir bien sin rutinas ni eventos si la cuenta no puede leerlos: también se comparan.
+for what in "routine_name FROM information_schema.routines WHERE routine_schema" "event_name FROM information_schema.events WHERE event_schema"; do
+  a=$(mariadb -N -e "SELECT $what='$SRC' ORDER BY 1"); b=$(mariadb -N -e "SELECT $what='$DST' ORDER BY 1")
+  if [ "$a" != "$b" ]; then echo "DIFERENTE: ${what%% *} — original: $a — restaurada: $b"; fail=1; fi
+done
 [ "$fail" -eq 0 ] && echo "RESULTADO: OK, el respaldo es idéntico" || { echo "RESULTADO: DIFERENCIAS"; exit 1; }

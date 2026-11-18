@@ -384,10 +384,27 @@ test('HU-011: setPrimary replaces the primary contact in one operation — linke
 test('HU-012: portal account for a tutor — only registered tutors, no duplicate, initial access, own children only', async () => {
   await t.ok(t.call(secretaria, 'TutorService', 'linkAccount', 2, 'jorge.tutor@example.com'));
   const [link] = await t.db.query(
-    `SELECT u.id, tk.finalidad FROM tutores tu JOIN usuarios u ON u.id = tu.usuario_id
+    `SELECT u.id, u.password_hash, tk.finalidad FROM tutores tu JOIN usuarios u ON u.id = tu.usuario_id
        JOIN tokens_recuperacion tk ON tk.usuario_id = u.id WHERE tu.id = 2`,
   );
   assert.equal(link.finalidad, 'INVITACION', '3) initial access by invitation');
+  assert.match(
+    link.password_hash,
+    /^sha256\$[a-f0-9]{16}\$[a-f0-9]{64}$/,
+    'pending marker is a salted SHA-256 token placeholder, not scrypt',
+  );
+  const pendingLogin = (password: string) =>
+    fetch(`${t.base}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'jorge.tutor@example.com', password }),
+    });
+  assert.equal((await pendingLogin('Portal12345')).status, 401);
+  assert.equal(
+    (await pendingLogin(link.password_hash)).status,
+    401,
+    'the stored marker itself cannot authenticate before invitation completion',
+  );
   const msg = t.mail.find((m) => m.to === 'jorge.tutor@example.com')!;
   const token = /token=([\w-]+)/.exec(msg.text)![1];
   await fetch(`${t.base}/auth/password-reset/confirm`, {
@@ -395,6 +412,10 @@ test('HU-012: portal account for a tutor — only registered tutors, no duplicat
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token, newPassword: 'Portal12345' }),
   });
+  const [{ password_hash: finalHash }] = await t.db.query(
+    "SELECT password_hash FROM usuarios WHERE email = 'jorge.tutor@example.com'",
+  );
+  assert.match(finalHash, /^\$scrypt\$v=1\$/, 'invitation stores the chosen password as scrypt');
   const jorge = await t.login('jorge.tutor@example.com', 'Portal12345');
   const kids = await t.ok<{ playerId: number }[]>(t.call(jorge, 'PortalService', 'overview'));
   assert.deepEqual(kids.map((k) => k.playerId).sort(), [3, 6], '4) sees only his children');

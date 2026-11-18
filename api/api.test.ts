@@ -9,9 +9,10 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import type { Pool } from 'mariadb';
 import { createApp, createPool } from './server.ts';
-import { dropTestDatabase, runSqlFile, setupDatabase } from './schema.ts';
+import { recoveriesSettled } from './password.ts';
+import { releaseTestDatabase, runSqlFile, setupDatabase, uniqueTestDatabase } from './schema.ts';
 
-const DB = `ef_apitest_${process.pid}`;
+const DB = uniqueTestDatabase('ef_apitest');
 
 let db: Pool;
 let server: Server;
@@ -20,14 +21,13 @@ let base: string;
 const mail: { to: string; subject: string; text: string }[] = [];
 
 before(async () => {
-  await dropTestDatabase(process.env, DB);
   await setupDatabase({ ...process.env, DB_NAME: DB });
   await runSqlFile(process.env, DB, 'db/mariadb/020_dev_seed.sql');
   db = createPool({ ...process.env, DB_NAME: DB });
   server = createApp(db, {
     secureCookie: false,
     mailer: (to, subject, text) => void mail.push({ to, subject, text }),
-  }).listen(0);
+  }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -35,7 +35,7 @@ before(async () => {
 after(async () => {
   server?.close();
   await db?.end();
-  await dropTestDatabase(process.env, DB);
+  await releaseTestDatabase(DB);
 });
 
 function login(email: string, password = 'demo1234') {
@@ -86,10 +86,70 @@ test('wrong password, unknown e-mail and disabled account → same 401, no cooki
   assert.equal(n, 3);
 });
 
+test('legacy Argon2 accounts get the same external refusal and an internal audit classification', async () => {
+  const [{ id: adminId }] = await db.query(
+    "SELECT id FROM usuarios WHERE email = 'admin@example.com'",
+  );
+  const [{ lastTokenId }] = await db.query(
+    'SELECT COALESCE(MAX(id), 0) AS lastTokenId FROM tokens_recuperacion WHERE usuario_id = ?',
+    [adminId],
+  );
+  const [{ password_hash: original }] = await db.query(
+    "SELECT password_hash FROM usuarios WHERE email = 'admin@example.com'",
+  );
+  try {
+    await db.query("UPDATE usuarios SET password_hash = ? WHERE email = 'admin@example.com'", [
+      '$argon2id$v=19$m=65536,t=3,p=1$c2FsdHNhbHQ$Y29tcGF0aWJsZWtleQ',
+    ]);
+    const [legacy, unknown] = await Promise.all([
+      login('admin@example.com', 'demo1234'),
+      login('nobody@example.com', 'demo1234'),
+    ]);
+    assert.equal(legacy.status, 401);
+    assert.equal(unknown.status, 401);
+    assert.deepEqual(await legacy.json(), { error: 'Correo o contraseña incorrectos.' });
+    assert.deepEqual(await unknown.json(), { error: 'Correo o contraseña incorrectos.' });
+    assert.equal(legacy.headers.get('set-cookie'), null);
+    assert.equal(unknown.headers.get('set-cookie'), null);
+    assert.equal(
+      Number(
+        (
+          await db.query(
+            "SELECT COUNT(*) AS n FROM auditoria WHERE usuario_id = (SELECT id FROM usuarios WHERE email = 'admin@example.com') AND descripcion = 'Intento de acceso con hash heredado'",
+          )
+        )[0].n,
+      ),
+      1,
+    );
+    const request = await requestReset('admin@example.com');
+    assert.equal(request.status, 204);
+    const recovery = await confirmReset(tokenFor('admin@example.com'), 'LegacyRecuperada123');
+    assert.equal(recovery.status, 204);
+    const [{ password_hash: migrated }] = await db.query(
+      "SELECT password_hash FROM usuarios WHERE email = 'admin@example.com'",
+    );
+    assert.match(migrated, /^\$scrypt\$v=1\$/, 'recovery replaces the legacy hash with scrypt');
+    assert.equal((await login('admin@example.com', 'LegacyRecuperada123')).status, 200);
+  } finally {
+    // This test alone creates a recovery token for the shared demo administrator. Remove only rows
+    // created by this test; leave any pre-existing recovery history untouched.
+    await db.query('DELETE FROM tokens_recuperacion WHERE usuario_id = ? AND id > ?', [
+      adminId,
+      lastTokenId,
+    ]);
+    await db.query(
+      "UPDATE sesiones s JOIN usuarios u ON u.id = s.usuario_id SET s.cerrada_en = NOW() WHERE u.email = 'admin@example.com' AND s.cerrada_en IS NULL",
+    );
+    await db.query("UPDATE usuarios SET password_hash = ? WHERE email = 'admin@example.com'", [
+      original,
+    ]);
+  }
+});
+
 test('valid login → AuthUser + HttpOnly cookie; only the token hash is stored', async () => {
   const res = await login('ADMIN@example.com');
   assert.equal(res.status, 200);
-  const setCookie = res.headers.get('set-cookie') ?? '';
+  const setCookie = res.headers.getSetCookie()[0] ?? '';
   assert.match(
     setCookie,
     /^charales_sid=[\w-]{43}; HttpOnly; SameSite=Strict; Path=\/; Max-Age=28800$/,
@@ -213,7 +273,11 @@ const post = (path: string, body: unknown, cookie?: string) =>
   });
 const changePassword = (cookie: string | undefined, currentPassword: string, newPassword: string) =>
   post('/auth/password', { currentPassword, newPassword }, cookie);
-const requestReset = (email: string) => post('/auth/password-reset/request', { email });
+const requestReset = async (email: string) => {
+  const res = await post('/auth/password-reset/request', { email });
+  await recoveriesSettled(); // the work runs after the answer (S-06)
+  return res;
+};
 const confirmReset = (token: string, newPassword: string) =>
   post('/auth/password-reset/confirm', { token, newPassword });
 /** Raw token from the last captured e-mail to `to`. */
@@ -244,7 +308,7 @@ test('change password (D2): keeps the current session, closes the others, only t
   const [row] = await db.query(
     "SELECT password_hash FROM usuarios WHERE email = 'coach@example.com'",
   );
-  assert.match(row.password_hash, /^\$argon2id\$/);
+  assert.match(row.password_hash, /^\$scrypt\$v=1\$/);
   assert.ok(!row.password_hash.includes('Nueva12345'));
   const [{ n }] = await db.query(
     "SELECT COUNT(*) AS n FROM auditoria WHERE accion = 'EDITAR' AND descripcion = 'Cambio de contraseña'",
@@ -294,6 +358,10 @@ test('reset (D3a/D3b/D8): a new request revokes the earlier token; single use; c
   assert.match(ok.headers.get('set-cookie') ?? '', /Max-Age=0/);
   assert.equal((await getSession(session)).status, 401, 'reset closes open sessions');
   assert.equal((await login('tutor@example.com', 'Recupera123')).status, 200);
+  const [updated] = await db.query(
+    "SELECT password_hash FROM usuarios WHERE email = 'tutor@example.com'",
+  );
+  assert.match(updated.password_hash, /^\$scrypt\$v=1\$/);
   assert.equal((await confirmReset(second, 'OtraVez123')).status, 400, 'single use');
 
   const [{ total, used }] = await db.query(
@@ -345,14 +413,17 @@ test('reset: policy is checked; invalid tokens get the generic message', async (
   assert.deepEqual(await res.json(), { error: 'El enlace no es válido o ya expiró.' });
 });
 
-test('reset request: limited per e-mail and IP (429), whether the account exists or not', async () => {
+test('reset request: limited per e-mail, in silence, whether the account exists or not', async () => {
   for (let i = 0; i < 5; i++) assert.equal((await requestReset('limite@example.com')).status, 204);
-  assert.equal((await requestReset('limite@example.com')).status, 429);
-  assert.equal((await requestReset('LIMITE@example.com ')).status, 429, 'normalized e-mail');
+  // Past the account's budget nothing is done, and the answer is the same: others can't show its owner a refusal.
+  const rows = await db.query('SELECT COUNT(*) AS n FROM limite_acceso');
+  assert.equal((await requestReset('limite@example.com')).status, 204);
+  assert.equal((await requestReset('LIMITE@example.com ')).status, 204, 'normalized e-mail');
+  assert.deepEqual(await db.query('SELECT COUNT(*) AS n FROM limite_acceso'), rows);
 });
 
 test('reset request without a mail transport (D4b): 503 before reading the account, no token created', async () => {
-  const noMail = createApp(db, { secureCookie: false }).listen(0);
+  const noMail = createApp(db, { secureCookie: false }).listen(0, '127.0.0.1');
   await new Promise((resolve) => noMail.once('listening', resolve));
   const url = `http://127.0.0.1:${(noMail.address() as AddressInfo).port}/auth/password-reset/request`;
   try {

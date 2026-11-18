@@ -1,9 +1,9 @@
 -- 020 · Cuentas de DESARROLLO para la API (las mismas de docs/DEVELOPMENT.md y de MockDb). Son DATOS, no esquema.
 -- Credenciales ficticias: dominio reservado example.com y contraseña pública de demostración «demo1234».
 -- NUNCA se aplica a una base de producción. Requiere 010_permisos_app.sql. Idempotente.
--- Hash argon2id de 'demo1234', generado con: node api/auth.ts demo1234
+-- Hash scrypt de 'demo1234', generado con: node api/auth.ts demo1234
 
-SET @demo = '$argon2id$v=19$m=19456,t=2,p=1$sAY/by+Y+SUYyMEV46GE7w$Pbgp4kbr0EKk3mwvwxBkF2Q42ssRSc1aQiSzDJsXI5I';
+SET @demo = '$scrypt$v=1$N=32768,r=8,p=1,l=64$HGcNm6ouE3QwohBikMGawg.ikmQ9nSxezcdehmYdMgOs9MvllIEICkd_W3GHrlb114FGCQ6xMq-3igA88gGIaZ91Nqj-IxIhLwLcEawBSFZuw';
 
 INSERT INTO usuarios (rol_id, nombre, apellido, email, password_hash, activo) VALUES
 ((SELECT id FROM roles WHERE nombre = 'ADMINISTRADOR'), 'Ana', 'Administradora', 'admin@example.com', @demo, TRUE),

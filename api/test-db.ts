@@ -1,5 +1,5 @@
 /**
- * Shared harness of the tests that run the app over a real MariaDB: a temporary database `<prefix>_<pid>` prepared
+ * Shared harness of the tests that run the app over a real MariaDB: a temporary database `<prefix>_<pid>_<random>` prepared
  * like `npm run db:setup` (schema, migrations, 010) plus the MockDb demo seed (api/demo.ts), plus the API listening on a free port. Dropped
  * at the end. Used by api/rpc.test.ts and the per-phase HU tests (api/hu-*.test.ts).
  */
@@ -9,7 +9,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Pool } from 'mariadb';
 import { loadDemo } from './demo.ts';
-import { dropTestDatabase, setupDatabase } from './schema.ts';
+import { releaseTestDatabase, setupDatabase, uniqueTestDatabase } from './schema.ts';
 import { TYPE_ERROR_MESSAGE } from './rpc.ts';
 import { createApp, createPool } from './server.ts';
 
@@ -71,9 +71,8 @@ export async function openTestDb(
   options: { realClock?: boolean } = {},
 ): Promise<TestDb> {
   if (!options.realClock) mock.timers.enable({ apis: ['Date'], now: TEST_NOW });
-  const name = `${prefix}_${process.pid}`;
+  const name = uniqueTestDatabase(prefix);
   // Same preparation as `npm run db:setup` (schema + migrations + permissions), on a fresh ef_* database.
-  await dropTestDatabase(process.env, name);
   await setupDatabase({ ...process.env, DB_NAME: name });
   // Every pooled connection runs at the mocked instant (re-read on each new connection).
   const db = createPool(
@@ -87,7 +86,7 @@ export async function openTestDb(
   const server: Server = createApp(db, {
     secureCookie: false,
     mailer: (to, subject, text) => void mail.push({ to, subject, text }),
-  }).listen(0);
+  }).listen(0, '127.0.0.1'); // not «::»: a port another program holds on IPv4 would not be refused, and would time out
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
@@ -169,7 +168,7 @@ export async function openTestDb(
     async close() {
       server.close();
       await db.end();
-      await dropTestDatabase(process.env, name);
+      await releaseTestDatabase(name);
     },
   };
 }

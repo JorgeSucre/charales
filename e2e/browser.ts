@@ -39,6 +39,8 @@ export async function openBrowser(): Promise<Page> {
       '--no-first-run',
       '--no-default-browser-check',
       '--hide-scrollbars',
+      // CI runners block Chrome's sandbox; never on a developer machine.
+      ...(process.env['CI'] ? ['--no-sandbox'] : []),
       'about:blank',
     ],
     { stdio: 'ignore' },
@@ -70,11 +72,19 @@ export async function openBrowser(): Promise<Page> {
   const send = (method: string, params: Record<string, unknown> = {}) =>
     new Promise<Record<string, unknown>>((resolve, reject) => {
       const id = nextId++;
-      pending.set(id, (msg) =>
-        msg.error
-          ? reject(new Error(msg.error.message))
-          : resolve(msg.result as Record<string, unknown>),
-      );
+      // A dialog left open blocks the page and Chrome never answers: fail the test instead of hanging the suite.
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(
+          new Error(`CDP ${method}: sin respuesta en 30 s (¿un diálogo abierto en la página?)`),
+        );
+      }, 30_000);
+      pending.set(id, (msg) => {
+        clearTimeout(timer);
+        pending.delete(id);
+        if (msg.error) reject(new Error(msg.error.message));
+        else resolve(msg.result as Record<string, unknown>);
+      });
       ws.send(JSON.stringify({ id, method, params }));
     });
   const once = (method: string) =>
@@ -106,6 +116,11 @@ export async function openBrowser(): Promise<Page> {
           .join(' '),
       );
   });
+  // A resource the Content-Security-Policy blocked is a page that doesn't work in production.
+  on('Log.entryAdded', (p) => {
+    const entry = p['entry'] as { source?: string; text?: string };
+    if (entry.source === 'security') errors.push(`CSP: ${entry.text}`);
+  });
   let acceptDialogs = true;
   const dialogMessages: string[] = [];
   on('Page.javascriptDialogOpening', (p) => {
@@ -126,6 +141,7 @@ export async function openBrowser(): Promise<Page> {
   });
   await send('Page.enable');
   await send('Runtime.enable');
+  await send('Log.enable');
 
   const page: Page = {
     async goto(url) {
