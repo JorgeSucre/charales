@@ -6,7 +6,9 @@
 set -eu
 cd "$(dirname "$0")/../.."
 OUT=entrega/charales
-PATHS="api src db deploy docs package.json package-lock.json tsconfig.json ecosystem.config.cjs LICENSE README.md"
+# De docs/ sólo lo que usa el servidor (esquema y checks) o enlaza DEPLOYMENT.md; las auditorías y evidencias quedan fuera.
+DOCS="docs/escuela_futbol_mariadb.sql docs/escuela_futbol_mariadb_checks.sql docs/deployment docs/SETUP.md docs/API.md"
+PATHS="api src db deploy $DOCS package.json package-lock.json tsconfig.json ecosystem.config.cjs LICENSE README.md"
 
 npm run build:servidor
 npm run api:build
