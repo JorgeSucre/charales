@@ -344,6 +344,10 @@ sh /home/charales/charales/backend/deploy/servidor/instalar-apache.sh           
 
 El script:
 
+> **Importante:** el contenido de `dist/` va **directamente** en la raíz del DocumentRoot (`/var/www/html/index.html`).
+> En un subdirectorio (`/var/www/html/charales/`) o subiendo la carpeta `dist/` entera, la página queda **en blanco**:
+> la app busca sus archivos en la raíz del sitio. El script ya lo hace bien; tenlo en cuenta si copias a mano.
+
 1. Se **detiene sin tocar nada** si el DocumentRoot tiene contenido que no es Charales. Si contiene una versión
    anterior de Charales, la respalda en `/root/charales-html-FECHA.tar.gz` antes de copiar encima.
 2. Copia `dist/` (incluido `.htaccess`) al DocumentRoot con permisos de lectura para Apache.
@@ -436,19 +440,20 @@ internas y la cabecera CSP.
 
 ## 12. Problemas frecuentes
 
-| Síntoma                                                         | Causa y solución                                                                                          |
-| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `verificar-env.ts`: «No se pudo conectar a MariaDB»             | `DB_HOST`/`DB_PORT`/`DB_PASSWORD` incorrectos, MariaDB detenido, o la cuenta no admite ese host (paso 5). |
-| «Access denied for user 'charalesdb'@'…'»                       | Contraseña distinta, o falta la cuenta para ese host: créala con `crear-base.sh` o el SQL del paso 5.     |
-| `db:setup`: «MariaDB … es demasiado antiguo»                    | Servidor < 10.6: paso 3.                                                                                  |
-| `db:setup`: «ya tiene N tabla(s) que no son del esquema»        | `charalesdb` contiene otra aplicación. No se modificó nada: usa una base vacía.                           |
-| `db:setup` falla al crear procedimientos con log binario        | Como root de MariaDB: `SET GLOBAL log_bin_trust_function_creators = 1;` y repite `db:setup`.              |
-| `pm2 status` → `errored` / `stopped`                            | `pm2 logs charales-api --err --lines 50`; corrige `.env` y `pm2 restart charales-api`.                    |
-| La app carga pero «no se pudo conectar» al iniciar sesión       | Puerto 3002 cerrado (paso 10) o API detenida (`pm2 status`).                                              |
-| Error de CORS en la consola del navegador                       | Abriste la app con otra dirección: debe ser exactamente `http://45.80.152.66` (como `APP_URL`).           |
-| 404 al recargar una ruta interna                                | Apache ignora el `.htaccess`: falta `/etc/httpd/conf.d/charales.conf` (paso 8).                           |
-| 403 en todos los archivos de Apache                             | Contexto SELinux: `restorecon -R /var/www/html` (paso 9).                                                 |
-| Invitaciones / «olvidé mi contraseña» responden «no disponible» | Esperado: no hay correo (`MAIL_PROVIDER=none`). El administrador da de alta a los usuarios.               |
+| Síntoma                                                         | Causa y solución                                                                                                                                                                                                                                                                                                |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verificar-env.ts`: «No se pudo conectar a MariaDB»             | `DB_HOST`/`DB_PORT`/`DB_PASSWORD` incorrectos, MariaDB detenido, o la cuenta no admite ese host (paso 5).                                                                                                                                                                                                       |
+| «Access denied for user 'charalesdb'@'…'»                       | Contraseña distinta, o falta la cuenta para ese host: créala con `crear-base.sh` o el SQL del paso 5.                                                                                                                                                                                                           |
+| `db:setup`: «MariaDB … es demasiado antiguo»                    | Servidor < 10.6: paso 3.                                                                                                                                                                                                                                                                                        |
+| `db:setup`: «ya tiene N tabla(s) que no son del esquema»        | `charalesdb` contiene otra aplicación. No se modificó nada: usa una base vacía.                                                                                                                                                                                                                                 |
+| `db:setup` falla al crear procedimientos con log binario        | Como root de MariaDB: `SET GLOBAL log_bin_trust_function_creators = 1;` y repite `db:setup`.                                                                                                                                                                                                                    |
+| `pm2 status` → `errored` / `stopped`                            | `pm2 logs charales-api --err --lines 50`; corrige `.env` y `pm2 restart charales-api`.                                                                                                                                                                                                                          |
+| La app carga pero «no se pudo conectar» al iniciar sesión       | Puerto 3002 cerrado (paso 10) o API detenida (`pm2 status`).                                                                                                                                                                                                                                                    |
+| Error de CORS en la consola del navegador                       | Abriste la app con otra dirección: debe ser exactamente `http://45.80.152.66` (como `APP_URL`).                                                                                                                                                                                                                 |
+| Página en blanco, o «Cargando Charales…» no desaparece          | Los archivos no están en la raíz: el **contenido** de `dist/` debe quedar directamente en el DocumentRoot (`/var/www/html/index.html`), no en `/var/www/html/charales/` ni `/var/www/html/dist/`, y la app se abre en `http://45.80.152.66/`, no como archivo. Vuelve a ejecutar `instalar-apache.sh` (paso 8). |
+| 404 al recargar una ruta interna                                | Apache ignora el `.htaccess`: falta `/etc/httpd/conf.d/charales.conf` (paso 8).                                                                                                                                                                                                                                 |
+| 403 en todos los archivos de Apache                             | Contexto SELinux: `restorecon -R /var/www/html` (paso 9).                                                                                                                                                                                                                                                       |
+| Invitaciones / «olvidé mi contraseña» responden «no disponible» | Esperado: no hay correo (`MAIL_PROVIDER=none`). El administrador da de alta a los usuarios.                                                                                                                                                                                                                     |
 
 ## 13. Actualización futura
 

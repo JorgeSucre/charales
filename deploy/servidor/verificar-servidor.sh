@@ -40,6 +40,13 @@ echo "$cors" | grep -qi "^access-control-allow-origin: $APP" && echo "$cors" | g
 curl -s -D - -o /dev/null "$APP/" | grep -qi '^content-security-policy:.*3002' &&
   ok "Apache: CSP del .htaccess presente" || ko "Apache: falta la CSP del .htaccess (¿mod_headers / AllowOverride?)"
 curl -s "$APP/" | grep -q '<app-root>' && ok "Apache: index.html es la app" || ko "Apache: / no sirve index.html de la app"
+# Página en blanco: index.html llega pero sus .js no (subdirectorio, carpeta dist/ anidada, tipo MIME equivocado).
+main=$(curl -s "$APP/" | grep -oE 'src="main-[A-Za-z0-9_-]+\.js"' | cut -d'"' -f2)
+type=$(curl -s -o /dev/null -w '%{http_code} %{content_type}' "$APP/$main")
+case "$type" in
+  "200 "*javascript*) ok "Apache: $main → $type (la app puede arrancar)" ;;
+  *) ko "Apache: ${main:-main-*.js} → ${type:-sin respuesta}: la página quedaría en blanco (¿dist/ fuera de la raíz del DocumentRoot?)" ;;
+esac
 
 [ "$status" -eq 0 ] && echo "Resultado: PASS" || echo "Resultado: FAIL"
 exit "$status"
