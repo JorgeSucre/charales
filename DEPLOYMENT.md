@@ -222,6 +222,9 @@ En un navegador: `http://45.80.152.66/login` → entra con el administrador de `
 interna y sigue en ella. La consola del navegador no debe mostrar errores de CORS ni de CSP. Prueba de reinicio
 (si se permite): `sudo reboot`, y después `pm2 status` y el script de nuevo.
 
+Escribe la dirección con `http://`. Chrome intenta primero `https://` y vuelve a HTTP cuando el 443 está cerrado; si el
+servidor o un proxy de la red responden en el 443, el navegador puede quedarse en un error en vez de abrir la app.
+
 ## 9. Actualizar a un paquete nuevo
 
 ```sh
