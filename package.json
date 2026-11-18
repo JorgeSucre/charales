@@ -21,7 +21,8 @@
     "e2e": "npm run build && npm run api:build && node --env-file-if-exists=.env --test e2e/*.e2e.ts",
     "db:setup": "npm run api:build && node --env-file-if-exists=.env api/setup.ts",
     "db:admin": "npm run api:build && node --env-file-if-exists=.env api/create-admin.ts",
-    "test:all": "ng test --watch=false && npm run api:typecheck && npm run api:test"
+    "test:all": "ng test --watch=false && npm run api:typecheck && npm run api:test",
+    "postman:export": "node postman/export.mjs && prettier --write --log-level=warn postman/export"
   },
   "private": true,
   "packageManager": "npm@11.19.1",

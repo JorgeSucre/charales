@@ -1,0 +1,28 @@
+$kind: http-request
+name: 'POST /api/rpc PlayerService.record (historial)'
+description: HU-013. El expediente muestra el estatus nuevo y el historial (Alta → baja) con su motivo.
+method: POST
+url: '{{baseUrl}}/api/rpc'
+order: 6500
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    { "service": "PlayerService", "method": "record", "args": [{{playerId}}] }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200 con estatus BAJA_DEFINITIVA', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json().result.player.status).to.eql('BAJA_DEFINITIVA');
+      });
+      pm.test('historial: Alta y la baja con su motivo, hecha por el administrador', () => {
+        const h = pm.response.json().result.statusHistory;
+        pm.expect(h).to.have.lengthOf(2);
+        pm.expect(h[0]).to.include({ previousStatus: 'ACTIVO', newStatus: 'BAJA_DEFINITIVA', reason: 'Prueba Postman: baja lógica' });
+        pm.expect(h[0].changedByEmail).to.eql(pm.environment.get('adminEmail'));
+        pm.expect(h[1]).to.include({ previousStatus: null, newStatus: 'ACTIVO', reason: 'Alta' });
+      });

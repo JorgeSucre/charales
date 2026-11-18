@@ -1,0 +1,20 @@
+$kind: http-request
+name: 'POST /api/rpc PlayerService.changeStatus (mismo estatus)'
+method: POST
+url: '{{baseUrl}}/api/rpc'
+order: 6700
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    { "service": "PlayerService", "method": "changeStatus", "args": [{{playerId}}, "BAJA_DEFINITIVA", "Repetida"] }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('400: el jugador ya tiene ese estatus', () => {
+        pm.response.to.have.status(400);
+        pm.expect(pm.response.json().error).to.eql('El jugador ya tiene ese estatus.');
+      });

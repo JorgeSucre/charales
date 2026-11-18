@@ -1,0 +1,52 @@
+$kind: http-request
+name: 'POST /api/rpc PlayerService.create'
+description: |-
+  HU-008. Crea un jugador de prueba y guarda su id en `playerId`. El apellido materno es una etiqueta única por
+  ejecución (`playerTag`, sólo letras), para que la colección se pueda repetir sin chocar con la regla de duplicados
+  (mismo nombre + fecha de nacimiento). No hay borrado físico: el jugador queda en BAJA_DEFINITIVA al final.
+method: POST
+url: '{{baseUrl}}/api/rpc'
+order: 6000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "service": "PlayerService",
+      "method": "create",
+      "args": [{
+        "firstName": "Prueba",
+        "lastName1": "Postman",
+        "lastName2": "{{playerTag}}",
+        "birthDate": "2016-05-14",
+        "sex": "M",
+        "phone": null,
+        "email": null,
+        "address": null
+      }]
+    }
+scripts:
+  - type: beforeRequest
+    language: text/javascript
+    code: |-
+      // Sólo letras (los nombres no deberían llevar dígitos): Date.now() en base 26 → «Kqzbtmwa».
+      const tag = Date.now().toString(26).replace(/[0-9a-p]/g, (c) => String.fromCharCode(97 + parseInt(c, 26)));
+      pm.collectionVariables.set('playerTag', tag.charAt(0).toUpperCase() + tag.slice(1));
+      const next = new Date();
+      next.setFullYear(next.getFullYear() + 1);
+      pm.collectionVariables.set('futureBirthDate', next.toISOString().slice(0, 10));
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200 con el jugador creado', () => {
+        pm.response.to.have.status(200);
+        const p = pm.response.json().result;
+        pm.expect(p.id).to.be.a('number');
+        pm.expect(p.identifier).to.match(/^J-\d{4}$/);
+        pm.expect(p.status).to.eql('ACTIVO');
+        pm.expect(p.lastName2).to.eql(pm.collectionVariables.get('playerTag'));
+        pm.collectionVariables.set('playerId', String(p.id));
+        pm.collectionVariables.set('playerIdentifier', p.identifier);
+      });

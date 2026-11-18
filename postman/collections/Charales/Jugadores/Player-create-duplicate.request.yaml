@@ -1,0 +1,36 @@
+$kind: http-request
+name: 'POST /api/rpc PlayerService.create (duplicado)'
+description: HU-008. Mismo nombre y fecha de nacimiento que el jugador creado → 400; no se crea otro.
+method: POST
+url: '{{baseUrl}}/api/rpc'
+order: 6900
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "service": "PlayerService",
+      "method": "create",
+      "args": [{
+        "firstName": "Prueba",
+        "lastName1": "Postman",
+        "lastName2": "{{playerTag}}",
+        "birthDate": "2016-05-14",
+        "sex": "M",
+        "phone": null,
+        "email": null,
+        "address": null
+      }]
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('400: posible duplicado con el identificador existente', () => {
+        pm.response.to.have.status(400);
+        const error = pm.response.json().error;
+        pm.expect(error).to.match(/^Posible duplicado: /);
+        pm.expect(error).to.include(pm.collectionVariables.get('playerIdentifier'));
+      });

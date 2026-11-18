@@ -1,0 +1,23 @@
+$kind: http-request
+name: 'POST /api/rpc PlayerService.changeStatus (baja definitiva)'
+description: |-
+  HU-010. Baja **lógica**: cambia `jugadores.estatus` y agrega una fila a `historial_estatus`. No borra el jugador ni
+  sus relaciones (pagos, categorías, partidos). La API no tiene eliminación física de jugadores ni un DELETE HTTP.
+method: POST
+url: '{{baseUrl}}/api/rpc'
+order: 6400
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    { "service": "PlayerService", "method": "changeStatus", "args": [{{playerId}}, "BAJA_DEFINITIVA", "Prueba Postman: baja lógica"] }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200 con el nuevo estatus', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json().result.status).to.eql('BAJA_DEFINITIVA');
+      });

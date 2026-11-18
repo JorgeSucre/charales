@@ -1,0 +1,20 @@
+$kind: http-request
+name: 'POST /api/rpc con args que no son arreglo'
+method: POST
+url: '{{baseUrl}}/api/rpc'
+order: 3500
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    { "service": "PlayerService", "method": "search", "args": "x" }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('400: solicitud inválida', () => {
+        pm.response.to.have.status(400);
+        pm.expect(pm.response.json().error).to.eql('Solicitud inválida.');
+      });

@@ -3,4 +3,6 @@ name: Charales API
 description: |-
   API de Charales (docs/API.md). Ejecuta la colección completa en orden: la sesión viaja en la cookie HttpOnly
   `charales_sid`, que Postman guarda en su cookie jar tras el login y reenvía sola. No hay tokens.
+  Jugadores escribe en MariaDB (un jugador de prueba por ejecución, en baja lógica); el resto sólo lee o se
+  restaura (Contraseñas).
   Uso: postman collection run postman/collections/Charales -e postman/environments/local.environment.yaml

@@ -1,4 +1,8 @@
 $kind: collection
 order: 3000
 description: |-
-  Práctica de laboratorio (docs/API.md § Práctica). Secuencia: anónimo → entrenador (403) → administrador (200).
+  Práctica de laboratorio (docs/API.md § Práctica) y HU-008/009/010/013. Secuencia: anónimo → entrenador (403 al
+  consultar y al crear) → administrador: crear → consultar → actualizar → consultar → baja definitiva → expediente →
+  GET de la fila en MariaDB → validaciones (mismo estatus, estatus inválido, duplicado, fecha futura).
+  ESCRIBE: cada ejecución deja un jugador «Prueba Postman <etiqueta>» en BAJA_DEFINITIVA, con su historial y
+  auditoría. PlayerService no tiene eliminación física; la baja es lógica (changeStatus) y no es un DELETE HTTP.

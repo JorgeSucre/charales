@@ -1,0 +1,22 @@
+$kind: http-request
+name: 'POST /api/rpc PlayerService.get (tras actualizar)'
+method: POST
+url: '{{baseUrl}}/api/rpc'
+order: 6300
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    { "service": "PlayerService", "method": "get", "args": [{{playerId}}] }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200: los cambios persisten', () => {
+        pm.response.to.have.status(200);
+        const p = pm.response.json().result;
+        pm.expect(p).to.include({ phone: '5512345678', email: 'prueba.postman@example.com', address: 'Calle Ficticia 123', status: 'ACTIVO' });
+        pm.expect(p.identifier).to.eql(pm.collectionVariables.get('playerIdentifier'));
+      });

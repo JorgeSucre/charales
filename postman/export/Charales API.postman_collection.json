@@ -1,0 +1,2167 @@
+{
+  "info": {
+    "name": "Charales API",
+    "description": "API de Charales (docs/API.md). Ejecuta la colección completa en orden: la sesión viaja en la cookie HttpOnly\n`charales_sid`, que Postman guarda en su cookie jar tras el login y reenvía sola. No hay tokens.\nJugadores escribe en MariaDB (un jugador de prueba por ejecución, en baja lógica); el resto sólo lee o se\nrestaura (Contraseñas).\nUso: postman collection run postman/collections/Charales -e postman/environments/local.environment.yaml",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Salud",
+      "item": [
+        {
+          "name": "GET /health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 con la base de datos disponible', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json()).to.eql({ status: 'ok', database: 'ok' });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/health"
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"status\": \"ok\", \"database\": \"ok\" }",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "503 Service Unavailable",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/health"
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"status\": \"error\", \"database\": \"unreachable\" }",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "description": "Secuencia de HU-001/002 (orden importa): anónimo → faltan datos → credenciales inválidas → cuenta deshabilitada → login →\nsesión → logout → sesión cerrada.",
+      "item": [
+        {
+          "name": "GET /auth/session (anónimo)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 sin sesión', () => {",
+                  "  pm.response.to.have.status(401);",
+                  "  pm.expect(pm.response.json().error).to.eql('Sesión no iniciada o expirada.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/auth/session"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/login (faltan datos)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 sin contraseña, sin cookie', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "  pm.expect(pm.response.json().error).to.eql('Correo y contraseña son obligatorios.');",
+                  "  pm.response.to.not.have.header('Set-Cookie');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/login (contraseña incorrecta)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 con el mensaje genérico, sin cookie', () => {",
+                  "  pm.response.to.have.status(401);",
+                  "  pm.expect(pm.response.json().error).to.eql('Correo o contraseña incorrectos.');",
+                  "  pm.response.to.not.have.header('Set-Cookie');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{password}}-incorrecta\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/login (cuenta deshabilitada)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 con el mensaje genérico, sin cookie', () => {",
+                  "  pm.response.to.have.status(401);",
+                  "  pm.expect(pm.response.json().error).to.eql('Correo o contraseña incorrectos.');",
+                  "  pm.response.to.not.have.header('Set-Cookie');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{disabledEmail}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 con AuthUser', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const user = pm.response.json();",
+                  "  pm.expect(user.email).to.eql(pm.environment.get('adminEmail'));",
+                  "  pm.expect(user.roles).to.eql(['ADMINISTRADOR']);",
+                  "  pm.expect(user).to.include.keys('userId', 'sessionId', 'permissions', 'officePermissions', 'expiresAt');",
+                  "  pm.expect(JSON.stringify(user)).to.not.include('password');",
+                  "  pm.collectionVariables.set('sessionId', String(user.sessionId));",
+                  "});",
+                  "pm.test('cookie de sesión HttpOnly', () => {",
+                  "  const setCookie = pm.response.headers.get('Set-Cookie');",
+                  "  pm.expect(setCookie).to.match(/^charales_sid=[\\w-]+;/);",
+                  "  pm.expect(setCookie).to.include('HttpOnly');",
+                  "  pm.expect(setCookie).to.include('SameSite=Strict');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/auth/login"
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Set-Cookie",
+                  "value": "charales_sid=<token>; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"roles\": [\"ADMINISTRADOR\"],\n  \"permissions\": [\"usuarios.consultar\", \"usuarios.crear\", \"…56 en total\"],\n  \"officePermissions\": [\"usuarios.consultar\", \"usuarios.crear\", \"…56 en total\"],\n  \"tutorId\": null,\n  \"coachId\": null,\n  \"isStaff\": true,\n  \"displayName\": \"Ana Administradora\",\n  \"userId\": 1,\n  \"sessionId\": 1,\n  \"email\": \"admin@example.com\",\n  \"expiresAt\": \"2026-10-08T19:08:00\",\n  \"lastUsedAt\": \"2026-10-08T11:08:00\"\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "400 Bad Request",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/auth/login"
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"error\": \"Correo y contraseña son obligatorios.\" }",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "401 Unauthorized",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/auth/login"
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"error\": \"Correo o contraseña incorrectos.\" }",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "403 Forbidden",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/auth/login"
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"error\": \"Tu cuenta no tiene un rol o perfil activo. Contacta a la escuela.\" }",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "429 Too Many Requests",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/auth/login"
+              },
+              "status": "Too Many Requests",
+              "code": 429,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"error\": \"Demasiados intentos. Intenta de nuevo más tarde.\" }",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "GET /auth/session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 con la sesión del login (cookie reenviada por el cookie jar)', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(String(pm.response.json().sessionId)).to.eql(pm.collectionVariables.get('sessionId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/auth/session"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/auth/session"
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"roles\": [\"TUTOR\", \"ENTRENADOR\"],\n  \"permissions\": [\"asistencias.crear\", \"asistencias.editar\", \"portal.consultar\", \"portal.editar\", \"panel_entrenador.consultar\"],\n  \"officePermissions\": [],\n  \"tutorId\": 2,\n  \"coachId\": 2,\n  \"isStaff\": false,\n  \"displayName\": \"Marta Díaz\",\n  \"userId\": 6,\n  \"sessionId\": 2,\n  \"email\": \"marta@example.com\",\n  \"expiresAt\": \"2026-10-08T19:08:00\",\n  \"lastUsedAt\": \"2026-10-08T11:20:00\"\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "401 Unauthorized",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/auth/session"
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"error\": \"Sesión no iniciada o expirada.\" }",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 y la cookie se borra', () => {",
+                  "  pm.response.to.have.status(204);",
+                  "  pm.expect(pm.response.headers.get('Set-Cookie')).to.match(/^charales_sid=;.*Max-Age=0/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/logout"
+          },
+          "response": [
+            {
+              "name": "204 No Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/auth/logout"
+              },
+              "status": "No Content",
+              "code": 204,
+              "header": [
+                {
+                  "key": "Set-Cookie",
+                  "value": "charales_sid=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
+                }
+              ],
+              "body": "",
+              "_postman_previewlanguage": "text"
+            }
+          ]
+        },
+        {
+          "name": "GET /auth/session (tras logout)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 sin sesión', () => {",
+                  "  pm.response.to.have.status(401);",
+                  "  pm.expect(pm.response.json().error).to.eql('Sesión no iniciada o expirada.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/auth/session"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Jugadores",
+      "description": "Práctica de laboratorio (docs/API.md § Práctica) y HU-008/009/010/013. Secuencia: anónimo → entrenador (403 al\nconsultar y al crear) → administrador: crear → consultar → actualizar → consultar → baja definitiva → expediente →\nGET de la fila en MariaDB → validaciones (mismo estatus, estatus inválido, duplicado, fecha futura).\nESCRIBE: cada ejecución deja un jugador «Prueba Postman <etiqueta>» en BAJA_DEFINITIVA, con su historial y\nauditoría. PlayerService no tiene eliminación física; la baja es lógica (changeStatus) y no es un DELETE HTTP.",
+      "item": [
+        {
+          "name": "GET /api/jugadores (anónimo)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 sin sesión', () => {",
+                  "  pm.response.to.have.status(401);",
+                  "  pm.expect(pm.response.json().error).to.eql('Sesión no iniciada o expirada.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/jugadores"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/login (entrenador)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 (sesión iniciada; el cookie jar guarda la cookie)', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{coachEmail}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/jugadores (entrenador)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403: un perfil de entrenador no da acceso de oficina (D12)', () => {",
+                  "  pm.response.to.have.status(403);",
+                  "  pm.expect(pm.response.json().error).to.eql('No tienes permiso para esta operación.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/jugadores"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/rpc PlayerService.create (entrenador)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403: el entrenador no puede crear jugadores (D12)', () => {",
+                  "  pm.response.to.have.status(403);",
+                  "  pm.expect(pm.response.json().error).to.eql('No tienes permiso para esta operación.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"service\": \"PlayerService\",\n  \"method\": \"create\",\n  \"args\": [{ \"firstName\": \"Sin\", \"lastName1\": \"Permiso\", \"lastName2\": null, \"birthDate\": \"2016-05-14\", \"sex\": \"M\", \"phone\": null, \"email\": null, \"address\": null }]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc",
+            "description": "Un entrenador no tiene `jugadores.crear`. El permiso se verifica antes que los datos, así que no se escribe nada."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/login (administrador)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 (sesión iniciada; el cookie jar guarda la cookie)', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/jugadores",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('respuesta JSON', () => {",
+                  "  pm.response.to.have.header('Content-Type');",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "pm.test('arreglo de registros de jugadores', () => {",
+                  "  const rows = pm.response.json();",
+                  "  pm.expect(rows).to.be.an('array').that.is.not.empty;",
+                  "  rows.forEach((r) => pm.expect(r).to.include.keys('id', 'identificador', 'nombre', 'apellido_paterno', 'fecha_nacimiento', 'estatus'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/jugadores"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/jugadores"
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "[\n  {\n    \"id\": 1,\n    \"identificador\": \"J-0001\",\n    \"nombre\": \"Diego\",\n    \"apellido_paterno\": \"Hernández\",\n    \"apellido_materno\": \"López\",\n    \"fecha_nacimiento\": \"2016-03-12\",\n    \"sexo\": \"M\",\n    \"telefono\": null,\n    \"email\": null,\n    \"direccion\": \"Calle Pino 12\",\n    \"estatus\": \"ACTIVO\",\n    \"creado_en\": \"2026-10-08 11:17:18\",\n    \"actualizado_en\": \"2026-10-08 11:17:18\"\n  },\n  {\n    \"id\": 2,\n    \"identificador\": \"J-0002\",\n    \"nombre\": \"Lucía\",\n    \"apellido_paterno\": \"Hernández\",\n    \"apellido_materno\": \"López\",\n    \"fecha_nacimiento\": \"2014-07-01\",\n    \"sexo\": \"F\",\n    \"telefono\": null,\n    \"email\": null,\n    \"direccion\": \"Calle Pino 12\",\n    \"estatus\": \"ACTIVO\",\n    \"creado_en\": \"2026-10-08 11:17:18\",\n    \"actualizado_en\": \"2026-10-08 11:17:18\"\n  },\n  {\n    \"id\": 3,\n    \"identificador\": \"J-0003\",\n    \"nombre\": \"Mateo\",\n    \"apellido_paterno\": \"Ruiz\",\n    \"apellido_materno\": null,\n    \"fecha_nacimiento\": \"2016-11-20\",\n    \"sexo\": \"M\",\n    \"telefono\": null,\n    \"email\": null,\n    \"direccion\": null,\n    \"estatus\": \"ACTIVO\",\n    \"creado_en\": \"2026-10-08 11:17:18\",\n    \"actualizado_en\": \"2026-10-08 11:17:18\"\n  },\n  {\n    \"id\": 4,\n    \"identificador\": \"J-0004\",\n    \"nombre\": \"Valeria\",\n    \"apellido_paterno\": \"Soto\",\n    \"apellido_materno\": \"Mena\",\n    \"fecha_nacimiento\": \"2014-02-05\",\n    \"sexo\": \"F\",\n    \"telefono\": null,\n    \"email\": null,\n    \"direccion\": null,\n    \"estatus\": \"BAJA_TEMPORAL\",\n    \"creado_en\": \"2026-10-08 11:17:18\",\n    \"actualizado_en\": \"2026-10-08 11:17:18\"\n  },\n  {\n    \"id\": 5,\n    \"identificador\": \"J-0005\",\n    \"nombre\": \"Emiliano\",\n    \"apellido_paterno\": \"Díaz\",\n    \"apellido_materno\": null,\n    \"fecha_nacimiento\": \"2017-05-09\",\n    \"sexo\": \"M\",\n    \"telefono\": null,\n    \"email\": null,\n    \"direccion\": null,\n    \"estatus\": \"ACTIVO\",\n    \"creado_en\": \"2026-10-08 11:17:18\",\n    \"actualizado_en\": \"2026-10-08 11:17:18\"\n  },\n  {\n    \"id\": 6,\n    \"identificador\": \"J-0006\",\n    \"nombre\": \"Sofía\",\n    \"apellido_paterno\": \"Ruiz\",\n    \"apellido_materno\": null,\n    \"fecha_nacimiento\": \"2015-01-15\",\n    \"sexo\": \"F\",\n    \"telefono\": null,\n    \"email\": null,\n    \"direccion\": null,\n    \"estatus\": \"ACTIVO\",\n    \"creado_en\": \"2026-10-08 11:17:18\",\n    \"actualizado_en\": \"2026-10-08 11:17:18\"\n  }\n]",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "401 Unauthorized",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/jugadores"
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"error\": \"Sesión no iniciada o expirada.\" }",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "403 Forbidden",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/jugadores"
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"error\": \"No tienes permiso para esta operación.\" }",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "POST /api/rpc PlayerService.create",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Sólo letras (los nombres no deberían llevar dígitos): Date.now() en base 26 → «Kqzbtmwa».",
+                  "const tag = Date.now().toString(26).replace(/[0-9a-p]/g, (c) => String.fromCharCode(97 + parseInt(c, 26)));",
+                  "pm.collectionVariables.set('playerTag', tag.charAt(0).toUpperCase() + tag.slice(1));",
+                  "const next = new Date();",
+                  "next.setFullYear(next.getFullYear() + 1);",
+                  "pm.collectionVariables.set('futureBirthDate', next.toISOString().slice(0, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 con el jugador creado', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const p = pm.response.json().result;",
+                  "  pm.expect(p.id).to.be.a('number');",
+                  "  pm.expect(p.identifier).to.match(/^J-\\d{4}$/);",
+                  "  pm.expect(p.status).to.eql('ACTIVO');",
+                  "  pm.expect(p.lastName2).to.eql(pm.collectionVariables.get('playerTag'));",
+                  "  pm.collectionVariables.set('playerId', String(p.id));",
+                  "  pm.collectionVariables.set('playerIdentifier', p.identifier);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"service\": \"PlayerService\",\n  \"method\": \"create\",\n  \"args\": [{\n    \"firstName\": \"Prueba\",\n    \"lastName1\": \"Postman\",\n    \"lastName2\": \"{{playerTag}}\",\n    \"birthDate\": \"2016-05-14\",\n    \"sex\": \"M\",\n    \"phone\": null,\n    \"email\": null,\n    \"address\": null\n  }]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc",
+            "description": "HU-008. Crea un jugador de prueba y guarda su id en `playerId`. El apellido materno es una etiqueta única por\nejecución (`playerTag`, sólo letras), para que la colección se pueda repetir sin chocar con la regla de duplicados\n(mismo nombre + fecha de nacimiento). No hay borrado físico: el jugador queda en BAJA_DEFINITIVA al final."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/rpc PlayerService.get (tras crear)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 con los datos guardados', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const p = pm.response.json().result;",
+                  "  pm.expect(String(p.id)).to.eql(pm.collectionVariables.get('playerId'));",
+                  "  pm.expect(p.identifier).to.eql(pm.collectionVariables.get('playerIdentifier'));",
+                  "  pm.expect(p).to.include({ firstName: 'Prueba', lastName1: 'Postman', birthDate: '2016-05-14', sex: 'M', status: 'ACTIVO', phone: null });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"service\": \"PlayerService\", \"method\": \"get\", \"args\": [{{playerId}}] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/rpc PlayerService.update",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 con los datos actualizados', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const p = pm.response.json().result;",
+                  "  pm.expect(p).to.include({ phone: '5512345678', email: 'prueba.postman@example.com', address: 'Calle Ficticia 123' });",
+                  "  pm.expect(p.identifier).to.eql(pm.collectionVariables.get('playerIdentifier'));",
+                  "  pm.expect(p.status).to.eql('ACTIVO');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"service\": \"PlayerService\",\n  \"method\": \"update\",\n  \"args\": [{{playerId}}, {\n    \"firstName\": \"Prueba\",\n    \"lastName1\": \"Postman\",\n    \"lastName2\": \"{{playerTag}}\",\n    \"birthDate\": \"2016-05-14\",\n    \"sex\": \"M\",\n    \"phone\": \"5512345678\",\n    \"email\": \"prueba.postman@example.com\",\n    \"address\": \"Calle Ficticia 123\"\n  }]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc",
+            "description": "HU-009. Actualiza contacto y dirección; conserva id, identificador y estatus."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/rpc PlayerService.get (tras actualizar)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200: los cambios persisten', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const p = pm.response.json().result;",
+                  "  pm.expect(p).to.include({ phone: '5512345678', email: 'prueba.postman@example.com', address: 'Calle Ficticia 123', status: 'ACTIVO' });",
+                  "  pm.expect(p.identifier).to.eql(pm.collectionVariables.get('playerIdentifier'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"service\": \"PlayerService\", \"method\": \"get\", \"args\": [{{playerId}}] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/rpc PlayerService.changeStatus (baja definitiva)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 con el nuevo estatus', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().result.status).to.eql('BAJA_DEFINITIVA');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"service\": \"PlayerService\", \"method\": \"changeStatus\", \"args\": [{{playerId}}, \"BAJA_DEFINITIVA\", \"Prueba Postman: baja lógica\"] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc",
+            "description": "HU-010. Baja **lógica**: cambia `jugadores.estatus` y agrega una fila a `historial_estatus`. No borra el jugador ni\nsus relaciones (pagos, categorías, partidos). La API no tiene eliminación física de jugadores ni un DELETE HTTP."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/rpc PlayerService.record (historial)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 con estatus BAJA_DEFINITIVA', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().result.player.status).to.eql('BAJA_DEFINITIVA');",
+                  "});",
+                  "pm.test('historial: Alta y la baja con su motivo, hecha por el administrador', () => {",
+                  "  const h = pm.response.json().result.statusHistory;",
+                  "  pm.expect(h).to.have.lengthOf(2);",
+                  "  pm.expect(h[0]).to.include({ previousStatus: 'ACTIVO', newStatus: 'BAJA_DEFINITIVA', reason: 'Prueba Postman: baja lógica' });",
+                  "  pm.expect(h[0].changedByEmail).to.eql(pm.environment.get('adminEmail'));",
+                  "  pm.expect(h[1]).to.include({ previousStatus: null, newStatus: 'ACTIVO', reason: 'Alta' });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"service\": \"PlayerService\", \"method\": \"record\", \"args\": [{{playerId}}] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc",
+            "description": "HU-013. El expediente muestra el estatus nuevo y el historial (Alta → baja) con su motivo."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/jugadores (tras las operaciones)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('la fila del jugador de prueba está en MariaDB con los cambios', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const id = Number(pm.collectionVariables.get('playerId'));",
+                  "  const row = pm.response.json().find((r) => r.id === id);",
+                  "  pm.expect(row, 'fila id ' + id).to.be.an('object');",
+                  "  pm.expect(row).to.include({",
+                  "    identificador: pm.collectionVariables.get('playerIdentifier'),",
+                  "    apellido_materno: pm.collectionVariables.get('playerTag'),",
+                  "    telefono: '5512345678',",
+                  "    direccion: 'Calle Ficticia 123',",
+                  "    estatus: 'BAJA_DEFINITIVA',",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/jugadores",
+            "description": "El GET de la práctica devuelve la fila tal como está en MariaDB (snake_case); confirma lo que se persistió."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/rpc PlayerService.changeStatus (mismo estatus)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400: el jugador ya tiene ese estatus', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "  pm.expect(pm.response.json().error).to.eql('El jugador ya tiene ese estatus.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"service\": \"PlayerService\", \"method\": \"changeStatus\", \"args\": [{{playerId}}, \"BAJA_DEFINITIVA\", \"Repetida\"] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/rpc PlayerService.changeStatus (estatus inválido)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400: estatus inválido', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "  pm.expect(pm.response.json().error).to.eql('Estatus inválido.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"service\": \"PlayerService\", \"method\": \"changeStatus\", \"args\": [{{playerId}}, \"ELIMINADO\", \"No existe\"] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc",
+            "description": "`ELIMINADO` no es un valor de `jugadores.estatus` (T1): 400 y no se escribe nada."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/rpc PlayerService.create (duplicado)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400: posible duplicado con el identificador existente', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "  const error = pm.response.json().error;",
+                  "  pm.expect(error).to.match(/^Posible duplicado: /);",
+                  "  pm.expect(error).to.include(pm.collectionVariables.get('playerIdentifier'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"service\": \"PlayerService\",\n  \"method\": \"create\",\n  \"args\": [{\n    \"firstName\": \"Prueba\",\n    \"lastName1\": \"Postman\",\n    \"lastName2\": \"{{playerTag}}\",\n    \"birthDate\": \"2016-05-14\",\n    \"sex\": \"M\",\n    \"phone\": null,\n    \"email\": null,\n    \"address\": null\n  }]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc",
+            "description": "HU-008. Mismo nombre y fecha de nacimiento que el jugador creado → 400; no se crea otro."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/rpc PlayerService.create (fecha de nacimiento futura)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400: la fecha de nacimiento no puede ser futura', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "  pm.expect(pm.response.json().error).to.eql('La fecha de nacimiento no puede ser futura.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"service\": \"PlayerService\",\n  \"method\": \"create\",\n  \"args\": [{\n    \"firstName\": \"Futuro\",\n    \"lastName1\": \"Postman\",\n    \"lastName2\": \"{{playerTag}}\",\n    \"birthDate\": \"{{futureBirthDate}}\",\n    \"sex\": \"F\",\n    \"phone\": null,\n    \"email\": null,\n    \"address\": null\n  }]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc",
+            "description": "`futureBirthDate` (hoy + 1 año) la calcula el script previo de PlayerService.create."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Categorias",
+      "description": "Práctica de laboratorio (docs/API.md § Práctica). Continúa la sesión de administrador de Jugadores; luego logout\n(401) y entrenador (403).",
+      "item": [
+        {
+          "name": "GET /api/categorias",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('respuesta JSON', () => {",
+                  "  pm.response.to.have.header('Content-Type');",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "  pm.response.to.be.json;",
+                  "});",
+                  "pm.test('arreglo de registros de categorias', () => {",
+                  "  const rows = pm.response.json();",
+                  "  pm.expect(rows).to.be.an('array').that.is.not.empty;",
+                  "  rows.forEach((r) => pm.expect(r).to.include.keys('id', 'temporada_id', 'nombre', 'edad_minima', 'edad_maxima', 'activo'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/categorias"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/categorias"
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "[\n  {\n    \"id\": 1,\n    \"temporada_id\": 1,\n    \"nombre\": \"Sub-10\",\n    \"edad_minima\": 8,\n    \"edad_maxima\": 10,\n    \"cupo_maximo\": 20,\n    \"activo\": 1,\n    \"creado_en\": \"2026-10-08 11:17:18\",\n    \"actualizado_en\": \"2026-10-08 11:17:18\"\n  },\n  {\n    \"id\": 2,\n    \"temporada_id\": 1,\n    \"nombre\": \"Sub-12\",\n    \"edad_minima\": 10,\n    \"edad_maxima\": 12,\n    \"cupo_maximo\": 2,\n    \"activo\": 1,\n    \"creado_en\": \"2026-10-08 11:17:18\",\n    \"actualizado_en\": \"2026-10-08 11:17:18\"\n  },\n  {\n    \"id\": 3,\n    \"temporada_id\": 1,\n    \"nombre\": \"Sub-8\",\n    \"edad_minima\": 6,\n    \"edad_maxima\": 8,\n    \"cupo_maximo\": null,\n    \"activo\": 1,\n    \"creado_en\": \"2026-10-08 11:17:18\",\n    \"actualizado_en\": \"2026-10-08 11:17:18\"\n  }\n]",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "401 Unauthorized",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/categorias"
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"error\": \"Sesión no iniciada o expirada.\" }",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "403 Forbidden",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/categorias"
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"error\": \"No tienes permiso para esta operación.\" }",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('204', () => pm.response.to.have.status(204));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/logout"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/categorias (anónimo)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 sin sesión', () => {",
+                  "  pm.response.to.have.status(401);",
+                  "  pm.expect(pm.response.json().error).to.eql('Sesión no iniciada o expirada.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/categorias"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/login (entrenador)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 (sesión iniciada; el cookie jar guarda la cookie)', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{coachEmail}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/categorias (entrenador)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403: un perfil de entrenador no da acceso de oficina (D12)', () => {",
+                  "  pm.response.to.have.status(403);",
+                  "  pm.expect(pm.response.json().error).to.eql('No tienes permiso para esta operación.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/categorias"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/logout (entrenador)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('204', () => pm.response.to.have.status(204));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/logout"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Contraseñas",
+      "description": "HU-005 (M0 D2–D8). Cambio de contraseña con sesión y recuperación por token. El cambio deja la contraseña de nuevo\nen {{password}} al final, para que la colección se pueda repetir. La solicitud de recuperación responde 204 con\nMAIL_CONSOLE=true en desarrollo, 503 sin transporte de correo y 429 al superar el límite; en todos los casos debe\nresponder igual para un correo existente y uno inexistente.",
+      "item": [
+        {
+          "name": "POST /auth/login (entrenador)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200 (sesión iniciada)', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{coachEmail}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/password (contraseña actual incorrecta)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400: la contraseña actual no es correcta (no 401: la sesión sigue)', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "  pm.expect(pm.response.json().error).to.eql('La contraseña actual no es correcta.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{password}}-incorrecta\",\n  \"newPassword\": \"{{tempPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/password"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204: contraseña cambiada', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{password}}\",\n  \"newPassword\": \"{{tempPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/password"
+          },
+          "response": [
+            {
+              "name": "204 No Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/auth/password"
+              },
+              "status": "No Content",
+              "code": 204,
+              "header": [],
+              "body": "",
+              "_postman_previewlanguage": "text"
+            },
+            {
+              "name": "400 Bad Request",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/auth/password"
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"error\": \"La contraseña actual no es correcta.\" }",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "401 Unauthorized",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/auth/password"
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"error\": \"Sesión no iniciada o expirada.\" }",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "429 Too Many Requests",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/auth/password"
+              },
+              "status": "Too Many Requests",
+              "code": 429,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"error\": \"Demasiados intentos. Intenta de nuevo más tarde.\" }",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "GET /auth/session (tras el cambio)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200: la sesión actual se conserva (D2)', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/auth/session"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/password (restaurar)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204: se restaura la contraseña de desarrollo', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{tempPassword}}\",\n  \"newPassword\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/password"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('204', () => pm.response.to.have.status(204));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/logout"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/password (anónimo)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 sin sesión', () => {",
+                  "  pm.response.to.have.status(401);",
+                  "  pm.expect(pm.response.json().error).to.eql('Sesión no iniciada o expirada.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{password}}\",\n  \"newPassword\": \"{{tempPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/password"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/password-reset/request (correo existente)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204, 503 (sin transporte) o 429 (límite)', () => pm.expect(pm.response.code).to.be.oneOf([204, 429, 503]));",
+                  "pm.collectionVariables.set('resetStatusExisting', String(pm.response.code));",
+                  "pm.collectionVariables.set('resetBodyExisting', pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{coachEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/password-reset/request"
+          },
+          "response": [
+            {
+              "name": "204 No Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/auth/password-reset/request"
+              },
+              "status": "No Content",
+              "code": 204,
+              "header": [],
+              "body": "",
+              "_postman_previewlanguage": "text"
+            },
+            {
+              "name": "429 Too Many Requests",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/auth/password-reset/request"
+              },
+              "status": "Too Many Requests",
+              "code": 429,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"error\": \"Demasiados intentos. Intenta de nuevo más tarde.\" }",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "503 Service Unavailable",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/auth/password-reset/request"
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"error\": \"La recuperación de contraseña no está disponible.\" }",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/password-reset/request (correo inexistente)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('misma respuesta que para un correo existente (sin enumeración, D7)', () => {",
+                  "  pm.expect(String(pm.response.code)).to.eql(pm.collectionVariables.get('resetStatusExisting'));",
+                  "  pm.expect(pm.response.text()).to.eql(pm.collectionVariables.get('resetBodyExisting'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nadie@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/password-reset/request"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/password-reset/confirm (token inválido)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 con el mensaje genérico', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "  pm.expect(pm.response.json().error).to.eql('El enlace no es válido o ya expiró.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"token-inexistente\",\n  \"newPassword\": \"{{tempPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/password-reset/confirm"
+          },
+          "response": [
+            {
+              "name": "204 No Content",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/auth/password-reset/confirm"
+              },
+              "status": "No Content",
+              "code": 204,
+              "header": [],
+              "body": "",
+              "_postman_previewlanguage": "text"
+            },
+            {
+              "name": "400 Bad Request",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": "{{baseUrl}}/auth/password-reset/confirm"
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{ \"error\": \"El enlace no es válido o ya expiró.\" }",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Dominio",
+      "description": "Operaciones de dominio (docs/API.md § Operaciones de dominio, decisión D13): `POST /api/rpc` ejecuta en la API el\nservicio de dominio de la lista blanca, con la sesión de la cookie, sobre MariaDB. Sólo lecturas y rechazos (las\nescrituras de jugadores están en Jugadores). Secuencia: administrador → entrenador → sin sesión.",
+      "item": [
+        {
+          "name": "POST /auth/login (administrador)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 (el cookie jar guarda la cookie)', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"email\": \"{{adminEmail}}\", \"password\": \"{{password}}\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/rpc PlayerService.search",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 con una página de jugadores (HU-014)', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().result.items).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"service\": \"PlayerService\", \"method\": \"search\", \"args\": [{ \"query\": \"\" }] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/rpc UserService.list",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 sin hashes de contraseña ni de token (HU-072)', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.text()).to.not.match(/passwordHash|tokenHash|argon2/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"service\": \"UserService\", \"method\": \"list\", \"args\": [{}] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/rpc con args que no son arreglo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400: solicitud inválida', () => {",
+                  "  pm.response.to.have.status(400);",
+                  "  pm.expect(pm.response.json().error).to.eql('Solicitud inválida.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"service\": \"PlayerService\", \"method\": \"search\", \"args\": \"x\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/rpc fuera de la lista blanca",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404: sólo se exponen los métodos de rpc-methods.ts', () => {",
+                  "  pm.response.to.have.status(404);",
+                  "  pm.expect(pm.response.json().error).to.eql('Operación no disponible.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"service\": \"UserService\", \"method\": \"profileAccount\", \"args\": [\"x@example.com\"] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/login (entrenador)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"email\": \"{{coachEmail}}\", \"password\": \"{{password}}\" }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/rpc PlayerService.search (entrenador)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403: la autorización corre en el servidor (D12)', () => {",
+                  "  pm.response.to.have.status(403);",
+                  "  pm.expect(pm.response.json().error).to.eql('No tienes permiso para esta operación.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"service\": \"PlayerService\", \"method\": \"search\", \"args\": [{}] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('204', () => pm.response.to.have.status(204));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/logout"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/rpc sin sesión",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('401 sin sesión', () => pm.response.to.have.status(401));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"service\": \"PlayerService\", \"method\": \"search\", \"args\": [{}] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/rpc"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

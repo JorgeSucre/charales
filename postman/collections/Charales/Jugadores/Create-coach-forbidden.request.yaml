@@ -1,0 +1,25 @@
+$kind: http-request
+name: 'POST /api/rpc PlayerService.create (entrenador)'
+description: Un entrenador no tiene `jugadores.crear`. El permiso se verifica antes que los datos, así que no se escribe nada.
+method: POST
+url: '{{baseUrl}}/api/rpc'
+order: 3500
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "service": "PlayerService",
+      "method": "create",
+      "args": [{ "firstName": "Sin", "lastName1": "Permiso", "lastName2": null, "birthDate": "2016-05-14", "sex": "M", "phone": null, "email": null, "address": null }]
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('403: el entrenador no puede crear jugadores (D12)', () => {
+        pm.response.to.have.status(403);
+        pm.expect(pm.response.json().error).to.eql('No tienes permiso para esta operación.');
+      });

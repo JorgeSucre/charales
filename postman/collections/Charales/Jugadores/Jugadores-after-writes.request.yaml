@@ -1,0 +1,23 @@
+$kind: http-request
+name: 'GET /api/jugadores (tras las operaciones)'
+description: El GET de la práctica devuelve la fila tal como está en MariaDB (snake_case); confirma lo que se persistió.
+method: GET
+url: '{{baseUrl}}/api/jugadores'
+order: 6600
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('la fila del jugador de prueba está en MariaDB con los cambios', () => {
+        pm.response.to.have.status(200);
+        const id = Number(pm.collectionVariables.get('playerId'));
+        const row = pm.response.json().find((r) => r.id === id);
+        pm.expect(row, 'fila id ' + id).to.be.an('object');
+        pm.expect(row).to.include({
+          identificador: pm.collectionVariables.get('playerIdentifier'),
+          apellido_materno: pm.collectionVariables.get('playerTag'),
+          telefono: '5512345678',
+          direccion: 'Calle Ficticia 123',
+          estatus: 'BAJA_DEFINITIVA',
+        });
+      });

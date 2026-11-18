@@ -1,0 +1,23 @@
+$kind: http-request
+name: 'POST /api/rpc PlayerService.get (tras crear)'
+method: POST
+url: '{{baseUrl}}/api/rpc'
+order: 6100
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    { "service": "PlayerService", "method": "get", "args": [{{playerId}}] }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200 con los datos guardados', () => {
+        pm.response.to.have.status(200);
+        const p = pm.response.json().result;
+        pm.expect(String(p.id)).to.eql(pm.collectionVariables.get('playerId'));
+        pm.expect(p.identifier).to.eql(pm.collectionVariables.get('playerIdentifier'));
+        pm.expect(p).to.include({ firstName: 'Prueba', lastName1: 'Postman', birthDate: '2016-05-14', sex: 'M', status: 'ACTIVO', phone: null });
+      });

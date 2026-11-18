@@ -244,7 +244,11 @@ postman collection lint postman/
 postman collection run postman/collections/Charales -e postman/environments/local.environment.yaml   # API corriendo
 ```
 
-La carpeta `Dominio` prueba `POST /api/rpc` (sólo lecturas). La carpeta `Auth` es una secuencia (el orden importa): la cookie que deja el login la reenvía el cookie jar de Postman.
+La carpeta `Dominio` prueba `POST /api/rpc` (lecturas y rechazos). `Jugadores` **escribe**: crea, edita y da de baja
+lógica (`changeStatus`, no hay borrado) un jugador de prueba por ejecución, y comprueba duplicado y fecha futura. Cada
+carpeta es una secuencia (el orden importa): la cookie que deja el login la reenvía el cookie jar de Postman. Para
+Postman Desktop, `npm run postman:export` genera la colección v2.1 y el environment en `postman/export/` desde los
+YAML (la fuente); guía en [`postman/POSTMAN-GUIDE.md`](../postman/POSTMAN-GUIDE.md).
 Valores locales distintos: `postman/environments/*.local.environment.yaml` (no se versiona). Cada endpoint nuevo llega
 con su request, ejemplos y `pm.test` en la misma PR; las pruebas propias del backend siguen siendo `api/*.test.ts`.
 

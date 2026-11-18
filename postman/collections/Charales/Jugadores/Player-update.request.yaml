@@ -1,0 +1,37 @@
+$kind: http-request
+name: 'POST /api/rpc PlayerService.update'
+description: HU-009. Actualiza contacto y dirección; conserva id, identificador y estatus.
+method: POST
+url: '{{baseUrl}}/api/rpc'
+order: 6200
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "service": "PlayerService",
+      "method": "update",
+      "args": [{{playerId}}, {
+        "firstName": "Prueba",
+        "lastName1": "Postman",
+        "lastName2": "{{playerTag}}",
+        "birthDate": "2016-05-14",
+        "sex": "M",
+        "phone": "5512345678",
+        "email": "prueba.postman@example.com",
+        "address": "Calle Ficticia 123"
+      }]
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('200 con los datos actualizados', () => {
+        pm.response.to.have.status(200);
+        const p = pm.response.json().result;
+        pm.expect(p).to.include({ phone: '5512345678', email: 'prueba.postman@example.com', address: 'Calle Ficticia 123' });
+        pm.expect(p.identifier).to.eql(pm.collectionVariables.get('playerIdentifier'));
+        pm.expect(p.status).to.eql('ACTIVO');
+      });
