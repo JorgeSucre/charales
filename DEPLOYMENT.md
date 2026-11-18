@@ -181,6 +181,10 @@ Operación: `pm2 status`, `pm2 restart charales-api` (tras cambiar `.env`), `pm2
 configuración es peligrosa o falta una migración, la API sale con código 1; PM2 reintenta 10 veces y la deja detenida:
 revisa `pm2 logs`.
 
+Logs: `~/.pm2/logs/charales-api-out*.log` y `charales-api-error*.log` (los avisos de arranque van al de error), con
+fecha y hora. No contienen contraseñas, tokens ni parámetros SQL. Para que no crezcan sin límite (opcional):
+`pm2 install pm2-logrotate`.
+
 ## 7. Frontend en Apache
 
 El DocumentRoot predeterminado es `/var/www/html`; usa el que indique el profesor. Si ya tiene archivos, respáldalos:
@@ -193,14 +197,12 @@ sudo restorecon -R /var/www/html                                          # cont
 ```
 
 AlmaLinux trae `AllowOverride None`: Apache ignoraría el `.htaccess` y las rutas internas darían 404 al recargar.
-Se habilita en un archivo propio, sin editar `httpd.conf`:
+Se habilita con un archivo propio, sin editar `httpd.conf` (si el DocumentRoot no es `/var/www/html`, edita la ruta
+en el archivo antes de copiarlo):
 
 ```sh
-sudo tee /etc/httpd/conf.d/charales.conf >/dev/null <<'EOF'
-<Directory "/var/www/html">
-    AllowOverride All
-</Directory>
-EOF
+test ! -e /etc/httpd/conf.d/charales.conf || echo "Ya existe /etc/httpd/conf.d/charales.conf: revísalo a mano"
+sudo cp -n ~/charales/backend/deploy/servidor/apache-charales.conf /etc/httpd/conf.d/charales.conf   # -n: no sobrescribe
 sudo apachectl configtest                   # Syntax OK
 sudo systemctl reload httpd
 ```
@@ -260,3 +262,9 @@ Antes de `db:setup` sobre una base **con datos**, respáldala (como administrado
   aceptan como JSON y CORS sólo autoriza a `APP_URL`. Residual: un GET de otro sitio a `/auth/session` puede renovar
   la inactividad de una sesión abierta (no lee ni cambia datos).
 - `backend/.env` contiene la contraseña de MariaDB: modo 600, del usuario de PM2, fuera de Git y del `.tar.gz`.
+- **SQL:** todos los valores van como parámetros (`?`); los nombres de tabla y columna interpolados salen del código
+  (`api/tables.ts`) y de `information_schema`, nunca de la petición. Cuerpos limitados a 10 kB (200 kB en `/api/rpc`).
+- **Residuales aceptados en esta variante:** la API queda expuesta directamente en `:3002`, sin proxy que limite
+  peticiones (el límite de intentos de login y de recuperación es de la propia API, en MariaDB); `/health` responde
+  públicamente si la base está accesible (no da otros datos); Apache anuncia su versión salvo que el administrador
+  ponga `ServerTokens Prod` en `httpd.conf`. MariaDB nunca debe abrirse al exterior (§ 3).

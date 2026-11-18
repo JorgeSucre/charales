@@ -11,7 +11,8 @@ ko() { echo "FAIL  $1"; status=1; }
 code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 
 if command -v pm2 >/dev/null; then
-  pm2 jlist 2>/dev/null | grep -q '"name":"charales-api".*"status":"online"' &&
+  pm2 jlist 2>/dev/null | node -e 'const l=JSON.parse(require("fs").readFileSync(0,"utf8"));
+    process.exit(l.some((p)=>p.name==="charales-api"&&p.pm2_env.status==="online")?0:1)' 2>/dev/null &&
     ok "PM2: charales-api online" || ko "PM2: charales-api no está online (pm2 logs charales-api)"
 else
   echo "SKIP  PM2 no instalado en esta máquina"

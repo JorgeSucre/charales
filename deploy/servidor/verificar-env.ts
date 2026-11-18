@@ -26,7 +26,11 @@ for (const name of ['HOST', 'PORT', 'DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 
   if (env[name]?.trim()) pass(`${name} definido`);
   else
     fail(`${name} vacío${/^DB_(HOST|PORT)$/.test(name) ? ' (dato pendiente del profesor)' : ''}.`);
-if (env['DB_PORT'] && !/^\d+$/.test(env['DB_PORT'])) fail('DB_PORT no es un número.');
+const isPort = (v: string | undefined) => /^\d+$/.test(v ?? '') && +v! >= 1 && +v! <= 65535;
+if (env['PORT'] && !isPort(env['PORT'])) fail('PORT no es un puerto válido (1-65535).');
+if (env['DB_PORT'] && !isPort(env['DB_PORT'])) fail('DB_PORT no es un puerto válido (1-65535).');
+if (env['PORT'] === env['DB_PORT'] && /^(127\.0\.0\.1|localhost|::1)$/.test(env['DB_HOST'] ?? ''))
+  fail('PORT y DB_PORT son el mismo puerto local: la API y MariaDB no pueden compartirlo.');
 console.log(`INFO  CORS acepta el origen: ${appOrigin(env['APP_URL']) ?? '(ninguno)'}`);
 
 if (!failed) {
@@ -39,7 +43,9 @@ if (!failed) {
       fail(`la base no está al día, falta: ${missing.join(', ')} (npm run db:setup).`);
     else pass('esquema y migraciones al día');
   } catch (e) {
-    fail(`no se pudo conectar a MariaDB: ${(e as Error).message}`);
+    // The pool only says it got no connection; the driver's reason (access denied, unknown database…) is the cause.
+    const err = e as Error & { cause?: Error };
+    fail(`no se pudo conectar a MariaDB: ${err.cause?.message ?? err.message}`);
   } finally {
     await db.end();
   }

@@ -45,7 +45,7 @@ Las historias de usuario se organizan por épicas (EP01–EP12) y cada una tiene
 | Reportes              | **EN REVISIÓN** | Tablero con fuentes, jugadores por categoría, ingresos, agenda global                                                                                                                                  |
 | Agenda                | **EN REVISIÓN** | Sesiones (también desde horarios), partidos con reprogramación y resultados                                                                                                                            |
 | Pruebas               | **COMPLETADO**  | 251 Angular + 395 de la API sobre MariaDB (criterios por HU) + 23 E2E en Chrome headless + Postman ([`TESTING.md`](docs/TESTING.md))                                                                   |
-| Deployment            | **NO INICIADO** | —                                                                                                                                                                                                      |
+| Deployment            | **EN PROGRESO** | Paquete para el servidor del curso (AlmaLinux, Apache + PM2, HTTP) preparado y probado localmente; falta el servidor real ([`DEPLOYMENT.md`](DEPLOYMENT.md))                                           |
 
 ### Terminado
 
@@ -73,7 +73,8 @@ el mismo `ROADMAP.md`.
 
 ### Fuera de alcance actual
 
-Correo real, pagos en línea, almacenamiento de archivos, Docker, CI/CD y deployment.
+Correo real, pagos en línea, almacenamiento de archivos, Docker y CI/CD. El despliegue de producción real (HTTPS,
+dominio) tampoco; sólo el del servidor del curso ([`DEPLOYMENT.md`](DEPLOYMENT.md)).
 
 ## Historias de usuario
 
