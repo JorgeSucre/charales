@@ -1,4 +1,5 @@
 import {
+  ChangeDetectionStrategy,
   Component,
   ElementRef,
   computed,
@@ -20,8 +21,9 @@ import {
 } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
-import { Id, PlayerStatus, Sex } from '../../core/models';
+import { CompetitionType, Id, PaymentMethod, PlayerStatus, Sex } from '../../core/models';
 import { CategoryService } from '../../core/services/category.service';
+import { TYPE_LABELS } from '../../core/services/competition.service';
 import {
   PlayerDraft,
   PlayerService,
@@ -44,7 +46,7 @@ import {
 } from '../../shared/status-tone';
 import { Paginator, SubmissionAlert, catalogParam, idOrNull } from '../../shared/ui';
 import { emailValidator, personNameValidator, phoneValidator } from '../../shared/validate';
-import { CHARGE_STATUS_LABELS } from '../billing/billing.service';
+import { CHARGE_STATUS_LABELS, METHOD_LABELS } from '../billing/billing.service';
 import { ENROLLMENT_LABELS } from '../enrollments/enrollment.service';
 import { ORDER_STATUS_LABELS } from '../uniforms/uniform.service';
 import { PlayerCategoryService } from '../enrollments/player-category.service';
@@ -55,18 +57,30 @@ const STATUSES = Object.entries(STATUS_LABELS) as [PlayerStatus, string][];
 /** HU-014: partial search by name, combinable filters (category, status), pagination, link to the record. */
 @Component({
   selector: 'app-players-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, RouterLink, LoadState, Paginator],
   template: `
     <div class="page-head">
-      <h1>Jugadores</h1>
+      <div>
+        <h1>Jugadores</h1>
+        <p class="page-subtitle">
+          Directorio de jugadores inscritos, categoría vigente y estado en la escuela.
+        </p>
+      </div>
       @if (auth.can('jugadores.crear')) {
         <a class="button" routerLink="/admin/players/new">Registrar jugador</a>
       }
     </div>
+
     <div class="filters">
-      <label
+      <label class="filter-grow"
         >Nombre o identificador
-        <input type="search" [ngModel]="query()" (ngModelChange)="query.set($event); page.set(1)" />
+        <input
+          type="search"
+          placeholder="Buscar por nombre o J-0001…"
+          [ngModel]="query()"
+          (ngModelChange)="query.set($event); page.set(1)"
+        />
       </label>
       <label
         >Categoría
@@ -89,10 +103,27 @@ const STATUSES = Object.entries(STATUS_LABELS) as [PlayerStatus, string][];
           }
         </select>
       </label>
+      @if (hasFilters()) {
+        <button type="button" class="secondary sm" (click)="clearFilters()">Limpiar filtros</button>
+      }
     </div>
+
     <app-load-state [res]="result" emptyText="Sin resultados."
       ><ng-template>
-        <p class="muted">Resultados: {{ result.value()?.total }}</p>
+        <div class="list-meta">
+          <p class="muted">
+            Resultados:
+            <strong class="tabular">{{ result.value()?.total }}</strong>
+            {{ result.value()?.total === 1 ? 'jugador' : 'jugadores' }}
+          </p>
+          @if (activeFilterLabels().length) {
+            <div class="filter-tags" aria-label="Filtros activos">
+              @for (f of activeFilterLabels(); track f) {
+                <span class="tag">{{ f }}</span>
+              }
+            </div>
+          }
+        </div>
         <div class="table-wrap">
           <table>
             <caption class="sr-only">
@@ -105,21 +136,33 @@ const STATUSES = Object.entries(STATUS_LABELS) as [PlayerStatus, string][];
                 <th class="num">Edad</th>
                 <th>Categoría</th>
                 <th>Estatus</th>
+                <th><span class="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
               @for (r of result.value()?.items ?? []; track r.player.id) {
                 <tr>
-                  <td>{{ r.player.identifier }}</td>
+                  <td class="mono">{{ r.player.identifier }}</td>
                   <td>
                     <a [routerLink]="['/admin/players', r.player.id]">{{ r.name }}</a>
+                    @if (r.player.phone || r.player.email) {
+                      <div class="cell-sub">
+                        {{ contactSummary(r.player.phone, r.player.email) }}
+                      </div>
+                    }
                   </td>
                   <td class="num">{{ r.age }}</td>
-                  <td>{{ r.categoryName ?? '—' }}</td>
+                  <td>{{ r.categoryName ?? 'Sin categoría' }}</td>
                   <td>
                     <span class="tag {{ playerTone[r.player.status] }}">{{
                       labels[r.player.status]
                     }}</span>
+                  </td>
+                  <td class="row-actions">
+                    <a [routerLink]="['/admin/players', r.player.id]">Expediente</a>
+                    @if (auth.can('jugadores.editar')) {
+                      <a [routerLink]="['/admin/players', r.player.id, 'edit']">Editar</a>
+                    }
                   </td>
                 </tr>
               }
@@ -146,6 +189,22 @@ export class PlayersPage {
     catalogParam(inject(ActivatedRoute).snapshot.queryParamMap.get('status'), STATUS_LABELS),
   );
   protected page = signal(1);
+  protected hasFilters = computed(
+    () => !!this.query().trim() || this.categoryId() !== null || !!this.status(),
+  );
+  protected activeFilterLabels = computed(() => {
+    const items: string[] = [];
+    const q = this.query().trim();
+    if (q) items.push(`Búsqueda: "${q}"`);
+    const cid = this.categoryId();
+    if (cid !== null) {
+      const cat = (this.categories.value() ?? []).find((c) => c.id === cid);
+      if (cat) items.push(`Categoría: ${cat.name}`);
+    }
+    const st = this.status();
+    if (st) items.push(`Estatus: ${STATUS_LABELS[st]}`);
+    return items;
+  });
   protected result = resource({
     params: () => ({
       query: this.query(),
@@ -155,23 +214,63 @@ export class PlayersPage {
     }),
     loader: ({ params }) => this.service.search(params),
   });
+
+  clearFilters(): void {
+    this.query.set('');
+    this.categoryId.set(null);
+    this.status.set('');
+    this.page.set(1);
+  }
+
+  protected contactSummary(phone: string | null, email: string | null): string {
+    return [phone, email].filter(Boolean).join(' · ');
+  }
 }
 
 /** HU-008 (create, with generated identifier and age) and HU-009 (edit keeping id/identifier). */
 @Component({
   selector: 'app-player-form-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, RouterLink, FieldError, FieldA11y, SubmissionAlert],
   template: `
-    <a [routerLink]="id() ? ['/admin/players', id()] : '/admin/players'">← Volver</a>
-    <h1>{{ id() ? 'Editar jugador' : 'Registrar jugador' }}</h1>
+    <a class="back-link" [routerLink]="id() ? ['/admin/players', id()] : '/admin/players'"
+      >← Volver</a
+    >
+    <div class="page-head">
+      <div>
+        <h1>{{ id() ? 'Editar jugador' : 'Registrar jugador' }}</h1>
+        <p class="page-subtitle">
+          {{
+            id()
+              ? 'Actualiza los datos personales o de contacto del jugador.'
+              : 'Se generará un identificador único al guardar. Los campos con * son obligatorios.'
+          }}
+        </p>
+      </div>
+    </div>
+
     <form #formEl [formGroup]="form" (ngSubmit)="submit()" novalidate class="grid-form">
       <fieldset class="stack">
         <legend>Datos personales</legend>
-        <label>Nombre(s) <input formControlName="firstName" autocomplete="off" /></label>
-        <app-field-error [control]="form.controls.firstName" />
+        <div>
+          <label
+            ><span
+              >Nombre(s) <span class="req" aria-hidden="true">*</span
+              ><span class="sr-only"> (obligatorio)</span></span
+            >
+            <input formControlName="firstName" autocomplete="off"
+          /></label>
+          <app-field-error [control]="form.controls.firstName" />
+        </div>
         <div class="two-col">
           <div>
-            <label>Apellido paterno <input formControlName="lastName1" autocomplete="off" /></label>
+            <label
+              ><span
+                >Apellido paterno <span class="req" aria-hidden="true">*</span
+                ><span class="sr-only"> (obligatorio)</span></span
+              >
+              <input formControlName="lastName1" autocomplete="off"
+            /></label>
             <app-field-error [control]="form.controls.lastName1" />
           </div>
           <div>
@@ -182,7 +281,11 @@ export class PlayersPage {
         <div class="two-col">
           <div>
             <label
-              >Fecha de nacimiento <input type="date" formControlName="birthDate" [max]="maxDate"
+              ><span
+                >Fecha de nacimiento <span class="req" aria-hidden="true">*</span
+                ><span class="sr-only"> (obligatorio)</span></span
+              >
+              <input type="date" formControlName="birthDate" [max]="maxDate"
             /></label>
             <app-field-error [control]="form.controls.birthDate" />
           </div>
@@ -196,42 +299,68 @@ export class PlayersPage {
           </label>
         </div>
         @if (age() !== null) {
-          <p class="muted">Edad: {{ age() }} años</p>
+          <p class="field-hint tabular">Edad calculada al día de hoy: {{ age() }} años</p>
         }
       </fieldset>
+
       <fieldset class="stack">
         <legend>Contacto del jugador</legend>
         <div class="two-col">
           <div>
             <label
-              >Teléfono del jugador <input type="tel" formControlName="phone" autocomplete="off"
-            /></label>
+              >Teléfono del jugador
+              <input
+                type="tel"
+                formControlName="phone"
+                placeholder="33 1234 5678"
+                autocomplete="off"
+              />
+            </label>
             <app-field-error [control]="form.controls.phone" />
           </div>
           <div>
             <label
-              >Correo del jugador <input type="email" formControlName="email" autocomplete="off"
-            /></label>
+              >Correo del jugador
+              <input
+                type="email"
+                formControlName="email"
+                placeholder="jugador@ejemplo.com"
+                autocomplete="off"
+              />
+            </label>
             <app-field-error [control]="form.controls.email" />
           </div>
         </div>
         <label>Dirección <input formControlName="address" autocomplete="off" /></label>
       </fieldset>
+
       @if (!id()) {
-        <label
-          >Estatus inicial
-          <select [formControl]="initialStatus">
-            @for (s of statuses; track s[0]) {
-              <option [value]="s[0]">{{ s[1] }}</option>
-            }
-          </select>
-        </label>
+        <div class="form-block">
+          <label
+            >Estatus inicial
+            <select [formControl]="initialStatus">
+              @for (s of statuses; track s[0]) {
+                <option [value]="s[0]">{{ s[1] }}</option>
+              }
+            </select>
+          </label>
+          <p class="field-hint">El contacto de la familia se vincula después en Tutores.</p>
+        </div>
+      } @else {
+        <p class="field-hint">El contacto de la familia se administra en Tutores.</p>
       }
-      <p class="muted">El contacto de la familia se registra en Tutores.</p>
+
       <app-submission-alert [submission]="submission" />
-      <button type="submit" [disabled]="submission.busy() || (!!id() && player.isLoading())">
-        Guardar
-      </button>
+      <div class="actions">
+        <button type="submit" [disabled]="submission.busy() || (!!id() && player.isLoading())">
+          {{ submission.busy() ? 'Guardando…' : 'Guardar' }}
+        </button>
+        <a
+          class="button secondary"
+          [routerLink]="id() ? ['/admin/players', id()] : '/admin/players'"
+          >Cancelar</a
+        >
+      </div>
     </form>
   `,
 })
@@ -312,6 +441,7 @@ type Tab = 'datos' | 'tutores' | 'categorias' | 'pagos' | 'uniformes' | 'compete
 /** HU-013 record + HU-010 status change + HU-017/019 category membership. */
 @Component({
   selector: 'app-player-record-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     ReactiveFormsModule,
     FormsModule,
@@ -322,20 +452,44 @@ type Tab = 'datos' | 'tutores' | 'categorias' | 'pagos' | 'uniformes' | 'compete
     SubmissionAlert,
   ],
   template: `
-    <a routerLink="/admin/players">← Jugadores</a>
+    <a class="back-link" routerLink="/admin/players">← Jugadores</a>
     <app-load-state [res]="record"
       ><ng-template>
         @if (record.value(); as r) {
           <div class="page-head">
-            <h1>
-              {{ r.name }} <span class="muted nowrap">{{ r.player.identifier }}</span>
-            </h1>
-            @if (auth.can('jugadores.editar')) {
-              <a class="button secondary" [routerLink]="['/admin/players', r.player.id, 'edit']"
-                >Editar datos</a
-              >
-            }
+            <div class="record-identity">
+              <div class="title-row">
+                <h1>{{ r.name }}</h1>
+                <span class="tag neutral mono">{{ r.player.identifier }}</span>
+              </div>
+              @if (primaryTutor(r.tutors); as pt) {
+                <p class="page-subtitle">
+                  Contacto principal: <strong>{{ pt.name }}</strong> ({{ pt.relationship }})
+                  @if (pt.phone || pt.email) {
+                    · {{ contactSummary(pt.phone, pt.email) }}
+                  }
+                </p>
+              }
+            </div>
+            <div class="actions">
+              @if (auth.can('pagos.crear')) {
+                <a
+                  class="button"
+                  [class.secondary]="r.balanceCents === 0"
+                  routerLink="/admin/billing/payments/new"
+                  [queryParams]="{ player: r.player.id }"
+                >
+                  Registrar pago
+                </a>
+              }
+              @if (auth.can('jugadores.editar')) {
+                <a class="button secondary" [routerLink]="['/admin/players', r.player.id, 'edit']"
+                  >Editar datos</a
+                >
+              }
+            </div>
           </div>
+
           <dl class="summary">
             <div>
               <dt>Estatus</dt>
@@ -390,69 +544,128 @@ type Tab = 'datos' | 'tutores' | 'categorias' | 'pagos' | 'uniformes' | 'compete
           <div id="record-panel" role="tabpanel" [attr.aria-labelledby]="'tab-' + tab()">
             @switch (tab()) {
               @case ('datos') {
-                <dl class="facts">
-                  <dt>Fecha de nacimiento</dt>
-                  <dd>{{ r.player.birthDate }}</dd>
-                  <dt>Sexo</dt>
-                  <dd>{{ sexLabels[r.player.sex] }}</dd>
-                  <dt>Teléfono</dt>
-                  <dd>{{ r.player.phone ?? '—' }}</dd>
-                  <dt>Correo</dt>
-                  <dd>{{ r.player.email ?? '—' }}</dd>
-                  <dt>Dirección</dt>
-                  <dd>{{ r.player.address ?? '—' }}</dd>
-                  <dt>Alta</dt>
-                  <dd>{{ r.player.createdAt | date: 'd MMM y' }}</dd>
-                  <dt>Última modificación</dt>
-                  <dd>{{ r.player.updatedAt | date: 'd MMM y, HH:mm' }}</dd>
-                  <dt>Asistencia</dt>
-                  <dd>
-                    {{ r.attendance.present }} presentes · {{ r.attendance.absent }} ausencias ·
-                    {{ r.attendance.justified }} justificadas
-                  </dd>
-                </dl>
+                <div class="two-col">
+                  <section class="panel">
+                    <h2>Información personal</h2>
+                    <dl class="facts">
+                      <dt>Fecha de nacimiento</dt>
+                      <dd class="tabular">{{ r.player.birthDate }}</dd>
+                      <dt>Sexo</dt>
+                      <dd>{{ sexLabels[r.player.sex] }}</dd>
+                      <dt>Teléfono</dt>
+                      <dd class="tabular">{{ r.player.phone ?? '—' }}</dd>
+                      <dt>Correo</dt>
+                      <dd>{{ r.player.email ?? '—' }}</dd>
+                      <dt>Dirección</dt>
+                      <dd>{{ r.player.address ?? '—' }}</dd>
+                      <dt>Alta</dt>
+                      <dd>{{ r.player.createdAt | date: 'd MMM y' }}</dd>
+                      <dt>Última modificación</dt>
+                      <dd>{{ r.player.updatedAt | date: 'd MMM y, HH:mm' }}</dd>
+                    </dl>
+                  </section>
+
+                  <section class="panel">
+                    <h2>Asistencia acumulada</h2>
+                    <dl class="facts">
+                      <dt>Sesiones registradas</dt>
+                      <dd class="tabular">{{ r.attendance.total }}</dd>
+                      <dt>Presentes</dt>
+                      <dd class="tabular">{{ r.attendance.present }}</dd>
+                      <dt>Ausencias</dt>
+                      <dd class="tabular">{{ r.attendance.absent }}</dd>
+                      <dt>Justificadas</dt>
+                      <dd class="tabular">{{ r.attendance.justified }}</dd>
+                    </dl>
+                  </section>
+                </div>
+
                 <h2>Inscripción administrativa</h2>
-                <ul>
-                  @for (e of r.enrollments; track e.id) {
-                    <li>
-                      {{ e.seasonName }} ·
-                      <span class="tag {{ toneOf(enrollmentTone, e.status) }}">{{
-                        $any(enrollmentLabels)[e.status] ?? e.status
-                      }}</span>
-                      desde {{ e.enrolledOn }} ({{ e.amountCents | money }})
-                    </li>
-                  } @empty {
-                    <li class="muted">Sin inscripciones.</li>
-                  }
-                </ul>
-              }
-              @case ('tutores') {
-                @if (r.tutors.length && !hasPrimary(r.tutors)) {
-                  <p class="tag warn">Sin contacto principal.</p>
+                @if (r.enrollments.length) {
+                  <div class="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Temporada</th>
+                          <th>Fecha de inscripción</th>
+                          <th class="num">Importe</th>
+                          <th>Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (e of r.enrollments; track e.id) {
+                          <tr>
+                            <td>{{ e.seasonName }}</td>
+                            <td class="tabular">{{ e.enrolledOn }}</td>
+                            <td class="num">{{ e.amountCents | money }}</td>
+                            <td>
+                              <span class="tag {{ toneOf(enrollmentTone, e.status) }}">{{
+                                $any(enrollmentLabels)[e.status] ?? e.status
+                              }}</span>
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                } @else {
+                  <p class="empty">Sin inscripciones administrativas registradas.</p>
                 }
-                <ul class="list">
-                  @for (t of r.tutors; track t.tutorId) {
-                    <li>
-                      <strong>{{ t.name }}</strong> ({{ t.relationship }})
-                      @if (t.isPrimary) {
-                        <span class="tag">Contacto principal</span>
-                      } @else if (auth.can('tutores.editar')) {
-                        <button
-                          type="button"
-                          class="link"
-                          [disabled]="submission.busy()"
-                          (click)="makePrimary(t.tutorId)"
-                        >
-                          Hacer contacto principal
-                        </button>
-                      }
-                      <br /><span class="muted">{{ t.phone ?? '' }} {{ t.email ?? '' }}</span>
-                    </li>
-                  } @empty {
-                    <li class="muted">Sin tutores. Regístralos en Tutores.</li>
-                  }
-                </ul>
               }
+
+              @case ('tutores') {
+                <div class="record-bar">
+                  <div class="actions">
+                    @if (r.tutors.length && !hasPrimary(r.tutors)) {
+                      <span class="tag warn">Sin contacto principal.</span>
+                    }
+                    <span class="muted">
+                      {{ r.tutors.length }}
+                      {{ r.tutors.length === 1 ? 'tutor vinculado' : 'tutores vinculados' }}
+                    </span>
+                  </div>
+                  @if (auth.can('tutores.consultar')) {
+                    <a class="button secondary sm" routerLink="/admin/tutors"
+                      >Administrar en Tutores</a
+                    >
+                  }
+                </div>
+
+                @if (r.tutors.length) {
+                  <ul class="tutor-cards">
+                    @for (t of r.tutors; track t.tutorId) {
+                      <li class="panel tutor-card" [class.primary-tutor]="t.isPrimary">
+                        <div class="tutor-card-head">
+                          <div>
+                            <strong>{{ t.name }}</strong>
+                            <span class="muted"> · {{ t.relationship }}</span>
+                          </div>
+                          @if (t.isPrimary) {
+                            <span class="tag ok">Contacto principal</span>
+                          } @else if (auth.can('tutores.editar')) {
+                            <button
+                              type="button"
+                              class="secondary sm"
+                              [disabled]="submission.busy()"
+                              (click)="makePrimary(t.tutorId)"
+                            >
+                              Hacer contacto principal
+                            </button>
+                          }
+                        </div>
+                        <div class="tutor-card-contact">
+                          <span class="tabular">{{ t.phone ?? 'Sin teléfono' }}</span>
+                          <span class="muted">·</span>
+                          <span>{{ t.email ?? 'Sin correo' }}</span>
+                        </div>
+                      </li>
+                    }
+                  </ul>
+                } @else {
+                  <p class="empty">Sin tutores. Regístralos en Tutores.</p>
+                }
+              }
+
               @case ('categorias') {
                 @if (auth.can('inscripciones.crear') && r.player.status === 'ACTIVO') {
                   <form
@@ -522,46 +735,82 @@ type Tab = 'datos' | 'tutores' | 'categorias' | 'pagos' | 'uniformes' | 'compete
                       <input name="exception" [(ngModel)]="catException"
                     /></label>
                     <button type="submit" [disabled]="submission.busy() || !catId()">
-                      Guardar
+                      {{ submission.busy() ? 'Guardando…' : 'Guardar' }}
                     </button>
                   </form>
                 }
+
                 <h2>Historial de categorías</h2>
-                <div class="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Categoría</th>
-                        <th>Temporada</th>
-                        <th>Desde</th>
-                        <th>Hasta</th>
-                        <th>Excepción</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      @for (c of r.categories; track c.id) {
+                @if (r.categories.length) {
+                  <div class="table-wrap">
+                    <table>
+                      <thead>
                         <tr>
-                          <td>{{ c.categoryName }}</td>
-                          <td>{{ c.seasonName ?? '—' }}</td>
-                          <td>{{ c.startDate }}</td>
-                          <td>{{ c.endDate ?? 'vigente' }}</td>
-                          <td>{{ c.exceptionReason ?? (c.isAgeException ? 'Edad' : '—') }}</td>
+                          <th>Categoría</th>
+                          <th>Temporada</th>
+                          <th>Desde</th>
+                          <th>Hasta</th>
+                          <th>Excepción</th>
                         </tr>
-                      }
-                    </tbody>
-                  </table>
-                </div>
-                <ul class="muted">
-                  @for (h of r.categoryChanges; track $index) {
-                    <li>
-                      {{ h.changedAt | date: 'd MMM y' }}: {{ h.from ?? '—' }} → {{ h.to }} ({{
-                        h.reason ?? 'sin motivo'
-                      }})
-                    </li>
-                  }
-                </ul>
+                      </thead>
+                      <tbody>
+                        @for (c of r.categories; track c.id) {
+                          <tr>
+                            <td>{{ c.categoryName }}</td>
+                            <td>{{ c.seasonName ?? '—' }}</td>
+                            <td class="tabular">{{ c.startDate }}</td>
+                            <td>
+                              @if (c.endDate) {
+                                <span class="tabular">{{ c.endDate }}</span>
+                              } @else {
+                                <span class="tag ok">Vigente</span>
+                              }
+                            </td>
+                            <td>{{ c.exceptionReason ?? (c.isAgeException ? 'Edad' : '—') }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                } @else {
+                  <p class="empty">El jugador aún no tiene historial de categorías.</p>
+                }
+
+                @if (r.categoryChanges.length) {
+                  <h2>Cambios registrados</h2>
+                  <ul class="cards-list">
+                    @for (h of r.categoryChanges; track $index) {
+                      <li class="card-row">
+                        <span>
+                          <strong>{{ h.from ?? '—' }} → {{ h.to }}</strong>
+                          <span class="muted"> · {{ h.reason ?? 'sin motivo' }}</span>
+                        </span>
+                        <small class="muted">{{ h.changedAt | date: 'd MMM y' }}</small>
+                      </li>
+                    }
+                  </ul>
+                }
               }
+
               @case ('pagos') {
+                <div class="record-bar">
+                  <span class="muted">
+                    Cargos registrados:
+                    <strong class="tabular">{{ r.charges.length }}</strong> · Pagos aplicados:
+                    <strong class="tabular">{{ r.payments.length }}</strong>
+                  </span>
+                  @if (auth.can('pagos.crear')) {
+                    <a
+                      class="button sm"
+                      [class.secondary]="r.balanceCents === 0"
+                      routerLink="/admin/billing/payments/new"
+                      [queryParams]="{ player: r.player.id }"
+                      >Registrar pago</a
+                    >
+                  }
+                </div>
+
+                <h2>Cargos y adeudos</h2>
                 <div class="table-wrap">
                   <table>
                     <thead>
@@ -578,7 +827,7 @@ type Tab = 'datos' | 'tutores' | 'categorias' | 'pagos' | 'uniformes' | 'compete
                       @for (c of r.charges; track c.id) {
                         <tr>
                           <td>{{ c.label }}</td>
-                          <td>{{ c.dueDate ?? '—' }}</td>
+                          <td class="tabular">{{ c.dueDate ?? '—' }}</td>
                           <td class="num">{{ c.netCents | money }}</td>
                           <td class="num">{{ c.paidCents | money }}</td>
                           <td class="num">{{ c.balanceCents | money }}</td>
@@ -596,51 +845,114 @@ type Tab = 'datos' | 'tutores' | 'categorias' | 'pagos' | 'uniformes' | 'compete
                     </tbody>
                   </table>
                 </div>
-                <h2>Pagos</h2>
-                <ul>
-                  @for (p of r.payments; track p.id) {
-                    <li>
-                      <a [routerLink]="['/admin/billing/receipts', p.id]">{{ p.folio }}</a> ·
-                      {{ p.paidAt | date: 'd MMM y' }} ·
-                      {{ p.amountCents | money }}
-                      @if (p.status === 'CANCELADO') {
-                        <span class="tag {{ toneOf(paymentTone, p.status) }}">Cancelado</span>
-                      }
-                    </li>
-                  } @empty {
-                    <li class="muted">Sin pagos.</li>
-                  }
-                </ul>
+
+                <h2>Historial de pagos</h2>
+                @if (r.payments.length) {
+                  <div class="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Folio</th>
+                          <th>Fecha</th>
+                          <th>Forma de pago</th>
+                          <th class="num">Importe</th>
+                          <th>Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (p of r.payments; track p.id) {
+                          <tr [class.muted]="p.status === 'CANCELADO'">
+                            <td class="mono">
+                              <a [routerLink]="['/admin/billing/receipts', p.id]">{{ p.folio }}</a>
+                            </td>
+                            <td>{{ p.paidAt | date: 'd MMM y' }}</td>
+                            <td>{{ methodLabel(p.method) }}</td>
+                            <td class="num">{{ p.amountCents | money }}</td>
+                            <td>
+                              <span class="tag {{ toneOf(paymentTone, p.status) }}">{{
+                                p.status === 'CANCELADO' ? 'Cancelado' : 'Aplicado'
+                              }}</span>
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                } @else {
+                  <p class="empty">Sin pagos registrados.</p>
+                }
               }
+
               @case ('uniformes') {
-                <ul>
-                  @for (u of r.uniforms; track u.id) {
-                    <li>
-                      {{ u.requestedOn }} · {{ u.items.join(', ') }} · {{ u.totalCents | money }} ·
-                      <span class="tag {{ toneOf(orderTone, u.status) }}">{{
-                        $any(orderLabels)[u.status] ?? u.status
-                      }}</span>
-                    </li>
-                  } @empty {
-                    <li class="muted">Sin pedidos.</li>
-                  }
-                </ul>
+                @if (r.uniforms.length) {
+                  <div class="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Fecha de solicitud</th>
+                          <th>Artículos</th>
+                          <th class="num">Total</th>
+                          <th>Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (u of r.uniforms; track u.id) {
+                          <tr>
+                            <td class="tabular">{{ u.requestedOn }}</td>
+                            <td class="wrap">{{ u.items.join(', ') }}</td>
+                            <td class="num">{{ u.totalCents | money }}</td>
+                            <td>
+                              <span class="tag {{ toneOf(orderTone, u.status) }}">{{
+                                $any(orderLabels)[u.status] ?? u.status
+                              }}</span>
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                } @else {
+                  <p class="empty">Sin pedidos de uniforme registrados.</p>
+                }
               }
+
               @case ('competencias') {
-                <ul>
-                  @for (c of r.competitions; track $index) {
-                    <li>
-                      {{ c.competitionName }} ({{ c.type }}) · {{ c.categoryName }} · desde
-                      {{ c.joinedOn }}
-                      @if (!c.active) {
-                        <span class="tag neutral">Baja {{ c.leftOn }}</span>
-                      }
-                    </li>
-                  } @empty {
-                    <li class="muted">No participa en competencias.</li>
-                  }
-                </ul>
+                @if (r.competitions.length) {
+                  <div class="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Competencia</th>
+                          <th>Tipo</th>
+                          <th>Categoría</th>
+                          <th>Ingreso</th>
+                          <th>Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (c of r.competitions; track $index) {
+                          <tr>
+                            <td>{{ c.competitionName }}</td>
+                            <td>{{ competitionTypeLabel(c.type) }}</td>
+                            <td>{{ c.categoryName }}</td>
+                            <td class="tabular">{{ c.joinedOn }}</td>
+                            <td>
+                              @if (c.active) {
+                                <span class="tag ok">Activa</span>
+                              } @else {
+                                <span class="tag neutral">Baja {{ c.leftOn }}</span>
+                              }
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                } @else {
+                  <p class="empty">No participa en competencias.</p>
+                }
               }
+
               @case ('estatus') {
                 @if (auth.can('jugadores.editar')) {
                   <form
@@ -660,22 +972,47 @@ type Tab = 'datos' | 'tutores' | 'categorias' | 'pagos' | 'uniformes' | 'compete
                       </select>
                     </label>
                     <label>Motivo <input name="statusReason" [(ngModel)]="statusReason" /></label>
-                    <p class="muted">
+                    <p class="field-hint">
                       La baja no borra historial: pagos, partidos y categorías se conservan.
                     </p>
-                    <button type="submit" [disabled]="submission.busy()">Cambiar estatus</button>
+                    <button type="submit" [disabled]="submission.busy()">
+                      {{ submission.busy() ? 'Actualizando…' : 'Cambiar estatus' }}
+                    </button>
                   </form>
                 }
-                <ul>
-                  @for (h of r.statusHistory; track h.id) {
-                    <li>
-                      {{ h.changedAt | date: 'd MMM y, HH:mm' }}:
-                      {{ h.previousStatus ? statusLabels[h.previousStatus] : '—' }} →
-                      {{ statusLabels[h.newStatus] }} · {{ h.reason ?? '' }}
-                      <span class="muted">{{ h.changedByEmail ?? '' }}</span>
-                    </li>
-                  }
-                </ul>
+
+                <h2>Historial de estatus</h2>
+                @if (r.statusHistory.length) {
+                  <div class="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Transición</th>
+                          <th>Motivo</th>
+                          <th>Registrado por</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (h of r.statusHistory; track h.id) {
+                          <tr>
+                            <td>{{ h.changedAt | date: 'd MMM y, HH:mm' }}</td>
+                            <td>
+                              {{ h.previousStatus ? statusLabels[h.previousStatus] : '—' }} →
+                              <span class="tag {{ playerTone[h.newStatus] }}">{{
+                                statusLabels[h.newStatus]
+                              }}</span>
+                            </td>
+                            <td class="wrap">{{ h.reason ?? '—' }}</td>
+                            <td>{{ h.changedByEmail ?? '—' }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                } @else {
+                  <p class="empty">Sin cambios de estatus registrados.</p>
+                }
               }
             }
           </div>
@@ -773,6 +1110,22 @@ export class PlayerRecordPage {
 
   protected hasPrimary(tutors: { isPrimary: boolean }[]): boolean {
     return tutors.some((t) => t.isPrimary);
+  }
+
+  protected primaryTutor<T extends { isPrimary: boolean }>(tutors: T[]): T | null {
+    return tutors.find((t) => t.isPrimary) ?? null;
+  }
+
+  protected methodLabel(method: string): string {
+    return METHOD_LABELS[method as PaymentMethod] ?? method;
+  }
+
+  protected competitionTypeLabel(type: string): string {
+    return TYPE_LABELS[type as CompetitionType] ?? type;
+  }
+
+  protected contactSummary(phone: string | null, email: string | null): string {
+    return [phone, email].filter(Boolean).join(' · ');
   }
 
   /** HU-011: one operation replaces the current primary contact (TutorService.setPrimary). */

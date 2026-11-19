@@ -89,4 +89,45 @@ describe('tutors page (HU-011)', () => {
     await settle();
     expect(primaries()).toBe(before - 1);
   }, 20_000);
+
+  it('Phase 4B: unified editing workspace shows portal access status and keeps one form[id]', async () => {
+    let el = await editTeresa(await open());
+    const workspace = el.querySelector('.tutor-workspace.with-portal');
+    expect(workspace).not.toBeNull();
+    expect(el.querySelectorAll('form[id]').length).toBe(1);
+    const portal = workspace!.querySelector('.portal-panel')!;
+    expect(portal.textContent).toContain('Acceso al portal familiar');
+    expect(portal.textContent).toContain('Activo');
+
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    [...portal.querySelectorAll<HTMLButtonElement>('button')]
+      .find((b) => /desvincular cuenta/i.test(b.textContent ?? ''))!
+      .click();
+    el = await settle();
+    expect(el.querySelector('.portal-panel')?.textContent).toContain('Sin acceso');
+  }, 20_000);
+
+  it('Phase 4B: search filter shows count and Limpiar button resets the query; multiple player links can be added', async () => {
+    let el = await open();
+    const search = el.querySelector<HTMLInputElement>('input[type=search]')!;
+    search.value = 'zzzz-nadie';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    el = await settle();
+    expect(el.querySelector('app-load-state > p.empty')).not.toBeNull();
+
+    const clearBtn = [...el.querySelectorAll<HTMLButtonElement>('.filters button')].find((b) =>
+      /limpiar/i.test(b.textContent ?? ''),
+    )!;
+    clearBtn.click();
+    el = await settle();
+    expect(el.querySelectorAll('tbody tr').length).toBeGreaterThan(0);
+
+    el = await editTeresa(el);
+    const beforeLinks = el.querySelectorAll('.link-row').length;
+    [...el.querySelectorAll<HTMLButtonElement>('#tutor-form button')]
+      .find((b) => /agregar otro jugador/i.test(b.textContent ?? ''))!
+      .click();
+    el = await settle();
+    expect(el.querySelectorAll('.link-row').length).toBe(beforeLinks + 1);
+  }, 20_000);
 });

@@ -1,4 +1,4 @@
-import { Component, inject, resource, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, resource, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AuthService } from '../../core/auth/auth.service';
 import { Id } from '../../core/models';
@@ -14,10 +14,17 @@ import { SeasonService, SeasonView } from './season.service';
 /** HU-070: seasons; one can be marked current; closed seasons stay queryable with their linked data. */
 @Component({
   selector: 'app-seasons-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, FieldError, FieldA11y, LoadState, SubmissionAlert],
   template: `
     <div class="page-head">
-      <h1>Temporadas</h1>
+      <div>
+        <h1>Temporadas</h1>
+        <p class="page-subtitle">
+          Ciclos escolares y deportivos; define la temporada actual sin perder historial de ciclos
+          cerrados.
+        </p>
+      </div>
       @if (auth.can('temporadas.crear')) {
         <button
           type="button"
@@ -40,32 +47,65 @@ import { SeasonService, SeasonView } from './season.service';
         (keydown.escape)="cancel()"
       >
         <h2>{{ editingId() ? 'Editar temporada' : 'Nueva temporada' }}</h2>
-        <label>Nombre <input formControlName="name" placeholder="Temporada 2027-2028" /></label>
-        <app-field-error [control]="form.controls.name" />
+        <p class="field-hint">
+          Los campos con <span class="req" aria-hidden="true">*</span> son obligatorios.
+        </p>
+        <div>
+          <label
+            ><span
+              >Nombre <span class="req" aria-hidden="true">*</span
+              ><span class="sr-only"> (obligatorio)</span></span
+            >
+            <input formControlName="name" placeholder="Temporada 2027-2028"
+          /></label>
+          <app-field-error [control]="form.controls.name" />
+        </div>
         <div class="two-col">
           <div>
-            <label>Inicio <input type="date" formControlName="startDate" /></label>
+            <label
+              ><span
+                >Inicio <span class="req" aria-hidden="true">*</span
+                ><span class="sr-only"> (obligatorio)</span></span
+              >
+              <input type="date" formControlName="startDate"
+            /></label>
             <app-field-error [control]="form.controls.startDate" />
           </div>
           <div>
-            <label>Fin <input type="date" formControlName="endDate" /></label>
+            <label
+              ><span
+                >Fin <span class="req" aria-hidden="true">*</span
+                ><span class="sr-only"> (obligatorio)</span></span
+              >
+              <input type="date" formControlName="endDate"
+            /></label>
             <app-field-error [control]="form.controls.endDate" />
           </div>
         </div>
-        <label class="check"
-          ><input type="checkbox" formControlName="active" /> Activa (abierta)</label
-        >
-        <label class="check"
-          ><input type="checkbox" formControlName="isCurrent" /> Temporada actual</label
-        >
+        <div class="two-col">
+          <label class="check"
+            ><input type="checkbox" formControlName="active" /> Activa (abierta)</label
+          >
+          <label class="check"
+            ><input type="checkbox" formControlName="isCurrent" /> Temporada actual</label
+          >
+        </div>
         <div class="actions">
-          <button type="submit" [disabled]="submission.busy()">Guardar</button>
+          <button type="submit" [disabled]="submission.busy()">
+            {{ submission.busy() ? 'Guardando…' : 'Guardar' }}
+          </button>
           <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
         </div>
       </form>
     }
-    <app-load-state [res]="seasons"
+    <app-load-state [res]="seasons" emptyText="Sin temporadas registradas."
       ><ng-template>
+        <div class="list-meta">
+          <p class="muted">
+            Mostrando <strong class="tabular">{{ (seasons.value() ?? []).length }}</strong>
+            {{ (seasons.value() ?? []).length === 1 ? 'temporada' : 'temporadas' }}
+          </p>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -77,29 +117,29 @@ import { SeasonService, SeasonView } from './season.service';
                 <th class="num">Categorías</th>
                 <th class="num">Competencias</th>
                 <th class="num">Inscripciones</th>
-                <th></th>
+                <th><span class="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
               @for (s of seasons.value() ?? []; track s.id) {
-                <tr>
+                <tr [class.muted]="!s.active">
                   <td>
-                    {{ s.name }}
+                    <strong>{{ s.name }}</strong>
                     @if (s.isCurrent) {
-                      <span class="tag">Actual</span>
+                      <span class="tag ok">Actual</span>
                     }
                   </td>
-                  <td>{{ s.startDate }}</td>
-                  <td>{{ s.endDate }}</td>
+                  <td class="tabular">{{ s.startDate }}</td>
+                  <td class="tabular">{{ s.endDate }}</td>
                   <td>
-                    <span class="tag" [class.off]="!s.active">{{
+                    <span class="tag" [class.ok]="s.active" [class.off]="!s.active">{{
                       s.active ? 'Activa' : 'Cerrada'
                     }}</span>
                   </td>
                   <td class="num">{{ s.categories }}</td>
                   <td class="num">{{ s.competitions }}</td>
                   <td class="num">{{ s.enrollments }}</td>
-                  <td>
+                  <td class="row-actions">
                     @if (auth.can('temporadas.editar')) {
                       <button type="button" class="link" (click)="edit(s)">Editar</button>
                     }

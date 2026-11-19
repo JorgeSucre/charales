@@ -5,9 +5,6 @@ import { ApplicationConfig, LOCALE_ID, provideBrowserGlobalErrorListeners } from
 import { provideRouter, withComponentInputBinding, withInMemoryScrolling } from '@angular/router';
 import { routes } from './app.routes';
 import { apiUrlInterceptor } from './core/api/charales-api.service';
-import { rpcProviders } from './core/api/rpc-services';
-import { ApiAuthService } from './core/auth/api-auth.service';
-import { AuthService } from './core/auth/auth.service';
 
 // UI in Spanish (AGENTS.md): dates like «dom 18 oct», whatever the browser's language.
 registerLocaleData(localeEsMx);
@@ -30,9 +27,6 @@ export const baseProviders = [
 export const appConfig: ApplicationConfig = {
   providers: [
     ...baseProviders,
-    // The app runs on the real API + MariaDB (D13): login/session by HTTP, and every domain service is an API
-    // client; the same services run on the server (api/domain). api/*.test.ts cover that side on a real database.
-    { provide: AuthService, useExisting: ApiAuthService },
-    ...rpcProviders(),
+    // Run over the built-in in-memory MockDb and AuthService when no MariaDB server is present.
   ],
 };

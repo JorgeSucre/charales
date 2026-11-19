@@ -1,5 +1,6 @@
 import { sumCents } from '../../shared/money';
 import {
+  ChangeDetectionStrategy,
   Component,
   ElementRef,
   computed,
@@ -21,6 +22,7 @@ import { nowDateTime } from '../../shared/dates';
 import { focusFirstInvalid } from '../../shared/focus';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
+import { PromptDialog } from '../../shared/prompt-dialog';
 import { CHARGE_TONE, PAYMENT_TONE } from '../../shared/status-tone';
 import { Submission } from '../../shared/submission';
 import { Paginator, SubmissionAlert, centsFromInput, idOrNull } from '../../shared/ui';
@@ -35,9 +37,19 @@ import {
 /** HU-045: payment capture — player, payer (one of their tutors), charges, amount (total or partial), method → folio. */
 @Component({
   selector: 'app-payment-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, RouterLink, LoadState, MoneyPipe, SubmissionAlert],
   template: `
-    <h1>Registrar pago</h1>
+    <a class="back-link" routerLink="/admin/billing/receipts">← Recibos</a>
+    <div class="page-head">
+      <div>
+        <h1>Registrar pago</h1>
+        <p class="page-subtitle">
+          Selecciona jugador, los cargos abiertos a cubrir y la forma de pago para generar el folio.
+        </p>
+      </div>
+    </div>
+
     <form #formEl class="grid-form" (ngSubmit)="submit()" novalidate>
       <label
         >Jugador
@@ -48,6 +60,7 @@ import {
           }
         </select>
       </label>
+
       @if (playerId()) {
         <label
           >Quién paga
@@ -58,23 +71,53 @@ import {
             }
           </select>
         </label>
-        <fieldset>
+
+        <fieldset class="stack">
           <legend>Cargos a pagar (se aplica del más antiguo al más reciente)</legend>
           <app-load-state [res]="open" emptyText="El jugador no tiene adeudos."
             ><ng-template>
-              @for (c of open.value() ?? []; track c.id) {
-                <label class="check">
-                  <input type="checkbox" [checked]="selected().has(c.id)" (change)="toggle(c.id)" />
-                  {{ c.label }} · vence {{ c.dueDate ?? '—' }} · saldo {{ c.balanceCents | money }}
-                  <span class="tag {{ chargeTone[c.status] }}">{{ chargeLabels[c.status] }}</span>
-                </label>
+              @if ((open.value() ?? []).length) {
+                <div class="actions">
+                  @if (hasOverdue()) {
+                    <button type="button" class="secondary sm" (click)="selectOverdue()">
+                      Seleccionar vencidos
+                    </button>
+                  }
+                  <button type="button" class="secondary sm" (click)="selectAll()">
+                    Seleccionar todos
+                  </button>
+                  @if (selected().size) {
+                    <button type="button" class="link" (click)="clearSelection()">
+                      Limpiar selección
+                    </button>
+                  }
+                </div>
               }
-              <p>
+              <div class="charge-pick-list">
+                @for (c of open.value() ?? []; track c.id) {
+                  <label class="check charge-pick" [class.selected]="selected().has(c.id)">
+                    <input
+                      type="checkbox"
+                      [checked]="selected().has(c.id)"
+                      (change)="toggle(c.id)"
+                    />
+                    <span class="charge-pick-main">
+                      <strong>{{ c.label }}</strong>
+                      <span class="cell-sub tabular">
+                        Vence {{ c.dueDate ?? 'sin fecha' }} · saldo {{ c.balanceCents | money }}
+                      </span>
+                    </span>
+                    <span class="tag {{ chargeTone[c.status] }}">{{ chargeLabels[c.status] }}</span>
+                  </label>
+                }
+              </div>
+              <p class="field-hint tabular">
                 <strong>Saldo seleccionado: {{ due() | money }}</strong>
               </p>
             </ng-template></app-load-state
           >
         </fieldset>
+
         <div class="two-col">
           <!-- One .two-col cell; the error stays out of the label so it is not part of the field's name. -->
           <div>
@@ -121,6 +164,7 @@ import {
                   pattern=".*\\S.*"
                   maxlength="100"
                   autocomplete="off"
+                  placeholder="Ej. SPEI-4821 o últimos 4 dígitos"
                   aria-describedby="reference-error"
                   [attr.aria-invalid]="
                     referenceModel.touched && referenceModel.invalid ? 'true' : null
@@ -135,9 +179,13 @@ import {
             </div>
           }
         </div>
-        <button type="button" class="link" (click)="amount = due() / 100">
-          Pagar el total seleccionado
-        </button>
+
+        <div class="actions">
+          <button type="button" class="link" (click)="amount = due() / 100" [disabled]="!due()">
+            Pagar el total seleccionado
+          </button>
+        </div>
+
         @if (selected().size) {
           <dl class="summary" aria-label="Resumen del pago">
             <div>
@@ -146,7 +194,7 @@ import {
             </div>
             <div>
               <dt>Importe</dt>
-              <dd>{{ (amount ?? 0) * 100 | money }}</dd>
+              <dd>{{ previewCents() | money }}</dd>
             </div>
             <div>
               <dt>Forma de pago</dt>
@@ -165,6 +213,7 @@ import {
           </dl>
         }
       }
+
       @if (!playerId() || !selected().size) {
         <p id="pay-hint" class="alert info">
           {{
@@ -175,16 +224,23 @@ import {
         </p>
       }
       <app-submission-alert [submission]="submission" />
-      <button
-        type="submit"
-        aria-describedby="pay-hint"
-        [disabled]="submission.busy() || !playerId() || !selected().size"
-      >
-        Registrar pago
-      </button>
+      <div class="actions">
+        <button
+          type="submit"
+          aria-describedby="pay-hint"
+          [disabled]="submission.busy() || !playerId() || !selected().size"
+        >
+          {{ submission.busy() ? 'Registrando…' : 'Registrar pago' }}
+        </button>
+      </div>
     </form>
+
     @if (lastId(); as id) {
-      <p><a [routerLink]="['/admin/billing/receipts', id]">Ver / imprimir recibo</a></p>
+      <p class="actions">
+        <a class="button secondary" [routerLink]="['/admin/billing/receipts', id]">
+          Ver / imprimir recibo
+        </a>
+      </p>
     }
   `,
 })
@@ -215,6 +271,9 @@ export class PaymentPage {
     loader: ({ params }) => this.service.openCharges(params),
   });
   protected selected = signal(new Set<Id>());
+  protected hasOverdue = computed(() =>
+    (this.open.value() ?? []).some((c) => c.status === 'VENCIDO'),
+  );
   protected due = computed(() =>
     sumCents(
       (this.open.value() ?? []).filter((c) => this.selected().has(c.id)).map((c) => c.balanceCents),
@@ -234,12 +293,32 @@ export class PaymentPage {
   protected lastId = signal<Id | null>(null);
   protected submission = new Submission();
 
+  protected previewCents(): number {
+    const n = Number(this.amount);
+    return Number.isFinite(n) && n > 0 ? centsFromInput(n) : 0;
+  }
+
   selectPlayer(id: Id | null): void {
     this.playerId.set(id);
     this.selected.set(new Set());
     this.tutorId = null;
     this.amount = 0;
     this.amountModel()?.control.markAsUntouched();
+  }
+
+  selectOverdue(): void {
+    const overdueIds = (this.open.value() ?? [])
+      .filter((c) => c.status === 'VENCIDO')
+      .map((c) => c.id);
+    this.selected.set(new Set(overdueIds));
+  }
+
+  selectAll(): void {
+    this.selected.set(new Set((this.open.value() ?? []).map((c) => c.id)));
+  }
+
+  clearSelection(): void {
+    this.selected.set(new Set());
   }
 
   needsReference(): boolean {
@@ -306,20 +385,41 @@ export class PaymentPage {
 /** HU-048 list (search by folio/player) + HU-049 cancellation (authorized role, reason, keeps the payment). */
 @Component({
   selector: 'app-receipts-page',
-  imports: [FormsModule, LoadState, MoneyPipe, RouterLink, DatePipe, Paginator, SubmissionAlert],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [
+    FormsModule,
+    LoadState,
+    MoneyPipe,
+    RouterLink,
+    DatePipe,
+    Paginator,
+    SubmissionAlert,
+    PromptDialog,
+  ],
   template: `
     <div class="page-head">
-      <h1>Pagos y recibos</h1>
+      <div>
+        <h1>Pagos y recibos</h1>
+        <p class="page-subtitle">
+          Historial de pagos aplicados o cancelados y acceso a recibos imprimibles por folio.
+        </p>
+      </div>
       @if (auth.can('pagos.crear')) {
         <a class="button" routerLink="/admin/billing/payments/new">Registrar pago</a>
       }
     </div>
     <app-submission-alert [submission]="submission" />
+
     <div class="filters">
-      <label
+      <label class="filter-grow"
         >Folio o jugador
-        <input type="search" [ngModel]="query()" (ngModelChange)="query.set($event); page.set(1)"
-      /></label>
+        <input
+          type="search"
+          placeholder="Buscar por folio R-0001 o nombre…"
+          [ngModel]="query()"
+          (ngModelChange)="query.set($event); page.set(1)"
+        />
+      </label>
       <label
         >Estado
         <select [ngModel]="status()" (ngModelChange)="status.set($event); page.set(1)">
@@ -328,9 +428,20 @@ export class PaymentPage {
           <option value="CANCELADO">Cancelados</option>
         </select>
       </label>
+      @if (hasFilters()) {
+        <button type="button" class="secondary sm" (click)="clearFilters()">Limpiar filtros</button>
+      }
     </div>
-    <app-load-state [res]="receipts"
+
+    <app-load-state [res]="receipts" emptyText="Sin pagos registrados con esos filtros."
       ><ng-template>
+        <div class="list-meta">
+          <p class="muted">
+            Mostrando
+            <strong class="tabular">{{ (receipts.value()?.items ?? []).length }}</strong> de
+            <strong class="tabular">{{ receipts.value()?.total }}</strong> recibos
+          </p>
+        </div>
         <div class="table-wrap">
           <table>
             <caption class="sr-only">
@@ -344,30 +455,41 @@ export class PaymentPage {
                 <th>Pagó</th>
                 <th>Forma</th>
                 <th class="num">Importe</th>
-                <th></th>
+                <th><span class="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
               @for (r of receipts.value()?.items ?? []; track r.payment.id) {
-                <tr>
+                <tr [class.muted]="r.payment.status === 'CANCELADO'">
                   <td>
-                    {{ r.payment.folio }}
+                    <span class="mono">{{ r.payment.folio }}</span>
                     @if (r.payment.status === 'CANCELADO') {
                       <span class="tag {{ paymentTone[r.payment.status] }}">Cancelado</span>
+                    } @else {
+                      <span class="tag {{ paymentTone[r.payment.status] }}">Aplicado</span>
                     }
                   </td>
                   <td>{{ r.payment.paidAt | date: 'd MMM y, HH:mm' }}</td>
-                  <td>{{ r.playerName }}</td>
+                  <td>
+                    <a [routerLink]="['/admin/players', r.payment.playerId]">{{ r.playerName }}</a>
+                  </td>
                   <td>{{ r.tutorName ?? '—' }}</td>
-                  <td>{{ methods[r.payment.method] }}</td>
-                  <td class="num">{{ r.payment.amountCents | money }}</td>
+                  <td>
+                    {{ methods[r.payment.method] }}
+                    @if (r.payment.reference) {
+                      <div class="cell-sub mono">{{ r.payment.reference }}</div>
+                    }
+                  </td>
+                  <td class="num">
+                    <strong>{{ r.payment.amountCents | money }}</strong>
+                  </td>
                   <td class="row-actions">
                     <a [routerLink]="['/admin/billing/receipts', r.payment.id]">Ver / reimprimir</a>
                     @if (auth.can('pagos.cancelar') && r.payment.status === 'APLICADO') {
                       <button
                         type="button"
                         class="link danger"
-                        (click)="cancel(r.payment.id, r.payment.folio)"
+                        (click)="cancel(r.payment.id, r.payment.folio, r.playerName)"
                       >
                         Cancelar
                       </button>
@@ -380,9 +502,11 @@ export class PaymentPage {
         </div>
         <app-paginator [page]="receipts.value()" (go)="page.set($event)" /> </ng-template
     ></app-load-state>
+    <app-prompt-dialog #cancelDialog />
   `,
 })
 export class ReceiptsPage {
+  private cancelDialog = viewChild.required<PromptDialog>('cancelDialog');
   private service = inject(BillingService);
   protected auth = inject(AuthService);
   protected methods = METHOD_LABELS;
@@ -390,78 +514,122 @@ export class ReceiptsPage {
   protected query = signal('');
   protected status = signal<'' | 'APLICADO' | 'CANCELADO'>('');
   protected page = signal(1);
+  protected hasFilters = computed(() => !!this.query().trim() || !!this.status());
   protected receipts = resource({
     params: () => ({ query: this.query(), status: this.status(), page: this.page() }),
     loader: ({ params }) => this.service.receipts(params),
   });
   protected submission = new Submission();
 
-  async cancel(id: Id, folio: string): Promise<void> {
-    const reason = prompt(
-      `Motivo para cancelar el pago ${folio} (queda registrado y no se borra):`,
-    )?.trim();
+  clearFilters(): void {
+    this.query.set('');
+    this.status.set('');
+    this.page.set(1);
+  }
+
+  async cancel(id: Id, folio: string, playerName: string): Promise<void> {
+    const reason = await this.cancelDialog().open({
+      title: `Cancelar pago ${folio}`,
+      message: `El pago de ${playerName} se conservará en el historial y los saldos pendientes se reabrirán.`,
+      label: 'Motivo de la cancelación',
+      placeholder: 'Ej. transferencia rechazada o error de captura',
+      confirmText: 'Cancelar pago',
+      tone: 'danger',
+      required: true,
+    });
     if (!reason) return;
-    await this.submission.run(
-      () => this.service.cancelPayment(id, reason),
-      `Pago ${folio} cancelado; los saldos se reabrieron.`,
-    );
-    this.receipts.reload();
+    if (
+      await this.submission.run(
+        () => this.service.cancelPayment(id, reason),
+        `Pago ${folio} cancelado; los saldos se reabrieron.`,
+      )
+    )
+      this.receipts.reload();
   }
 }
 
 /** HU-048: receipt with folio, date, player, concepts, amount and method; printable; flags cancellation. */
 @Component({
   selector: 'app-receipt-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [LoadState, MoneyPipe, RouterLink, DatePipe],
   template: `
-    <a routerLink="/admin/billing/receipts" class="no-print">← Recibos</a>
+    <div class="page-head compact no-print">
+      <a class="back-link" routerLink="/admin/billing/receipts">← Recibos</a>
+      @if (receipt.value()) {
+        <button type="button" (click)="print()">Imprimir recibo</button>
+      }
+    </div>
     <app-load-state [res]="receipt"
       ><ng-template>
         @if (receipt.value(); as r) {
           <article class="receipt">
-            <h1>Recibo {{ r.payment.folio }}</h1>
+            <header class="receipt-header">
+              <div class="receipt-brand">
+                <img src="/logo.png" alt="" class="receipt-logo" width="44" height="44" />
+                <div>
+                  <p class="receipt-org">Escuela Formativa Charales</p>
+                  <p class="receipt-loc">Chapala, Jalisco</p>
+                </div>
+              </div>
+              <div class="receipt-folio">
+                <span class="receipt-folio-label">Recibo interno</span>
+                <h1 class="mono">{{ r.payment.folio }}</h1>
+              </div>
+            </header>
+
             @if (r.payment.status === 'CANCELADO') {
               <p class="alert error">PAGO CANCELADO: {{ r.payment.cancellationReason }}</p>
             }
-            <p>Escuela de Fútbol Charales</p>
-            <dl>
-              <dt>Fecha</dt>
-              <dd>{{ r.payment.paidAt | date: 'd MMM y, HH:mm' }}</dd>
+
+            <dl class="receipt-meta">
+              <dt>Fecha de pago</dt>
+              <dd class="tabular">{{ r.payment.paidAt | date: 'd MMM y, HH:mm' }}</dd>
               <dt>Jugador</dt>
-              <dd>{{ r.playerName }}</dd>
-              <dt>Pagó</dt>
-              <dd>{{ r.tutorName ?? '—' }}</dd>
+              <dd>
+                <strong>{{ r.playerName }}</strong>
+              </dd>
+              <dt>Recibido de</dt>
+              <dd>{{ r.tutorName ?? 'No especificado' }}</dd>
               <dt>Forma de pago</dt>
               <dd>{{ methods[r.payment.method] }}</dd>
               @if (r.payment.reference) {
                 <dt>Referencia</dt>
-                <dd>{{ r.payment.reference }}</dd>
+                <dd class="mono">{{ r.payment.reference }}</dd>
               }
             </dl>
-            <table>
-              <thead>
-                <tr>
-                  <th>Concepto</th>
-                  <th class="num">Importe</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (l of r.lines; track $index) {
+
+            <div class="table-wrap receipt-table-wrap">
+              <table>
+                <thead>
                   <tr>
-                    <td>{{ l.label }}</td>
-                    <td class="num">{{ l.amountCents | money }}</td>
+                    <th>Concepto cubierto</th>
+                    <th class="num">Importe</th>
                   </tr>
-                }
-              </tbody>
-              <tfoot>
-                <tr>
-                  <th>Total</th>
-                  <th class="num">{{ r.payment.amountCents | money }}</th>
-                </tr>
-              </tfoot>
-            </table>
+                </thead>
+                <tbody>
+                  @for (l of r.lines; track $index) {
+                    <tr>
+                      <td>{{ l.label }}</td>
+                      <td class="num">{{ l.amountCents | money }}</td>
+                    </tr>
+                  }
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th>Total pagado</th>
+                    <th class="num">{{ r.payment.amountCents | money }}</th>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <footer class="receipt-footer">
+              <p class="muted">
+                Comprobante interno de control escolar — No constituye comprobante fiscal.
+              </p>
+            </footer>
           </article>
-          <button type="button" class="no-print" (click)="print()">Imprimir</button>
         }
       </ng-template></app-load-state
     >
@@ -484,11 +652,23 @@ export class ReceiptPage {
 /** HU-046: one player's statement — charges and payments by period/concept, balance and overdue. */
 @Component({
   selector: 'app-statement-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, LoadState, MoneyPipe, RouterLink, DatePipe],
   template: `
-    <h1>Estado de cuenta</h1>
-    <div class="filters">
-      <label
+    <div class="page-head">
+      <div>
+        <h1>Estado de cuenta</h1>
+        <p class="page-subtitle">
+          Detalle cronológico de cargos, descuentos, pagos y saldo vigente por jugador.
+        </p>
+      </div>
+      @if (playerId() && statement.value()) {
+        <button type="button" class="secondary no-print" (click)="print()">Imprimir</button>
+      }
+    </div>
+
+    <div class="filters no-print">
+      <label class="filter-grow"
         >Jugador
         <select [ngModel]="playerId()" (ngModelChange)="pick($event)">
           <option [ngValue]="null">Selecciona…</option>
@@ -510,7 +690,11 @@ export class ReceiptPage {
           }
         </select>
       </label>
+      @if (from() || to() || conceptId() !== null) {
+        <button type="button" class="secondary sm" (click)="clearFilters()">Limpiar filtros</button>
+      }
     </div>
+
     @if (playerId()) {
       <app-load-state [res]="statement"
         ><ng-template>
@@ -522,7 +706,7 @@ export class ReceiptPage {
               <div class="kpi">
                 <span>Descuentos</span><strong>{{ s.totals.discountCents | money }}</strong>
               </div>
-              <div class="kpi">
+              <div class="kpi kpi-ok">
                 <span>Pagado</span><strong>{{ s.totals.paidCents | money }}</strong>
               </div>
               <div class="kpi">
@@ -533,13 +717,16 @@ export class ReceiptPage {
               </div>
             </div>
             @if (auth.can('pagos.crear') && s.totals.balanceCents) {
-              <a
-                class="button"
-                [routerLink]="['/admin/billing/payments/new']"
-                [queryParams]="{ player: s.playerId }"
-                >Registrar pago</a
-              >
+              <p class="actions no-print">
+                <a
+                  class="button"
+                  [routerLink]="['/admin/billing/payments/new']"
+                  [queryParams]="{ player: s.playerId }"
+                  >Registrar pago</a
+                >
+              </p>
             }
+
             <h2>Cargos</h2>
             <div class="table-wrap">
               <table>
@@ -560,14 +747,16 @@ export class ReceiptPage {
                 </thead>
                 <tbody>
                   @for (c of s.charges; track c.id) {
-                    <tr>
-                      <td>{{ c.chargedOn }}</td>
+                    <tr [class.muted]="c.status === 'CANCELADO'">
+                      <td class="tabular">{{ c.chargedOn }}</td>
                       <td>{{ c.label }}</td>
-                      <td>{{ c.dueDate ?? '—' }}</td>
+                      <td class="tabular">{{ c.dueDate ?? '—' }}</td>
                       <td class="num">{{ c.originalAmountCents | money }}</td>
-                      <td class="num">{{ c.discountCents ? (c.discountCents | money) : '' }}</td>
+                      <td class="num">{{ c.discountCents ? (c.discountCents | money) : '—' }}</td>
                       <td class="num">{{ c.paidCents | money }}</td>
-                      <td class="num">{{ c.balanceCents | money }}</td>
+                      <td class="num">
+                        <strong>{{ c.balanceCents | money }}</strong>
+                      </td>
                       <td>
                         <span class="tag {{ chargeTone[c.status] }}">{{ labels[c.status] }}</span>
                       </td>
@@ -580,6 +769,7 @@ export class ReceiptPage {
                 </tbody>
               </table>
             </div>
+
             <h2>Pagos</h2>
             <div class="table-wrap">
               <table>
@@ -597,9 +787,11 @@ export class ReceiptPage {
                 </thead>
                 <tbody>
                   @for (p of s.payments; track p.id) {
-                    <tr>
+                    <tr [class.muted]="p.status === 'CANCELADO'">
                       <td>
-                        <a [routerLink]="['/admin/billing/receipts', p.id]">{{ p.folio }}</a>
+                        <a class="mono" [routerLink]="['/admin/billing/receipts', p.id]">{{
+                          p.folio
+                        }}</a>
                       </td>
                       <td>{{ p.paidAt | date: 'd MMM y' }}</td>
                       <td class="wrap">
@@ -659,14 +851,34 @@ export class StatementPage {
     this.playerId.set(id);
     this.router.navigate([], { queryParams: { player: id }, replaceUrl: true });
   }
+
+  clearFilters(): void {
+    this.from.set('');
+    this.to.set('');
+    this.conceptId.set(null);
+  }
+
+  print(): void {
+    window.print();
+  }
 }
 
 /** HU-050: debts by player with primary tutor/contact and overdue balance; filters by period and category. */
 @Component({
   selector: 'app-debts-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, LoadState, MoneyPipe, RouterLink],
   template: `
-    <h1>Adeudos</h1>
+    <div class="page-head">
+      <div>
+        <h1>Adeudos</h1>
+        <p class="page-subtitle">
+          Saldos abiertos por jugador con contacto familiar prioritario y acceso directo al estado de
+          cuenta.
+        </p>
+      </div>
+    </div>
+
     <div class="filters">
       <label
         >Periodo del cargo
@@ -689,7 +901,11 @@ export class StatementPage {
         />
         Sólo con saldo vencido</label
       >
+      @if (period() || categoryId() !== null || !onlyOverdue()) {
+        <button type="button" class="secondary sm" (click)="clearFilters()">Restablecer</button>
+      }
     </div>
+
     <app-load-state [res]="debts" emptyText="No hay adeudos con esos filtros."
       ><ng-template>
         <div class="kpis">
@@ -699,6 +915,12 @@ export class StatementPage {
           <div class="kpi">
             <span>Saldo total</span><strong>{{ total() | money }}</strong>
           </div>
+        </div>
+        <div class="list-meta">
+          <p class="muted">
+            Jugadores con saldo:
+            <strong class="tabular">{{ (debts.value() ?? []).length }}</strong>
+          </p>
         </div>
         <div class="table-wrap">
           <table>
@@ -731,9 +953,11 @@ export class StatementPage {
                   <td>{{ d.tutorName ?? '—' }}</td>
                   <td>{{ d.tutorContact ?? '—' }}</td>
                   <td class="num">{{ d.openCharges }}</td>
-                  <td>{{ d.oldestDueDate ?? '—' }}</td>
+                  <td class="tabular">{{ d.oldestDueDate ?? '—' }}</td>
                   <td class="num" [class.danger]="d.overdueCents">{{ d.overdueCents | money }}</td>
-                  <td class="num">{{ d.balanceCents | money }}</td>
+                  <td class="num">
+                    <strong>{{ d.balanceCents | money }}</strong>
+                  </td>
                 </tr>
               }
             </tbody>
@@ -763,4 +987,10 @@ export class DebtsPage {
     sumCents((this.debts.value() ?? []).map((d) => d.overdueCents)),
   );
   protected total = computed(() => sumCents((this.debts.value() ?? []).map((d) => d.balanceCents)));
+
+  clearFilters(): void {
+    this.period.set('');
+    this.categoryId.set(null);
+    this.onlyOverdue.set(true);
+  }
 }

@@ -177,4 +177,55 @@ describe('players pages (F3.1)', () => {
     expect(empty?.textContent?.trim()).toBe('Sin resultados.');
     expect(el.querySelector('.alert.error')).toBeNull();
   }, 20_000);
+
+  it('Phase 4B: PlayersPage displays active filter indicators and Limpiar filtros resets the search', async () => {
+    let el = await open('secretaria@example.com', '/admin/players');
+    const search = el.querySelector<HTMLInputElement>('input[type=search]')!;
+    search.value = 'zzzz-nadie';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    el = await settle();
+    expect(el.querySelector('app-load-state > p.empty')?.textContent?.trim()).toBe(
+      'Sin resultados.',
+    );
+    const clearBtn = [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) =>
+      /limpiar filtros/i.test(b.textContent ?? ''),
+    )!;
+    expect(clearBtn).toBeTruthy();
+    clearBtn.click();
+    el = await settle();
+    expect(el.querySelectorAll('tbody tr').length).toBeGreaterThan(0);
+    expect(el.querySelector('[aria-label="Filtros activos"]')).toBeNull();
+  }, 20_000);
+
+  it('Phase 4B: PlayerFormPage shows required markers and a visible Cancelar link', async () => {
+    const el = await open('secretaria@example.com', '/admin/players/new');
+    expect(el.querySelectorAll('form .req').length).toBe(3);
+    const cancel = [...el.querySelectorAll<HTMLAnchorElement>('form a.button.secondary')].find(
+      (a) => /cancelar/i.test(a.textContent ?? ''),
+    )!;
+    expect(cancel.getAttribute('href')).toBe('/admin/players');
+  }, 20_000);
+
+  it('Phase 4B: PlayerRecordPage provides Registrar pago shortcut and renders structured tab tables', async () => {
+    let el = await open('admin@example.com', '/admin/players/1');
+    const payLink = [...el.querySelectorAll<HTMLAnchorElement>('a.button')].find((a) =>
+      /registrar pago/i.test(a.textContent ?? ''),
+    )!;
+    expect(payLink.getAttribute('href')).toBe('/admin/billing/payments/new?player=1');
+
+    const tab = (pattern: RegExp) =>
+      [...el.querySelectorAll<HTMLButtonElement>('[role=tab]')].find((b) =>
+        pattern.test(b.textContent ?? ''),
+      )!;
+
+    for (const pattern of [/pagos/i, /uniformes/i, /competencias/i, /categor/i]) {
+      tab(pattern).click();
+      el = await settle();
+      expect(el.querySelector('#record-panel')).not.toBeNull();
+      const hasTableOrEmpty =
+        el.querySelector('#record-panel .table-wrap table') !== null ||
+        el.querySelector('#record-panel p.empty') !== null;
+      expect(hasTableOrEmpty).toBe(true);
+    }
+  }, 20_000);
 });

@@ -111,12 +111,26 @@ export const QUICK_TASKS: QuickTask[] = [
 /**
  * Single source for the menu, derived from the domain (no "Equipos", "Evaluaciones" or
  * "Configuración": the MariaDB model has none). Items are filtered by the session's permissions.
+ * Office items are consolidated into 6 operational areas: Resumen, Personas, Gestión deportiva,
+ * Cobranza, Administración y Sistema (preserving NavSection / SECTION_ICONS contracts).
  */
 export const NAV_ITEMS: NavItem[] = [
   {
     section: 'Resumen',
     label: 'Tablero',
     path: '/admin/dashboard',
+    permission: 'reportes.consultar',
+  },
+  {
+    section: 'Resumen',
+    label: 'Jugadores por categoría',
+    path: '/admin/reports/players',
+    permission: 'reportes.consultar',
+  },
+  {
+    section: 'Resumen',
+    label: 'Ingresos',
+    path: '/admin/reports/income',
     permission: 'reportes.consultar',
   },
 
@@ -139,6 +153,12 @@ export const NAV_ITEMS: NavItem[] = [
     permission: 'entrenadores.consultar',
   },
 
+  {
+    section: 'Gestión deportiva',
+    label: 'Agenda',
+    path: '/sports/agenda',
+    permission: 'reportes.consultar',
+  },
   {
     section: 'Gestión deportiva',
     label: 'Temporadas',
@@ -176,35 +196,22 @@ export const NAV_ITEMS: NavItem[] = [
     permission: 'asistencias.consultar',
   },
   {
-    section: 'Competencias',
+    section: 'Gestión deportiva',
     label: 'Competencias',
     path: '/sports/competitions',
     permission: 'competencias.consultar',
   },
   {
-    section: 'Competencias',
+    section: 'Gestión deportiva',
     label: 'Entrenadores por competencia',
     path: '/admin/coaches/assignments',
     permission: 'competencias.consultar',
   },
   {
-    section: 'Competencias',
+    section: 'Gestión deportiva',
     label: 'Partidos',
     path: '/sports/matches',
     permission: 'partidos.consultar',
-  },
-  {
-    section: 'Gestión deportiva',
-    label: 'Agenda',
-    path: '/sports/agenda',
-    permission: 'reportes.consultar',
-  },
-
-  {
-    section: 'Administración',
-    label: 'Inscripciones',
-    path: '/admin/enrollments',
-    permission: 'inscripciones.consultar',
   },
 
   {
@@ -257,36 +264,28 @@ export const NAV_ITEMS: NavItem[] = [
   },
 
   {
-    section: 'Uniformes',
-    label: 'Catálogo',
+    section: 'Administración',
+    label: 'Inscripciones',
+    path: '/admin/enrollments',
+    permission: 'inscripciones.consultar',
+  },
+  {
+    section: 'Administración',
+    label: 'Catálogo de uniformes',
     path: '/admin/uniforms/catalog',
     permission: 'uniformes.consultar',
   },
   {
-    section: 'Uniformes',
-    label: 'Pedidos',
+    section: 'Administración',
+    label: 'Pedidos de uniforme',
     path: '/admin/uniforms/orders',
     permission: 'uniformes.consultar',
   },
-
   {
-    section: 'Comunicación',
+    section: 'Administración',
     label: 'Avisos',
     path: '/admin/notices',
     permission: 'avisos.consultar',
-  },
-
-  {
-    section: 'Reportes',
-    label: 'Jugadores por categoría',
-    path: '/admin/reports/players',
-    permission: 'reportes.consultar',
-  },
-  {
-    section: 'Reportes',
-    label: 'Ingresos',
-    path: '/admin/reports/income',
-    permission: 'reportes.consultar',
   },
 
   {

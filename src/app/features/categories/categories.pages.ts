@@ -1,4 +1,4 @@
-import { Component, inject, input, numberAttribute, resource, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input, numberAttribute, resource, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
@@ -19,6 +19,7 @@ import { VenueService } from '../venues/venue.service';
 /** HU-015 (categories: name per season, age range, status) + HU-021 (capacity and occupancy). */
 @Component({
   selector: 'app-categories-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     ReactiveFormsModule,
     FormsModule,
@@ -30,7 +31,12 @@ import { VenueService } from '../venues/venue.service';
   ],
   template: `
     <div class="page-head">
-      <h1>Categorías</h1>
+      <div>
+        <h1>Categorías</h1>
+        <p class="page-subtitle">
+          Grupos por rango de edad y temporada, ocupación actual y horarios de entrenamiento.
+        </p>
+      </div>
       @if (auth.can('categorias.crear')) {
         <button
           type="button"
@@ -53,34 +59,60 @@ import { VenueService } from '../venues/venue.service';
         (keydown.escape)="cancel()"
       >
         <h2>{{ editingId() ? 'Editar categoría' : 'Nueva categoría' }}</h2>
-        <label
-          >Temporada
-          <select formControlName="seasonId">
-            <option [ngValue]="null">Sin temporada</option>
-            @for (s of seasons.value() ?? []; track s.id) {
-              <option [ngValue]="s.id">{{ s.name }}</option>
-            }
-          </select>
-        </label>
-        <label>Nombre <input formControlName="name" placeholder="Sub-10" /></label>
-        <app-field-error [control]="form.controls.name" />
+        <p class="field-hint">
+          Los campos con <span class="req" aria-hidden="true">*</span> son obligatorios.
+        </p>
+        <div class="two-col">
+          <label
+            >Temporada
+            <select formControlName="seasonId">
+              <option [ngValue]="null">Sin temporada</option>
+              @for (s of seasons.value() ?? []; track s.id) {
+                <option [ngValue]="s.id">{{ s.name }}</option>
+              }
+            </select>
+          </label>
+          <div>
+            <label
+              ><span
+                >Nombre <span class="req" aria-hidden="true">*</span
+                ><span class="sr-only"> (obligatorio)</span></span
+              >
+              <input formControlName="name" placeholder="Sub-10"
+            /></label>
+            <app-field-error [control]="form.controls.name" />
+          </div>
+        </div>
         <div class="two-col">
           <div>
             <label
-              >Edad mínima <input type="number" min="0" max="99" formControlName="minAge"
+              ><span
+                >Edad mínima <span class="req" aria-hidden="true">*</span
+                ><span class="sr-only"> (obligatorio)</span></span
+              >
+              <input type="number" min="0" max="99" formControlName="minAge"
             /></label>
             <app-field-error [control]="form.controls.minAge" />
           </div>
-          <label
-            >Edad máxima <input type="number" min="0" max="99" formControlName="maxAge"
-          /></label>
+          <div>
+            <label
+              ><span
+                >Edad máxima <span class="req" aria-hidden="true">*</span
+                ><span class="sr-only"> (obligatorio)</span></span
+              >
+              <input type="number" min="0" max="99" formControlName="maxAge"
+            /></label>
+            <app-field-error [control]="form.controls.maxAge" />
+          </div>
         </div>
         <label
           >Cupo máximo (vacío = sin límite)
           <input type="number" min="1" formControlName="maxCapacity"
         /></label>
         <div class="actions">
-          <button type="submit" [disabled]="submission.busy()">Guardar</button>
+          <button type="submit" [disabled]="submission.busy()">
+            {{ submission.busy() ? 'Guardando…' : 'Guardar' }}
+          </button>
           <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
         </div>
       </form>
@@ -95,9 +127,20 @@ import { VenueService } from '../venues/venue.service';
           }
         </select>
       </label>
+      @if (seasonId() !== null) {
+        <button type="button" class="secondary sm" (click)="seasonId.set(null)">
+          Limpiar filtro
+        </button>
+      }
     </div>
-    <app-load-state [res]="categories"
+    <app-load-state [res]="categories" emptyText="Sin categorías registradas."
       ><ng-template>
+        <div class="list-meta">
+          <p class="muted">
+            Mostrando <strong class="tabular">{{ (categories.value() ?? []).length }}</strong>
+            {{ (categories.value() ?? []).length === 1 ? 'categoría' : 'categorías' }}
+          </p>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -107,32 +150,39 @@ import { VenueService } from '../venues/venue.service';
                 <th>Edades</th>
                 <th class="num">Ocupación</th>
                 <th>Estado</th>
-                <th></th>
+                <th><span class="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
               @for (c of categories.value() ?? []; track c.id) {
-                <tr>
+                <tr [class.muted]="!c.active">
                   <td>
-                    <a [routerLink]="['/sports/categories', c.id]">{{ c.name }}</a>
+                    <a [routerLink]="['/sports/categories', c.id]"
+                      ><strong>{{ c.name }}</strong></a
+                    >
                   </td>
                   <td>{{ c.seasonName ?? '—' }}</td>
-                  <td>{{ c.minAge }}–{{ c.maxAge }} años</td>
+                  <td class="tabular">{{ c.minAge }}–{{ c.maxAge }} años</td>
                   <td class="num">
-                    {{ c.occupancy }} / {{ c.maxCapacity ?? '∞' }}
+                    <span class="tabular">{{ c.occupancy }} / {{ c.maxCapacity ?? '∞' }}</span>
                     @if (c.full) {
-                      <span class="tag off">Lleno</span>
+                      <span class="tag danger">Lleno</span>
                     }
                   </td>
                   <td>
-                    <span class="tag" [class.off]="!c.active">{{
+                    <span class="tag" [class.ok]="c.active" [class.off]="!c.active">{{
                       c.active ? 'Activa' : 'Inactiva'
                     }}</span>
                   </td>
                   <td class="row-actions">
                     @if (auth.can('categorias.editar')) {
                       <button type="button" class="link" (click)="edit(c)">Editar</button>
-                      <button type="button" class="link" (click)="toggle(c)">
+                      <button
+                        type="button"
+                        class="link"
+                        [class.danger]="c.active"
+                        (click)="toggle(c)"
+                      >
                         {{ c.active ? 'Desactivar' : 'Activar' }}
                       </button>
                     }
@@ -235,28 +285,41 @@ export class CategoriesPage {
 /** HU-018 (members with age, primary tutor, total), HU-016 (weekly schedules) and assigned coaches of one category. */
 @Component({
   selector: 'app-category-detail-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, RouterLink, LoadState, SubmissionAlert],
   template: `
-    <a routerLink="/sports/categories">← Categorías</a>
+    <a class="back-link" routerLink="/sports/categories">← Categorías</a>
     <app-load-state [res]="category"
       ><ng-template>
         @if (category.value(); as c) {
-          <h1>
-            {{ c.name }} <span class="muted">{{ c.seasonName ?? '' }}</span>
-          </h1>
-          <p>
-            {{ c.minAge }}–{{ c.maxAge }} años · Ocupación {{ c.occupancy }} /
-            {{ c.maxCapacity ?? '∞' }}
-            @if (c.full) {
-              <span class="tag off">Cupo lleno</span>
-            }
-          </p>
+          <div class="page-head">
+            <div>
+              <h1>
+                {{ c.name }} <span class="muted">{{ c.seasonName ?? '' }}</span>
+              </h1>
+              <p class="page-subtitle">
+                <span class="tabular">{{ c.minAge }}–{{ c.maxAge }} años</span> · Ocupación
+                <strong class="tabular">{{ c.occupancy }} / {{ c.maxCapacity ?? '∞' }}</strong>
+                @if (c.full) {
+                  <span class="tag danger">Cupo lleno</span>
+                }
+              </p>
+            </div>
+          </div>
 
           <h2>Jugadores activos ({{ members.value()?.length ?? 0 }})</h2>
           <div class="filters">
-            <label
-              >Buscar <input type="search" [ngModel]="query()" (ngModelChange)="query.set($event)"
+            <label class="filter-grow"
+              >Buscar jugador
+              <input
+                type="search"
+                placeholder="Nombre del jugador…"
+                [ngModel]="query()"
+                (ngModelChange)="query.set($event)"
             /></label>
+            @if (query().trim()) {
+              <button type="button" class="secondary sm" (click)="query.set('')">Limpiar</button>
+            }
           </div>
           <app-load-state [res]="members" emptyText="Sin jugadores activos."
             ><ng-template>
@@ -275,15 +338,17 @@ export class CategoriesPage {
                     @for (m of members.value() ?? []; track m.playerId) {
                       <tr>
                         <td>
-                          <a [routerLink]="['/admin/players', m.playerId]">{{ m.name }}</a>
+                          <a [routerLink]="['/admin/players', m.playerId]"
+                            ><strong>{{ m.name }}</strong></a
+                          >
                           @if (m.isAgeException) {
-                            <span class="tag">Excepción</span>
+                            <span class="tag warn">Excepción</span>
                           }
                         </td>
                         <td class="num">{{ m.age }}</td>
-                        <td>{{ m.since }}</td>
+                        <td class="tabular">{{ m.since }}</td>
                         <td>{{ m.primaryTutor ?? '—' }}</td>
-                        <td>{{ m.primaryPhone ?? '—' }}</td>
+                        <td class="tabular">{{ m.primaryPhone ?? '—' }}</td>
                       </tr>
                     }
                   </tbody>
@@ -292,14 +357,21 @@ export class CategoriesPage {
             </ng-template></app-load-state
           >
 
-          <h2>Entrenadores</h2>
-          <ul>
-            @for (co of coaches.value() ?? []; track co.coachId) {
-              <li>{{ co.name }} · {{ co.responsibility ?? 'sin rol' }} · desde {{ co.since }}</li>
-            } @empty {
-              <li class="muted">Sin entrenadores asignados.</li>
-            }
-          </ul>
+          <section class="panel">
+            <h2>Entrenadores asignados</h2>
+            <ul class="list clean-list">
+              @for (co of coaches.value() ?? []; track co.coachId) {
+                <li class="portal-row-item">
+                  <strong>{{ co.name }}</strong>
+                  <span class="muted"
+                    >{{ co.responsibility ?? 'Sin rol específico' }} · desde {{ co.since }}</span
+                  >
+                </li>
+              } @empty {
+                <li class="muted">Sin entrenadores asignados.</li>
+              }
+            </ul>
+          </section>
 
           <div class="page-head">
             <h2>Horarios de entrenamiento</h2>
@@ -334,7 +406,10 @@ export class CategoriesPage {
                   </select>
                 </label>
                 <label
-                  >Sede
+                  ><span
+                    >Sede <span class="req" aria-hidden="true">*</span
+                    ><span class="sr-only"> (obligatorio)</span></span
+                  >
                   <select name="venue" [(ngModel)]="venueId">
                     <option [ngValue]="null">Selecciona…</option>
                     @for (v of venues.value() ?? []; track v.id) {
@@ -347,7 +422,7 @@ export class CategoriesPage {
               </div>
               <div class="actions">
                 <button type="submit" [disabled]="submission.busy() || !venueId">
-                  Agregar horario
+                  {{ submission.busy() ? 'Agregando…' : 'Agregar horario' }}
                 </button>
                 <button type="button" class="secondary" (click)="closeSchedule()">Cancelar</button>
               </div>
@@ -361,25 +436,28 @@ export class CategoriesPage {
                   <th>Horario</th>
                   <th>Sede</th>
                   <th>Estado</th>
-                  <th></th>
+                  <th><span class="sr-only">Acciones</span></th>
                 </tr>
               </thead>
               <tbody>
                 @for (s of schedules.value() ?? []; track s.id) {
-                  <tr>
-                    <td>{{ dayName(s.weekday) }}</td>
-                    <td>{{ s.startTime }}–{{ s.endTime }}</td>
+                  <tr [class.muted]="!s.active">
+                    <td>
+                      <strong>{{ dayName(s.weekday) }}</strong>
+                    </td>
+                    <td class="tabular">{{ s.startTime }}–{{ s.endTime }}</td>
                     <td>{{ s.venueName }}</td>
                     <td>
-                      <span class="tag" [class.off]="!s.active">{{
+                      <span class="tag" [class.ok]="s.active" [class.off]="!s.active">{{
                         s.active ? 'Activo' : 'Inactivo'
                       }}</span>
                     </td>
-                    <td>
+                    <td class="row-actions">
                       @if (auth.can('categorias.editar')) {
                         <button
                           type="button"
                           class="link"
+                          [class.danger]="s.active"
                           (click)="toggleSchedule(s.id, !s.active)"
                         >
                           {{ s.active ? 'Desactivar' : 'Activar' }}
@@ -389,7 +467,7 @@ export class CategoriesPage {
                   </tr>
                 } @empty {
                   <tr>
-                    <td colspan="5" class="muted">Sin horarios.</td>
+                    <td colspan="5" class="muted">Sin horarios registrados.</td>
                   </tr>
                 }
               </tbody>

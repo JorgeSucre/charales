@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../core/auth/auth.service';
 
@@ -9,6 +9,7 @@ import { AuthService } from '../core/auth/auth.service';
  */
 @Component({
   selector: 'app-home',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (target === '/') {
       <h1>Charales</h1>
@@ -26,9 +27,14 @@ export class Home {
 
 @Component({
   selector: 'app-forbidden',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink],
-  template: `<h1>Acceso denegado</h1>
-    <p>Tu rol no tiene permiso para ver esta sección.</p>
-    <a routerLink="/">Ir a la página principal</a>`,
+  template: `
+    <section class="panel narrow">
+      <h1>Acceso denegado</h1>
+      <p class="muted">Tu rol no tiene permiso para ver esta sección.</p>
+      <a class="button secondary" routerLink="/">Ir a la página principal</a>
+    </section>
+  `,
 })
 export class Forbidden {}

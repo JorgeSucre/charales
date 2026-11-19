@@ -1,4 +1,4 @@
-import { Component, inject, resource, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, resource, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
@@ -18,10 +18,16 @@ import { CoachService, CoachView } from './coach.service';
 /** HU-022: coaches with contact, sporting status and optional login account. */
 @Component({
   selector: 'app-coaches-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, FormsModule, FieldError, FieldA11y, LoadState, SubmissionAlert],
   template: `
     <div class="page-head">
-      <h1>Entrenadores</h1>
+      <div>
+        <h1>Entrenadores</h1>
+        <p class="page-subtitle">
+          Directorio del cuerpo técnico, categorías vigentes y acceso al panel de entrenador.
+        </p>
+      </div>
       @if (auth.can('entrenadores.crear')) {
         <button
           type="button"
@@ -35,68 +41,145 @@ import { CoachService, CoachView } from './coach.service';
     </div>
     <app-submission-alert [submission]="submission" />
     @if (panel.open()) {
-      <form
-        id="coach-form"
-        [formGroup]="form"
-        (ngSubmit)="submit()"
-        novalidate
-        class="grid-form"
+      <section
+        class="panel tutor-workspace"
+        [class.with-portal]="!!editing()"
         (keydown.escape)="cancel()"
       >
-        <h2>{{ editing() ? 'Editar entrenador' : 'Registrar entrenador' }}</h2>
-        <label>Nombre(s) <input formControlName="firstName" autocomplete="off" /></label>
-        <app-field-error [control]="form.controls.firstName" />
-        <div class="two-col">
-          <div>
-            <label>Apellido paterno <input formControlName="lastName1" autocomplete="off" /></label>
-            <app-field-error [control]="form.controls.lastName1" />
-          </div>
-          <div>
-            <label>Apellido materno <input formControlName="lastName2" autocomplete="off" /></label>
-            <app-field-error [control]="form.controls.lastName2" />
-          </div>
+        <div class="tutor-workspace-grid">
+          <form
+            id="coach-form"
+            [formGroup]="form"
+            (ngSubmit)="submit()"
+            novalidate
+            class="grid-form"
+          >
+            <h2>{{ editing() ? 'Editar entrenador' : 'Registrar entrenador' }}</h2>
+            <p class="field-hint">
+              Los campos con <span class="req" aria-hidden="true">*</span> son obligatorios. Al
+              guardar podrás vincular o administrar su cuenta de acceso al panel de entrenador.
+            </p>
+            <div>
+              <label
+                ><span
+                  >Nombre(s) <span class="req" aria-hidden="true">*</span
+                  ><span class="sr-only"> (obligatorio)</span></span
+                >
+                <input formControlName="firstName" autocomplete="off"
+              /></label>
+              <app-field-error [control]="form.controls.firstName" />
+            </div>
+            <div class="two-col">
+              <div>
+                <label
+                  ><span
+                    >Apellido paterno <span class="req" aria-hidden="true">*</span
+                    ><span class="sr-only"> (obligatorio)</span></span
+                  >
+                  <input formControlName="lastName1" autocomplete="off"
+                /></label>
+                <app-field-error [control]="form.controls.lastName1" />
+              </div>
+              <div>
+                <label
+                  >Apellido materno <input formControlName="lastName2" autocomplete="off"
+                /></label>
+                <app-field-error [control]="form.controls.lastName2" />
+              </div>
+            </div>
+            <div class="two-col">
+              <div>
+                <label
+                  >Teléfono <input type="tel" formControlName="phone" autocomplete="off"
+                /></label>
+                <app-field-error [control]="form.controls.phone" />
+              </div>
+              <div>
+                <label
+                  >Correo <input type="email" formControlName="email" autocomplete="off"
+                /></label>
+                <app-field-error [control]="form.controls.email" />
+              </div>
+            </div>
+            <div class="actions">
+              <button type="submit" [disabled]="submission.busy()">
+                {{ submission.busy() ? 'Guardando…' : 'Guardar' }}
+              </button>
+              <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
+            </div>
+          </form>
+
+          @if (editing(); as c) {
+            <aside class="portal-panel" aria-labelledby="coach-account-heading">
+              <div class="portal-panel-head">
+                <h2 id="coach-account-heading">Cuenta de acceso</h2>
+                <span class="tag" [class.ok]="!!c.accountEmail" [class.neutral]="!c.accountEmail">
+                  {{ c.accountEmail ? 'Vinculada' : 'Sin acceso' }}
+                </span>
+              </div>
+              @if (c.accountEmail) {
+                <p>
+                  El entrenador puede ingresar al <strong>Panel de entrenador</strong> para pasar
+                  lista y consultar sus categorías y partidos.
+                </p>
+                <div class="account-box">
+                  <span class="account-box-label">Usuario vinculado</span>
+                  <strong class="mono">{{ c.accountEmail }}</strong>
+                </div>
+                <div class="actions">
+                  <button
+                    type="button"
+                    class="secondary"
+                    (click)="unlink(c)"
+                    [disabled]="submission.busy()"
+                  >
+                    Desvincular cuenta
+                  </button>
+                </div>
+              } @else {
+                <p class="muted">
+                  Vincula un correo para habilitar su acceso al pase de lista y panel de entrenador.
+                </p>
+                <label
+                  >Correo de acceso
+                  <input
+                    type="email"
+                    [(ngModel)]="accountEmail"
+                    name="accountEmail"
+                    placeholder="entrenador@ejemplo.com"
+                /></label>
+                <div class="actions">
+                  <button type="button" (click)="link(c)" [disabled]="submission.busy()">
+                    Vincular cuenta
+                  </button>
+                </div>
+              }
+            </aside>
+          }
         </div>
-        <div class="two-col">
-          <div>
-            <label>Teléfono <input type="tel" formControlName="phone" autocomplete="off" /></label>
-            <app-field-error [control]="form.controls.phone" />
-          </div>
-          <div>
-            <label>Correo <input type="email" formControlName="email" autocomplete="off" /></label>
-            <app-field-error [control]="form.controls.email" />
-          </div>
-        </div>
-        <div class="actions">
-          <button type="submit" [disabled]="submission.busy()">Guardar</button>
-          <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
-        </div>
-      </form>
-    }
-    @if (panel.open() && editing(); as c) {
-      <section class="grid-form">
-        <h2>Cuenta de acceso</h2>
-        @if (c.accountEmail) {
-          <p>
-            Vinculada: <strong>{{ c.accountEmail }}</strong>
-          </p>
-          <button type="button" class="secondary" (click)="unlink(c)">Desvincular</button>
-        } @else {
-          <label
-            >Correo de acceso <input type="email" [(ngModel)]="accountEmail" name="accountEmail"
-          /></label>
-          <button type="button" (click)="link(c)" [disabled]="submission.busy()">
-            Vincular cuenta
-          </button>
-        }
       </section>
     }
     <div class="filters">
-      <label
-        >Buscar <input type="search" [ngModel]="query()" (ngModelChange)="query.set($event)"
+      <label class="filter-grow"
+        >Buscar
+        <input
+          type="search"
+          placeholder="Nombre, teléfono o correo…"
+          [ngModel]="query()"
+          (ngModelChange)="query.set($event)"
       /></label>
+      @if (query().trim()) {
+        <button type="button" class="secondary sm" (click)="query.set('')">Limpiar</button>
+      }
     </div>
-    <app-load-state [res]="coaches"
+    <app-load-state [res]="coaches" emptyText="Sin entrenadores que coincidan con la búsqueda."
       ><ng-template>
+        <div class="list-meta">
+          <p class="muted">
+            Mostrando <strong class="tabular">{{ (coaches.value() ?? []).length }}</strong>
+            {{ (coaches.value() ?? []).length === 1 ? 'entrenador' : 'entrenadores' }}
+          </p>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -111,13 +194,30 @@ import { CoachService, CoachView } from './coach.service';
             </thead>
             <tbody>
               @for (c of coaches.value() ?? []; track c.id) {
-                <tr>
-                  <td>{{ c.name }}</td>
-                  <td>{{ c.phone ?? '' }} {{ c.email ?? '' }}</td>
-                  <td>{{ c.categories.join(', ') || '—' }}</td>
-                  <td>{{ c.accountEmail ?? '—' }}</td>
+                <tr [class.muted]="!c.active">
                   <td>
-                    <span class="tag" [class.off]="!c.active">{{
+                    <strong>{{ c.name }}</strong>
+                  </td>
+                  <td>
+                    @if (c.phone || c.email) {
+                      <span>{{ c.phone ?? '' }}</span>
+                      @if (c.email) {
+                        <div class="cell-sub mono">{{ c.email }}</div>
+                      }
+                    } @else {
+                      <span class="muted">—</span>
+                    }
+                  </td>
+                  <td>{{ c.categories.join(', ') || '—' }}</td>
+                  <td>
+                    @if (c.accountEmail) {
+                      <span class="mono">{{ c.accountEmail }}</span>
+                    } @else {
+                      <span class="muted">—</span>
+                    }
+                  </td>
+                  <td>
+                    <span class="tag" [class.ok]="c.active" [class.off]="!c.active">{{
                       c.active ? 'Activo' : 'Inactivo'
                     }}</span>
                   </td>
@@ -253,10 +353,16 @@ export class CoachesPage {
 /** HU-023: several coaches per category, optional responsibility and validity (start/end). */
 @Component({
   selector: 'app-coach-categories-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, LoadState, SubmissionAlert],
   template: `
     <div class="page-head">
-      <h1>Entrenadores por categoría</h1>
+      <div>
+        <h1>Entrenadores por categoría</h1>
+        <p class="page-subtitle">
+          Asignaciones vigentes e historial de cuerpo técnico asignado a cada categoría.
+        </p>
+      </div>
       @if (auth.can('entrenadores.editar')) {
         <button
           type="button"
@@ -278,35 +384,46 @@ export class CoachesPage {
         novalidate
       >
         <h2>Asignar entrenador</h2>
-        <label
-          >Entrenador
-          <select name="coach" [(ngModel)]="coachId">
-            <option [ngValue]="null">Selecciona…</option>
-            @for (c of coaches.value() ?? []; track c.id) {
-              <option [ngValue]="c.id">{{ c.name }}</option>
-            }
-          </select>
-        </label>
-        <label
-          >Categoría
-          <select name="category" [(ngModel)]="categoryId">
-            <option [ngValue]="null">Selecciona…</option>
-            @for (c of categories.value() ?? []; track c.id) {
-              <option [ngValue]="c.id">{{ c.name }} · {{ c.seasonName }}</option>
-            }
-          </select>
-        </label>
-        <label
-          >Rol / responsabilidad (opcional)
-          <input
-            name="resp"
-            [(ngModel)]="responsibility"
-            placeholder="Principal, auxiliar, porteros…"
-        /></label>
-        <label>Desde <input type="date" name="start" [(ngModel)]="startDate" /></label>
+        <p class="field-hint">
+          Los campos con <span class="req" aria-hidden="true">*</span> son obligatorios.
+        </p>
+        <div class="two-col">
+          <label
+            ><span
+              >Entrenador <span class="req" aria-hidden="true">*</span
+              ><span class="sr-only"> (obligatorio)</span></span
+            >
+            <select name="coach" [(ngModel)]="coachId">
+              <option [ngValue]="null">Selecciona…</option>
+              @for (c of coaches.value() ?? []; track c.id) {
+                <option [ngValue]="c.id">{{ c.name }}</option>
+              }
+            </select>
+          </label>
+          <label
+            ><span
+              >Categoría <span class="req" aria-hidden="true">*</span
+              ><span class="sr-only"> (obligatorio)</span></span
+            >
+            <select name="category" [(ngModel)]="categoryId">
+              <option [ngValue]="null">Selecciona…</option>
+              @for (c of categories.value() ?? []; track c.id) {
+                <option [ngValue]="c.id">{{ c.name }} · {{ c.seasonName }}</option>
+              }
+            </select>
+          </label>
+          <label
+            >Rol / responsabilidad (opcional)
+            <input
+              name="resp"
+              [(ngModel)]="responsibility"
+              placeholder="Principal, auxiliar, porteros…"
+          /></label>
+          <label>Desde <input type="date" name="start" [(ngModel)]="startDate" /></label>
+        </div>
         <div class="actions">
           <button type="submit" [disabled]="submission.busy() || !coachId || !categoryId">
-            Asignar
+            {{ submission.busy() ? 'Asignando…' : 'Asignar' }}
           </button>
           <button type="button" class="secondary" (click)="closeForm()">Cancelar</button>
         </div>
@@ -322,9 +439,20 @@ export class CoachesPage {
           }
         </select>
       </label>
+      @if (filterCategory() !== null) {
+        <button type="button" class="secondary sm" (click)="filterCategory.set(null)">
+          Limpiar filtro
+        </button>
+      }
     </div>
-    <app-load-state [res]="rows"
+    <app-load-state [res]="rows" emptyText="Sin asignaciones registradas."
       ><ng-template>
+        <div class="list-meta">
+          <p class="muted">
+            Mostrando <strong class="tabular">{{ (rows.value() ?? []).length }}</strong>
+            {{ (rows.value() ?? []).length === 1 ? 'asignación' : 'asignaciones' }}
+          </p>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -333,19 +461,27 @@ export class CoachesPage {
                 <th>Entrenador</th>
                 <th>Responsabilidad</th>
                 <th>Desde</th>
-                <th>Hasta</th>
-                <th></th>
+                <th>Hasta / Vigencia</th>
+                <th><span class="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
               @for (a of rows.value() ?? []; track a.id) {
-                <tr>
-                  <td>{{ a.categoryName }}</td>
+                <tr [class.muted]="!a.current">
+                  <td>
+                    <strong>{{ a.categoryName }}</strong>
+                  </td>
                   <td>{{ a.coachName }}</td>
                   <td>{{ a.responsibility ?? '—' }}</td>
-                  <td>{{ a.startDate }}</td>
-                  <td>{{ a.endDate ?? 'vigente' }}</td>
+                  <td class="tabular">{{ a.startDate }}</td>
                   <td>
+                    @if (a.current && !a.endDate) {
+                      <span class="tag ok">Vigente</span>
+                    } @else {
+                      <span class="tabular">{{ a.endDate }}</span>
+                    }
+                  </td>
+                  <td class="row-actions">
                     @if (a.current && auth.can('entrenadores.editar')) {
                       <button type="button" class="link danger" (click)="end(a.id)">
                         Terminar
@@ -439,10 +575,17 @@ export class CoachCategoriesPage {
 /** HU-026: coach per competition participation (competition + category), only with a current category assignment. */
 @Component({
   selector: 'app-assignments-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, LoadState, SubmissionAlert],
   template: `
     <div class="page-head">
-      <h1>Entrenadores por torneo / liga</h1>
+      <div>
+        <h1>Entrenadores por torneo / liga</h1>
+        <p class="page-subtitle">
+          Cuerpo técnico responsable en cada participación; requiere asignación vigente en la
+          categoría.
+        </p>
+      </div>
       @if (auth.can('competencias.editar')) {
         <button
           type="button"
@@ -464,8 +607,14 @@ export class CoachCategoriesPage {
         novalidate
       >
         <h2>Asignar entrenador</h2>
+        <p class="field-hint">
+          Sólo se aceptan entrenadores con asignación vigente a la categoría de la participación.
+        </p>
         <label
-          >Participación (competencia · categoría)
+          ><span
+            >Participación (competencia · categoría) <span class="req" aria-hidden="true">*</span
+            ><span class="sr-only"> (obligatorio)</span></span
+          >
           <select name="cc" [(ngModel)]="participationId">
             <option [ngValue]="null">Selecciona…</option>
             @for (p of participations.value() ?? []; track p.id) {
@@ -478,31 +627,53 @@ export class CoachCategoriesPage {
             }
           </select>
         </label>
-        <label
-          >Entrenador
-          <select name="coach" [(ngModel)]="coachId">
-            <option [ngValue]="null">Selecciona…</option>
-            @for (c of coaches.value() ?? []; track c.id) {
-              <option [ngValue]="c.id">
-                {{ c.name }} ({{ c.categories.join(', ') || 'sin categoría' }})
-              </option>
-            }
-          </select>
-        </label>
-        <label>Desde <input type="date" name="start" [(ngModel)]="startDate" /></label>
-        <p class="muted">
-          Sólo se aceptan entrenadores con asignación vigente a la categoría de la participación.
-        </p>
+        <div class="two-col">
+          <label
+            ><span
+              >Entrenador <span class="req" aria-hidden="true">*</span
+              ><span class="sr-only"> (obligatorio)</span></span
+            >
+            <select name="coach" [(ngModel)]="coachId">
+              <option [ngValue]="null">Selecciona…</option>
+              @for (c of coaches.value() ?? []; track c.id) {
+                <option [ngValue]="c.id">
+                  {{ c.name }} ({{ c.categories.join(', ') || 'sin categoría' }})
+                </option>
+              }
+            </select>
+          </label>
+          <label>Desde <input type="date" name="start" [(ngModel)]="startDate" /></label>
+        </div>
         <div class="actions">
           <button type="submit" [disabled]="submission.busy() || !coachId || !participationId">
-            Asignar
+            {{ submission.busy() ? 'Asignando…' : 'Asignar' }}
           </button>
           <button type="button" class="secondary" (click)="closeForm()">Cancelar</button>
         </div>
       </form>
     }
-    <app-load-state [res]="assignments"
+    <div class="filters">
+      <label
+        >Vigencia
+        <select [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)">
+          <option value="ALL">Todas</option>
+          <option value="CURRENT">Solo vigentes</option>
+        </select>
+      </label>
+      @if (statusFilter() !== 'ALL') {
+        <button type="button" class="secondary sm" (click)="statusFilter.set('ALL')">
+          Limpiar filtro
+        </button>
+      }
+    </div>
+    <app-load-state [res]="assignments" emptyText="Sin asignaciones de torneo registradas."
       ><ng-template>
+        <div class="list-meta">
+          <p class="muted">
+            Mostrando <strong class="tabular">{{ filteredAssignments().length }}</strong>
+            {{ filteredAssignments().length === 1 ? 'asignación' : 'asignaciones' }}
+          </p>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -511,19 +682,27 @@ export class CoachCategoriesPage {
                 <th>Categoría</th>
                 <th>Entrenador</th>
                 <th>Desde</th>
-                <th>Hasta</th>
-                <th></th>
+                <th>Hasta / Vigencia</th>
+                <th><span class="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
-              @for (a of assignments.value() ?? []; track a.id) {
-                <tr>
-                  <td>{{ a.competitionName }}</td>
+              @for (a of filteredAssignments(); track a.id) {
+                <tr [class.muted]="!a.current">
+                  <td>
+                    <strong>{{ a.competitionName }}</strong>
+                  </td>
                   <td>{{ a.categoryName }}</td>
                   <td>{{ a.coachName }}</td>
-                  <td>{{ a.startDate }}</td>
-                  <td>{{ a.endDate ?? 'vigente' }}</td>
+                  <td class="tabular">{{ a.startDate }}</td>
                   <td>
+                    @if (a.current && !a.endDate) {
+                      <span class="tag ok">Vigente</span>
+                    } @else {
+                      <span class="tabular">{{ a.endDate }}</span>
+                    }
+                  </td>
+                  <td class="row-actions">
                     @if (a.current && auth.can('competencias.editar')) {
                       <button type="button" class="link danger" (click)="end(a.id)">
                         Terminar
@@ -546,6 +725,11 @@ export class AssignmentsPage {
   protected coaches = resource({ loader: () => this.service.list({ onlyActive: true }) });
   protected participations = resource({ loader: () => this.competitions.participations() });
   protected assignments = resource({ loader: () => this.service.competitionAssignments() });
+  protected statusFilter = signal<'ALL' | 'CURRENT'>('ALL');
+  protected filteredAssignments = computed(() => {
+    const all = this.assignments.value() ?? [];
+    return this.statusFilter() === 'CURRENT' ? all.filter((a) => a.current) : all;
+  });
   protected submission = new Submission();
   protected coachId: Id | null = null;
   protected participationId: Id | null = null;

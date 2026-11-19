@@ -1,4 +1,4 @@
-import { Component, inject, resource, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, resource, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AuthService } from '../../core/auth/auth.service';
 import { Id } from '../../core/models';
@@ -14,10 +14,16 @@ import { VenueService, VenueView } from './venue.service';
 /** HU-069: venues/pitches reused by schedules, sessions and matches; deactivated, never deleted. */
 @Component({
   selector: 'app-venues-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, FieldError, FieldA11y, LoadState, SubmissionAlert],
   template: `
     <div class="page-head">
-      <h1>Sedes y canchas</h1>
+      <div>
+        <h1>Sedes y canchas</h1>
+        <p class="page-subtitle">
+          Campos e instalaciones reutilizados en horarios, entrenamientos y partidos.
+        </p>
+      </div>
       @if (auth.can('sedes.crear')) {
         <button
           type="button"
@@ -40,21 +46,42 @@ import { VenueService, VenueView } from './venue.service';
         (keydown.escape)="cancel()"
       >
         <h2>{{ editingId() ? 'Editar sede' : 'Nueva sede' }}</h2>
-        <label>Nombre <input formControlName="name" /></label>
-        <app-field-error [control]="form.controls.name" />
-        <label>Ubicación <input formControlName="location" placeholder="Dirección" /></label>
-        <label
-          >Referencia
-          <input formControlName="reference" placeholder="Cancha 2, junto al estacionamiento…"
-        /></label>
+        <p class="field-hint">
+          Los campos con <span class="req" aria-hidden="true">*</span> son obligatorios.
+        </p>
+        <div>
+          <label
+            ><span
+              >Nombre <span class="req" aria-hidden="true">*</span
+              ><span class="sr-only"> (obligatorio)</span></span
+            >
+            <input formControlName="name"
+          /></label>
+          <app-field-error [control]="form.controls.name" />
+        </div>
+        <div class="two-col">
+          <label>Ubicación <input formControlName="location" placeholder="Dirección" /></label>
+          <label
+            >Referencia
+            <input formControlName="reference" placeholder="Cancha 2, junto al estacionamiento…"
+          /></label>
+        </div>
         <div class="actions">
-          <button type="submit" [disabled]="submission.busy()">Guardar</button>
+          <button type="submit" [disabled]="submission.busy()">
+            {{ submission.busy() ? 'Guardando…' : 'Guardar' }}
+          </button>
           <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
         </div>
       </form>
     }
-    <app-load-state [res]="venues"
+    <app-load-state [res]="venues" emptyText="Sin sedes registradas."
       ><ng-template>
+        <div class="list-meta">
+          <p class="muted">
+            Mostrando <strong class="tabular">{{ (venues.value() ?? []).length }}</strong>
+            {{ (venues.value() ?? []).length === 1 ? 'sede' : 'sedes' }}
+          </p>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -64,25 +91,32 @@ import { VenueService, VenueView } from './venue.service';
                 <th>Referencia</th>
                 <th class="num">Usos</th>
                 <th>Estado</th>
-                <th></th>
+                <th><span class="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
               @for (v of venues.value() ?? []; track v.id) {
-                <tr>
-                  <td>{{ v.name }}</td>
+                <tr [class.muted]="!v.active">
+                  <td>
+                    <strong>{{ v.name }}</strong>
+                  </td>
                   <td>{{ v.location ?? '—' }}</td>
                   <td>{{ v.reference ?? '—' }}</td>
                   <td class="num">{{ v.uses }}</td>
                   <td>
-                    <span class="tag" [class.off]="!v.active">{{
+                    <span class="tag" [class.ok]="v.active" [class.off]="!v.active">{{
                       v.active ? 'Activa' : 'Inactiva'
                     }}</span>
                   </td>
                   <td class="row-actions">
                     @if (auth.can('sedes.editar')) {
                       <button type="button" class="link" (click)="edit(v)">Editar</button>
-                      <button type="button" class="link" (click)="toggle(v)">
+                      <button
+                        type="button"
+                        class="link"
+                        [class.danger]="v.active"
+                        (click)="toggle(v)"
+                      >
                         {{ v.active ? 'Desactivar' : 'Activar' }}
                       </button>
                     }

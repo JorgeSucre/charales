@@ -1,4 +1,4 @@
-import { Component, inject, input, numberAttribute, resource, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input, numberAttribute, resource, signal } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
@@ -18,6 +18,7 @@ import { focusFirstInvalid } from '../../shared/focus';
 import { FieldA11y, FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
+import { COMPETITION_TONE, PARTICIPATION_TONE } from '../../shared/status-tone';
 import { Submission } from '../../shared/submission';
 import { SubmissionAlert, centsFromInput } from '../../shared/ui';
 import { SeasonService } from '../seasons/season.service';
@@ -25,10 +26,16 @@ import { SeasonService } from '../seasons/season.service';
 /** HU-034: tournaments, leagues and others (competencias.tipo) with season, organizer, dates and status. */
 @Component({
   selector: 'app-competitions-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, RouterLink, FieldError, FieldA11y, LoadState, SubmissionAlert],
   template: `
     <div class="page-head">
-      <h1>Competencias</h1>
+      <div>
+        <h1>Competencias</h1>
+        <p class="page-subtitle">
+          Torneos y ligas de la escuela, categorías participantes y control de planteles.
+        </p>
+      </div>
       @if (auth.can('competencias.crear')) {
         <button
           type="button"
@@ -51,8 +58,19 @@ import { SeasonService } from '../seasons/season.service';
         (keydown.escape)="cancel()"
       >
         <h2>{{ editingId() ? 'Editar competencia' : 'Nueva competencia' }}</h2>
-        <label>Nombre <input formControlName="name" /></label>
-        <app-field-error [control]="form.controls.name" />
+        <p class="field-hint">
+          Los campos con <span class="req" aria-hidden="true">*</span> son obligatorios.
+        </p>
+        <div>
+          <label
+            ><span
+              >Nombre <span class="req" aria-hidden="true">*</span
+              ><span class="sr-only"> (obligatorio)</span></span
+            >
+            <input formControlName="name"
+          /></label>
+          <app-field-error [control]="form.controls.name" />
+        </div>
         <div class="two-col">
           <label
             >Tipo
@@ -86,13 +104,21 @@ import { SeasonService } from '../seasons/season.service';
         </label>
         <label>Observaciones <textarea rows="2" formControlName="notes"></textarea></label>
         <div class="actions">
-          <button type="submit" [disabled]="submission.busy()">Guardar</button>
+          <button type="submit" [disabled]="submission.busy()">
+            {{ submission.busy() ? 'Guardando…' : 'Guardar' }}
+          </button>
           <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
         </div>
       </form>
     }
-    <app-load-state [res]="competitions"
+    <app-load-state [res]="competitions" emptyText="Sin competencias registradas."
       ><ng-template>
+        <div class="list-meta">
+          <p class="muted">
+            Mostrando <strong class="tabular">{{ (competitions.value() ?? []).length }}</strong>
+            {{ (competitions.value() ?? []).length === 1 ? 'competencia' : 'competencias' }}
+          </p>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -104,26 +130,28 @@ import { SeasonService } from '../seasons/season.service';
                 <th>Organizador</th>
                 <th class="num">Categorías</th>
                 <th>Estatus</th>
-                <th></th>
+                <th><span class="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
               @for (c of competitions.value() ?? []; track c.id) {
-                <tr>
+                <tr [class.muted]="c.status === 'CANCELADA'">
                   <td>
-                    <a [routerLink]="['/sports/competitions', c.id]">{{ c.name }}</a>
+                    <a [routerLink]="['/sports/competitions', c.id]"
+                      ><strong>{{ c.name }}</strong></a
+                    >
                   </td>
                   <td>{{ typeLabels[c.type] }}</td>
                   <td>{{ c.seasonName ?? '—' }}</td>
-                  <td>{{ c.startDate ?? '¿?' }} – {{ c.endDate ?? '¿?' }}</td>
+                  <td class="tabular">{{ c.startDate ?? '¿?' }} – {{ c.endDate ?? '¿?' }}</td>
                   <td>{{ c.organizer ?? '—' }}</td>
                   <td class="num">{{ c.participations }}</td>
                   <td>
-                    <span class="tag" [class.off]="c.status === 'CANCELADA'">{{
+                    <span class="tag {{ competitionTone[c.status] }}">{{
                       statusLabels[c.status]
                     }}</span>
                   </td>
-                  <td>
+                  <td class="row-actions">
                     @if (auth.can('competencias.editar')) {
                       <button type="button" class="link" (click)="edit(c)">Editar</button>
                     }
@@ -145,6 +173,7 @@ export class CompetitionsPage {
   protected statuses = Object.entries(COMPETITION_STATUS_LABELS) as [CompetitionStatus, string][];
   protected typeLabels = TYPE_LABELS;
   protected statusLabels = COMPETITION_STATUS_LABELS;
+  protected competitionTone = COMPETITION_TONE;
   protected seasons = resource({ loader: () => this.seasonService.list() });
   protected competitions = resource({ loader: () => this.service.list() });
   protected submission = new Submission();
@@ -229,20 +258,33 @@ export class CompetitionsPage {
 /** HU-035 (categories registered, cost/status), HU-036 (roster with join/leave history) and coaches (HU-026). */
 @Component({
   selector: 'app-competition-detail-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, RouterLink, LoadState, MoneyPipe, SubmissionAlert],
   template: `
-    <a routerLink="/sports/competitions">← Competencias</a>
+    <a class="back-link" routerLink="/sports/competitions">← Competencias</a>
     <app-load-state [res]="competition"
       ><ng-template>
         @if (competition.value(); as c) {
-          <h1>
-            {{ c.name }}
-            <span class="muted">{{ typeLabels[c.type] }} · {{ statusLabels[c.status] }}</span>
-          </h1>
-          <p class="muted">
-            {{ c.seasonName ?? '' }} · {{ c.startDate ?? '¿?' }} – {{ c.endDate ?? '¿?' }} ·
-            {{ c.organizer ?? '' }}
-          </p>
+          <div class="page-head">
+            <div>
+              <h1>
+                {{ c.name }}
+                <span class="tag {{ competitionTone[c.status] }}">{{
+                  statusLabels[c.status]
+                }}</span>
+              </h1>
+              <p class="page-subtitle">
+                {{ typeLabels[c.type] }}
+                @if (c.seasonName) {
+                  · {{ c.seasonName }}
+                }
+                · <span class="tabular">{{ c.startDate ?? '¿?' }} – {{ c.endDate ?? '¿?' }}</span>
+                @if (c.organizer) {
+                  · {{ c.organizer }}
+                }
+              </p>
+            </div>
+          </div>
           <app-submission-alert [submission]="submission" />
 
           <div class="page-head">
@@ -269,7 +311,10 @@ export class CompetitionsPage {
             >
               <div class="two-col">
                 <label
-                  >Categoría
+                  ><span
+                    >Categoría <span class="req" aria-hidden="true">*</span
+                    ><span class="sr-only"> (obligatorio)</span></span
+                  >
                   <select name="cat" [(ngModel)]="categoryId">
                     <option [ngValue]="null">Selecciona…</option>
                     @for (cat of categories.value() ?? []; track cat.id) {
@@ -296,7 +341,7 @@ export class CompetitionsPage {
               </div>
               <div class="actions">
                 <button type="submit" [disabled]="submission.busy() || !categoryId">
-                  Inscribir categoría
+                  {{ submission.busy() ? 'Inscribiendo…' : 'Inscribir categoría' }}
                 </button>
                 <button type="button" class="secondary" (click)="closeRegister()">Cancelar</button>
               </div>
@@ -306,32 +351,34 @@ export class CompetitionsPage {
             ><ng-template>
               @for (p of participations.value() ?? []; track p.id) {
                 <article class="panel">
-                  <header class="page-head">
+                  <div class="panel-head-row">
                     <h3>{{ p.categoryName }}</h3>
-                    <span>
-                      <span class="tag" [class.off]="p.status === 'BAJA'">{{
-                        participationLabels[p.status]
-                      }}</span>
-                      · inscrita {{ p.registeredOn }} · costo
-                      {{ p.costCents === null ? '—' : (p.costCents | money) }} · entrenadores:
-                      {{ p.coaches.join(', ') || '—' }}
-                    </span>
-                  </header>
+                    <span class="tag {{ participationTone[p.status] }}">{{
+                      participationLabels[p.status]
+                    }}</span>
+                  </div>
+                  <p class="muted">
+                    Inscrita el <span class="tabular">{{ p.registeredOn }}</span> · Costo:
+                    <strong class="tabular">{{
+                      p.costCents === null ? '—' : (p.costCents | money)
+                    }}</strong>
+                    · Entrenadores: {{ p.coaches.join(', ') || '—' }}
+                  </p>
                   @if (auth.can('competencias.editar')) {
                     <div class="actions">
-                      @if (p.status !== 'BAJA') {
-                        <button type="button" class="link danger" (click)="setStatus(p.id, 'BAJA')">
-                          Dar de baja
-                        </button>
-                      }
+                      <button type="button" class="link" (click)="openRoster(p.id)">
+                        Plantel ({{ p.rosterSize }})
+                      </button>
                       @if (p.status === 'PENDIENTE') {
                         <button type="button" class="link" (click)="setStatus(p.id, 'INSCRITA')">
                           Confirmar inscripción
                         </button>
                       }
-                      <button type="button" class="link" (click)="openRoster(p.id)">
-                        Plantel ({{ p.rosterSize }})
-                      </button>
+                      @if (p.status !== 'BAJA') {
+                        <button type="button" class="link danger" (click)="setStatus(p.id, 'BAJA')">
+                          Dar de baja
+                        </button>
+                      }
                     </div>
                   } @else {
                     <button type="button" class="link" (click)="openRoster(p.id)">
@@ -339,39 +386,44 @@ export class CompetitionsPage {
                     </button>
                   }
                   @if (rosterOf() === p.id) {
-                    <app-load-state [res]="roster" emptyText="Plantel vacío."
-                      ><ng-template>
-                        <ul>
-                          @for (r of roster.value() ?? []; track r.id) {
-                            <li>
-                              {{ r.playerName }} · alta {{ r.joinedOn }}
-                              @if (r.active) {
-                                @if (auth.can('competencias.editar')) {
-                                  <button type="button" class="link danger" (click)="leave(r.id)">
-                                    Baja
-                                  </button>
+                    <div class="roster-drawer">
+                      <app-load-state [res]="roster" emptyText="Plantel vacío."
+                        ><ng-template>
+                          <ul class="list clean-list">
+                            @for (r of roster.value() ?? []; track r.id) {
+                              <li class="portal-row-item">
+                                <span>
+                                  <strong>{{ r.playerName }}</strong> ·
+                                  <span class="muted tabular">alta {{ r.joinedOn }}</span>
+                                </span>
+                                @if (r.active) {
+                                  @if (auth.can('competencias.editar')) {
+                                    <button type="button" class="link danger" (click)="leave(r.id)">
+                                      Baja
+                                    </button>
+                                  }
+                                } @else {
+                                  <span class="tag neutral">Baja {{ r.leftOn }}</span>
                                 }
-                              } @else {
-                                <span class="tag off">Baja {{ r.leftOn }}</span>
-                              }
-                            </li>
-                          }
-                        </ul>
-                      </ng-template></app-load-state
-                    >
-                    @if (auth.can('competencias.editar') && p.status !== 'BAJA') {
-                      <form class="inline-row" (ngSubmit)="join(p.id)" novalidate>
-                        <select name="player" [(ngModel)]="playerId" aria-label="Jugador elegible">
-                          <option [ngValue]="null">Jugador de {{ p.categoryName }}…</option>
-                          @for (e of eligible.value() ?? []; track e.id) {
-                            <option [ngValue]="e.id">{{ e.name }}</option>
-                          }
-                        </select>
-                        <button type="submit" [disabled]="!playerId || submission.busy()">
-                          Agregar al plantel
-                        </button>
-                      </form>
-                    }
+                              </li>
+                            }
+                          </ul>
+                        </ng-template></app-load-state
+                      >
+                      @if (auth.can('competencias.editar') && p.status !== 'BAJA') {
+                        <form class="inline-row" (ngSubmit)="join(p.id)" novalidate>
+                          <select name="player" [(ngModel)]="playerId" aria-label="Jugador elegible">
+                            <option [ngValue]="null">Jugador de {{ p.categoryName }}…</option>
+                            @for (e of eligible.value() ?? []; track e.id) {
+                              <option [ngValue]="e.id">{{ e.name }}</option>
+                            }
+                          </select>
+                          <button type="submit" [disabled]="!playerId || submission.busy()">
+                            Agregar al plantel
+                          </button>
+                        </form>
+                      }
+                    </div>
                   }
                 </article>
               }
@@ -389,7 +441,9 @@ export class CompetitionDetailPage {
   protected auth = inject(AuthService);
   protected typeLabels = TYPE_LABELS;
   protected statusLabels = COMPETITION_STATUS_LABELS;
+  protected competitionTone = COMPETITION_TONE;
   protected participationLabels = PARTICIPATION_LABELS;
+  protected participationTone = PARTICIPATION_TONE;
   protected competition = resource({
     params: () => this.id(),
     loader: ({ params }) => this.service.get(params),

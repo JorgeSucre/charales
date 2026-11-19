@@ -1,8 +1,12 @@
 import {
   ChargeStatus,
+  CompetitionStatus,
   EnrollmentStatus,
+  MatchStatus,
+  ParticipationStatus,
   PaymentStatus,
   PlayerStatus,
+  TrainingStatus,
   UniformOrderStatus,
 } from '../core/models';
 
@@ -17,6 +21,19 @@ export const PLAYER_TONE: Record<PlayerStatus, Tone> = {
   ACTIVO: 'ok',
   BAJA_TEMPORAL: 'warn',
   BAJA_DEFINITIVA: 'danger',
+};
+
+export const TRAINING_TONE: Record<TrainingStatus, Tone> = {
+  PROGRAMADO: 'warn',
+  REALIZADO: 'ok',
+  CANCELADO: 'neutral',
+};
+
+export const MATCH_TONE: Record<MatchStatus, Tone> = {
+  PROGRAMADO: 'warn',
+  REPROGRAMADO: 'warn',
+  JUGADO: 'ok',
+  CANCELADO: 'neutral',
 };
 
 export const CHARGE_TONE: Record<ChargeStatus, Tone> = {
@@ -44,6 +61,20 @@ export const ENROLLMENT_TONE: Record<EnrollmentStatus, Tone> = {
   PENDIENTE: 'warn',
   FINALIZADA: 'neutral',
   CANCELADA: 'neutral',
+};
+
+export const COMPETITION_TONE: Record<CompetitionStatus, Tone> = {
+  PLANIFICADA: 'warn',
+  ACTIVA: 'ok',
+  FINALIZADA: 'neutral',
+  CANCELADA: 'neutral',
+};
+
+export const PARTICIPATION_TONE: Record<ParticipationStatus, Tone> = {
+  INSCRITA: 'ok',
+  PENDIENTE: 'warn',
+  FINALIZADA: 'neutral',
+  BAJA: 'danger',
 };
 
 /** For views typed with a plain string status: an unknown value is shown as neutral. */

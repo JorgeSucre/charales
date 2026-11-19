@@ -7,6 +7,7 @@ import { Cents } from '../core/models';
 /** Result message of a Submission (success or the service's error). */
 @Component({
   selector: 'app-submission-alert',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (submission().result(); as r) {
       <p class="alert" [class.ok]="r.ok" [class.error]="!r.ok" role="status">{{ r.text }}</p>
@@ -24,23 +25,25 @@ export class SubmissionAlert {
   template: `
     @if (page(); as p) {
       <nav class="pager" aria-label="Paginación">
-        <button
-          type="button"
-          class="secondary"
-          [disabled]="p.page <= 1"
-          (click)="go.emit(p.page - 1)"
-        >
-          Anterior
-        </button>
         <span>Página {{ p.page }} de {{ pages(p) }} · {{ p.total }} resultado(s)</span>
-        <button
-          type="button"
-          class="secondary"
-          [disabled]="p.page >= pages(p)"
-          (click)="go.emit(p.page + 1)"
-        >
-          Siguiente
-        </button>
+        <div class="pager-actions">
+          <button
+            type="button"
+            class="secondary sm"
+            [disabled]="p.page <= 1"
+            (click)="go.emit(p.page - 1)"
+          >
+            Anterior
+          </button>
+          <button
+            type="button"
+            class="secondary sm"
+            [disabled]="p.page >= pages(p)"
+            (click)="go.emit(p.page + 1)"
+          >
+            Siguiente
+          </button>
+        </div>
       </nav>
     }
   `,

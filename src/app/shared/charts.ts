@@ -1,4 +1,4 @@
-import { Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 /**
@@ -38,6 +38,7 @@ const percent = (part: number, total: number) => (total ? Math.round((part / tot
  */
 @Component({
   selector: 'app-donut',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink],
   template: `
     @if (total()) {
@@ -60,15 +61,17 @@ const percent = (part: number, total: number) => (total ? Math.round((part / tot
         <ul class="chart-legend">
           @for (s of segments(); track s.label) {
             <li>
-              <span [class]="'swatch chart-' + s.tone" aria-hidden="true"></span>
-              @if (s.link) {
-                <a [routerLink]="s.link.path" [queryParams]="s.link.query">{{ s.label }}</a>
-              } @else {
-                <span>{{ s.label }}</span>
-              }
-              <span
-                >: <strong>{{ s.value }}</strong
-                ><span class="muted"> ({{ pct(s.value) }} %)</span></span
+              <span class="legend-key"
+                ><span [class]="'swatch chart-' + s.tone" aria-hidden="true"></span>
+                @if (s.link) {
+                  <a [routerLink]="s.link.path" [queryParams]="s.link.query">{{ s.label }}</a>
+                } @else {
+                  <span>{{ s.label }}</span>
+                }</span
+              ><span class="legend-val"
+                ><span class="sr-only">{{ ': ' }}</span
+                ><strong>{{ s.value }}</strong
+                ><span class="muted">{{ ' (' + pct(s.value) + ' %)' }}</span></span
               >
             </li>
           }
@@ -116,12 +119,13 @@ export class DonutChart {
  */
 @Component({
   selector: 'app-bars',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink],
   template: `
     @if (rows().length && hasData()) {
       <ul class="bars" [attr.aria-label]="label()">
         @for (r of rows(); track r.label) {
-          <li>
+          <li [class.bar-linked]="!!r.link">
             <span class="bar-label">
               @if (r.link) {
                 <a [routerLink]="r.link.path" [queryParams]="r.link.query">{{ r.label }}</a>

@@ -1,4 +1,12 @@
-import { Component, computed, inject, resource, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  resource,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -11,7 +19,9 @@ import { FormPanel } from '../../shared/form-panel';
 import { focusFirstInvalid } from '../../shared/focus';
 import { FieldA11y, FieldError } from '../../shared/field-error';
 import { LoadState } from '../../shared/load-state';
+import { sumCents } from '../../shared/money';
 import { MoneyPipe } from '../../shared/money.pipe';
+import { PromptDialog } from '../../shared/prompt-dialog';
 import { CHARGE_TONE } from '../../shared/status-tone';
 import { Submission } from '../../shared/submission';
 import {
@@ -28,10 +38,16 @@ const STATUSES = Object.entries(CHARGE_STATUS_LABELS) as [ChargeStatus, string][
 /** HU-043: concepts with suggested amount, recurring flag and status; editing the amount never touches past charges. */
 @Component({
   selector: 'app-concepts-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, FieldError, FieldA11y, LoadState, MoneyPipe, SubmissionAlert],
   template: `
     <div class="page-head">
-      <h1>Conceptos de cobro</h1>
+      <div>
+        <h1>Conceptos de cobro</h1>
+        <p class="page-subtitle">
+          Catálogo de importes sugeridos para mensualidades, inscripciones y cargos manuales.
+        </p>
+      </div>
       @if (auth.can('cobranza.crear')) {
         <button
           type="button"
@@ -44,6 +60,7 @@ const STATUSES = Object.entries(CHARGE_STATUS_LABELS) as [ChargeStatus, string][
       }
     </div>
     <app-submission-alert [submission]="submission" />
+
     @if (panel.open()) {
       <form
         id="concept-form"
@@ -54,27 +71,51 @@ const STATUSES = Object.entries(CHARGE_STATUS_LABELS) as [ChargeStatus, string][
         (keydown.escape)="cancel()"
       >
         <h2>{{ editingId() ? 'Editar concepto' : 'Nuevo concepto' }}</h2>
-        <label
-          >Nombre <input formControlName="name" placeholder="Mensualidad, Inscripción, Uniforme…"
-        /></label>
-        <app-field-error [control]="form.controls.name" />
-        <label
-          >Importe sugerido (MXN)
-          <input type="number" min="0" step="0.01" inputmode="decimal" formControlName="amount"
-        /></label>
-        <app-field-error [control]="form.controls.amount" />
+        <p class="field-hint">
+          Modificar el importe sugerido aplica únicamente a cargos nuevos; los cargos previos
+          conservan su importe.
+        </p>
+        <div>
+          <label
+            ><span
+              >Nombre <span class="req" aria-hidden="true">*</span
+              ><span class="sr-only"> (obligatorio)</span></span
+            >
+            <input formControlName="name" placeholder="Mensualidad, Inscripción, Uniforme…"
+          /></label>
+          <app-field-error [control]="form.controls.name" />
+        </div>
+        <div>
+          <label
+            ><span
+              >Importe sugerido (MXN) <span class="req" aria-hidden="true">*</span
+              ><span class="sr-only"> (obligatorio)</span></span
+            >
+            <input type="number" min="0" step="0.01" inputmode="decimal" formControlName="amount"
+          /></label>
+          <app-field-error [control]="form.controls.amount" />
+        </div>
         <label class="check"
           ><input type="checkbox" formControlName="recurring" /> Recurrente (se usa para generar
           mensualidades)</label
         >
         <div class="actions">
-          <button type="submit" [disabled]="submission.busy()">Guardar</button>
+          <button type="submit" [disabled]="submission.busy()">
+            {{ submission.busy() ? 'Guardando…' : 'Guardar' }}
+          </button>
           <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
         </div>
       </form>
     }
-    <app-load-state [res]="concepts"
+
+    <app-load-state [res]="concepts" emptyText="Sin conceptos registrados."
       ><ng-template>
+        <div class="list-meta">
+          <p class="muted">
+            Mostrando <strong class="tabular">{{ (concepts.value() ?? []).length }}</strong>
+            {{ (concepts.value() ?? []).length === 1 ? 'concepto' : 'conceptos' }}
+          </p>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -84,18 +125,20 @@ const STATUSES = Object.entries(CHARGE_STATUS_LABELS) as [ChargeStatus, string][
                 <th>Recurrente</th>
                 <th class="num">Cargos</th>
                 <th>Estado</th>
-                <th></th>
+                <th><span class="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
               @for (c of concepts.value() ?? []; track c.id) {
-                <tr>
-                  <td>{{ c.name }}</td>
+                <tr [class.muted]="!c.active">
+                  <td>
+                    <strong>{{ c.name }}</strong>
+                  </td>
                   <td class="num">{{ c.suggestedAmountCents | money }}</td>
                   <td>{{ c.recurring ? 'Sí' : 'No' }}</td>
                   <td class="num">{{ c.used }}</td>
                   <td>
-                    <span class="tag" [class.off]="!c.active">{{
+                    <span class="tag" [class.ok]="c.active" [class.off]="!c.active">{{
                       c.active ? 'Activo' : 'Inactivo'
                     }}</span>
                   </td>
@@ -199,10 +242,16 @@ export class ConceptsPage {
 /** HU-044 list: charges with derived paid/balance/status; manual charge and cancellation of unpaid charges. */
 @Component({
   selector: 'app-charges-page',
-  imports: [FormsModule, RouterLink, LoadState, MoneyPipe, Paginator, SubmissionAlert],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [FormsModule, RouterLink, LoadState, MoneyPipe, Paginator, SubmissionAlert, PromptDialog],
   template: `
     <div class="page-head">
-      <h1>Cargos</h1>
+      <div>
+        <h1>Cargos</h1>
+        <p class="page-subtitle">
+          Control de cobros por jugador, descuentos aplicados, abonos y saldos pendientes.
+        </p>
+      </div>
       @if (auth.can('cobranza.crear')) {
         <div class="actions">
           <a class="button secondary" routerLink="/admin/billing/monthly">Generar mensualidades</a>
@@ -218,6 +267,7 @@ export class ConceptsPage {
       }
     </div>
     <app-submission-alert [submission]="submission" />
+
     @if (panel.open()) {
       <!-- Closed by default; its result shows in the alert above, so it is never hidden in here. -->
       <form
@@ -257,23 +307,32 @@ export class ConceptsPage {
           /></label>
           <label>Vence <input type="date" name="due" [(ngModel)]="draft.dueDate" /></label>
         </div>
-        <label>Referencia (opcional) <input name="ref" [(ngModel)]="draft.reference" /></label>
+        <label
+          >Referencia (opcional)
+          <input name="ref" [(ngModel)]="draft.reference" placeholder="Ej. folio o periodo"
+        /></label>
         <div class="actions">
           <button
             type="submit"
             [disabled]="submission.busy() || !draft.playerId || !draft.conceptId"
           >
-            Crear cargo
+            {{ submission.busy() ? 'Creando…' : 'Crear cargo' }}
           </button>
           <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
         </div>
       </form>
     }
+
     <div class="filters">
-      <label
+      <label class="filter-grow"
         >Jugador
-        <input type="search" [ngModel]="query()" (ngModelChange)="query.set($event); page.set(1)"
-      /></label>
+        <input
+          type="search"
+          placeholder="Buscar jugador…"
+          [ngModel]="query()"
+          (ngModelChange)="query.set($event); page.set(1)"
+        />
+      </label>
       <label
         >Estado
         <select [ngModel]="status()" (ngModelChange)="status.set($event); page.set(1)">
@@ -299,9 +358,19 @@ export class ConceptsPage {
         >Periodo
         <input type="month" [ngModel]="period()" (ngModelChange)="period.set($event); page.set(1)"
       /></label>
+      @if (hasFilters()) {
+        <button type="button" class="secondary sm" (click)="clearFilters()">Limpiar filtros</button>
+      }
     </div>
-    <app-load-state [res]="charges" emptyText="Sin cargos."
+
+    <app-load-state [res]="charges" emptyText="Sin cargos con los filtros seleccionados."
       ><ng-template>
+        <div class="list-meta">
+          <p class="muted">
+            Mostrando <strong class="tabular">{{ (charges.value()?.items ?? []).length }}</strong> de
+            <strong class="tabular">{{ charges.value()?.total }}</strong> cargos
+          </p>
+        </div>
         <div class="table-wrap">
           <table>
             <caption class="sr-only">
@@ -317,25 +386,27 @@ export class ConceptsPage {
                 <th class="num">Pagado</th>
                 <th class="num">Saldo</th>
                 <th>Estado</th>
-                <th></th>
+                <th><span class="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
               @for (c of charges.value()?.items ?? []; track c.id) {
-                <tr>
+                <tr [class.muted]="c.status === 'CANCELADO'">
                   <td>
                     <a [routerLink]="['/admin/players', c.playerId]">{{ c.playerName }}</a>
                   </td>
                   <td>{{ c.label }}</td>
-                  <td>{{ c.dueDate ?? '—' }}</td>
+                  <td class="tabular">{{ c.dueDate ?? '—' }}</td>
                   <td class="num">{{ c.originalAmountCents | money }}</td>
-                  <td class="num">{{ c.discountCents ? (c.discountCents | money) : '' }}</td>
+                  <td class="num">{{ c.discountCents ? (c.discountCents | money) : '—' }}</td>
                   <td class="num">{{ c.paidCents | money }}</td>
-                  <td class="num">{{ c.balanceCents | money }}</td>
+                  <td class="num">
+                    <strong>{{ c.balanceCents | money }}</strong>
+                  </td>
                   <td>
                     <span class="tag {{ chargeTone[c.status] }}">{{ labels[c.status] }}</span>
                   </td>
-                  <td>
+                  <td class="row-actions">
                     @if (
                       auth.can('cobranza.cancelar') && c.status !== 'CANCELADO' && !c.paidCents
                     ) {
@@ -347,13 +418,27 @@ export class ConceptsPage {
                 </tr>
               }
             </tbody>
+            <tfoot>
+              <tr>
+                <th colspan="3">Total en página</th>
+                <th class="num">{{ pageTotals().original | money }}</th>
+                <th class="num">
+                  {{ pageTotals().discount ? (pageTotals().discount | money) : '—' }}
+                </th>
+                <th class="num">{{ pageTotals().paid | money }}</th>
+                <th class="num">{{ pageTotals().balance | money }}</th>
+                <th colspan="2"></th>
+              </tr>
+            </tfoot>
           </table>
         </div>
         <app-paginator [page]="charges.value()" (go)="page.set($event)" /> </ng-template
     ></app-load-state>
+    <app-prompt-dialog #cancelDialog />
   `,
 })
 export class ChargesPage {
+  private cancelDialog = viewChild.required<PromptDialog>('cancelDialog');
   private service = inject(BillingService);
   private playerService = inject(PlayerService);
   protected auth = inject(AuthService);
@@ -372,6 +457,13 @@ export class ChargesPage {
   protected conceptId = signal<Id | null>(null);
   protected period = signal('');
   protected page = signal(1);
+  protected hasFilters = computed(
+    () =>
+      !!this.query().trim() ||
+      !!this.status() ||
+      this.conceptId() !== null ||
+      !!this.period(),
+  );
   protected charges = resource({
     params: () => ({
       query: this.query(),
@@ -382,10 +474,27 @@ export class ChargesPage {
     }),
     loader: ({ params }) => this.service.charges(params),
   });
+  protected pageTotals = computed(() => {
+    const items = this.charges.value()?.items ?? [];
+    return {
+      original: sumCents(items.map((c) => c.originalAmountCents)),
+      discount: sumCents(items.map((c) => c.discountCents)),
+      paid: sumCents(items.map((c) => c.paidCents)),
+      balance: sumCents(items.map((c) => c.balanceCents)),
+    };
+  });
   protected submission = new Submission();
   protected draft = this.blank();
   private opened = '';
   protected panel = new FormPanel('charge-form', () => JSON.stringify(this.draft) !== this.opened);
+
+  clearFilters(): void {
+    this.query.set('');
+    this.status.set('');
+    this.conceptId.set(null);
+    this.period.set('');
+    this.page.set(1);
+  }
 
   open(): void {
     if (!this.panel.close()) return;
@@ -433,26 +542,42 @@ export class ChargesPage {
   }
 
   async cancelCharge(c: ChargeView): Promise<void> {
-    const reason = prompt(`Motivo para cancelar «${c.label}» de ${c.playerName}:`)?.trim();
+    const reason = await this.cancelDialog().open({
+      title: 'Cancelar cargo',
+      message: `Se cancelará «${c.label}» de ${c.playerName}. El registro se conserva en el historial.`,
+      label: 'Motivo de la cancelación',
+      placeholder: 'Ej. cargo duplicado o baja previa al periodo',
+      confirmText: 'Cancelar cargo',
+      tone: 'danger',
+      required: true,
+    });
     if (!reason) return;
-    await this.submission.run(
-      () => this.service.cancelCharge(c.id, reason),
-      'Cargo cancelado (se conserva en el historial).',
-    );
-    this.charges.reload();
+    if (
+      await this.submission.run(
+        () => this.service.cancelCharge(c.id, reason),
+        'Cargo cancelado (se conserva en el historial).',
+      )
+    )
+      this.charges.reload();
   }
 }
 
 /** HU-044: monthly fees for active, enrolled players; unique per period; authorized exclusions with a reason. */
 @Component({
   selector: 'app-monthly-fees-page',
-  imports: [FormsModule, LoadState, SubmissionAlert],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [FormsModule, RouterLink, LoadState, SubmissionAlert],
   template: `
-    <h1>Generar mensualidades</h1>
-    <p class="muted">
-      Un cargo por jugador activo con inscripción ACTIVA en la temporada actual. Si ya existe para
-      el concepto y periodo, no se duplica.
-    </p>
+    <a class="back-link" routerLink="/admin/billing/charges">← Cargos</a>
+    <div class="page-head">
+      <div>
+        <h1>Generar mensualidades</h1>
+        <p class="page-subtitle">
+          Un cargo por jugador activo con inscripción ACTIVA en la temporada actual. Si ya existe
+          para el concepto y periodo, no se duplica.
+        </p>
+      </div>
+    </div>
     <form class="grid-form" (ngSubmit)="submit()" novalidate>
       <label
         >Concepto recurrente
@@ -467,26 +592,45 @@ export class ChargesPage {
         <label>Periodo <input type="month" name="period" [(ngModel)]="period" /></label>
         <label>Fecha límite de pago <input type="date" name="due" [(ngModel)]="dueDate" /></label>
       </div>
-      <fieldset>
+      <fieldset class="stack">
         <legend>Excluir (regla autorizada, p. ej. beca completa)</legend>
         <app-load-state [res]="candidates" emptyText="No hay jugadores elegibles."
           ><ng-template>
+            <p class="field-hint">
+              {{ (candidates.value() ?? []).length }} jugadores elegibles ·
+              {{ excluded().size }} excluidos
+            </p>
             <div class="checks">
               @for (p of candidates.value() ?? []; track p.id) {
                 <label class="check"
-                  ><input type="checkbox" [checked]="excluded.has(p.id)" (change)="toggle(p.id)" />
+                  ><input
+                    type="checkbox"
+                    [checked]="excluded().has(p.id)"
+                    (change)="toggle(p.id)"
+                  />
                   {{ p.name }}</label
                 >
               }
             </div>
           </ng-template></app-load-state
         >
-        @if (excluded.size) {
-          <label>Regla / motivo de la exclusión <input name="why" [(ngModel)]="reason" /></label>
+        @if (excluded().size) {
+          <label
+            >Regla / motivo de la exclusión
+            <input
+              name="why"
+              [(ngModel)]="reason"
+              placeholder="Ej. beca deportiva al 100% autorizada"
+          /></label>
         }
       </fieldset>
       <app-submission-alert [submission]="submission" />
-      <button type="submit" [disabled]="submission.busy() || !conceptId">Generar</button>
+      <div class="actions">
+        <button type="submit" [disabled]="submission.busy() || !conceptId">
+          {{ submission.busy() ? 'Generando…' : 'Generar' }}
+        </button>
+        <a class="button secondary" routerLink="/admin/billing/charges">Cancelar</a>
+      </div>
     </form>
   `,
 })
@@ -501,12 +645,13 @@ export class MonthlyFeesPage {
   protected conceptId: Id | null = null;
   protected period = today().slice(0, 7);
   protected dueDate = `${today().slice(0, 7)}-10`;
-  protected excluded = new Set<Id>();
+  protected excluded = signal(new Set<Id>());
   protected reason = '';
 
   toggle(id: Id): void {
-    if (this.excluded.has(id)) this.excluded.delete(id);
-    else this.excluded.add(id);
+    const next = new Set(this.excluded());
+    if (!next.delete(id)) next.add(id);
+    this.excluded.set(next);
   }
 
   submit(): void {
@@ -516,7 +661,7 @@ export class MonthlyFeesPage {
           conceptId: this.conceptId!,
           period: this.period,
           dueDate: this.dueDate,
-          excludedPlayerIds: [...this.excluded],
+          excludedPlayerIds: [...this.excluded()],
           exclusionReason: this.reason || null,
         }),
       (r) => `Se generaron ${r.created} cargo(s) para ${this.period}; ${r.skipped} ya existían.`,
@@ -527,10 +672,16 @@ export class MonthlyFeesPage {
 /** HU-051: discounts and scholarships per charge (keeps original and final amount; authorized users only). */
 @Component({
   selector: 'app-discounts-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, LoadState, MoneyPipe, SubmissionAlert, DatePipe],
   template: `
     <div class="page-head">
-      <h1>Descuentos y becas</h1>
+      <div>
+        <h1>Descuentos y becas</h1>
+        <p class="page-subtitle">
+          Ajustes autorizados sobre cargos abiertos; el importe original siempre se conserva.
+        </p>
+      </div>
       @if (auth.can('descuentos.crear')) {
         <button
           type="button"
@@ -543,6 +694,7 @@ export class MonthlyFeesPage {
       }
     </div>
     <app-submission-alert [submission]="submission" />
+
     @if (panel.open()) {
       <form
         id="discount-form"
@@ -587,15 +739,27 @@ export class MonthlyFeesPage {
             <input type="number" min="0.01" step="0.01" name="adj" [(ngModel)]="adjustment"
           /></label>
         </div>
-        <label>Motivo <input name="reason" [(ngModel)]="reason" /></label>
+        <label
+          >Motivo
+          <input name="reason" [(ngModel)]="reason" placeholder="Ej. beca por hermanos o mérito"
+        /></label>
         <div class="actions">
-          <button type="submit" [disabled]="submission.busy() || !chargeId">Aplicar</button>
+          <button type="submit" [disabled]="submission.busy() || !chargeId">
+            {{ submission.busy() ? 'Aplicando…' : 'Aplicar' }}
+          </button>
           <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
         </div>
       </form>
     }
+
     <app-load-state [res]="discounts" emptyText="Sin descuentos registrados."
       ><ng-template>
+        <div class="list-meta">
+          <p class="muted">
+            Mostrando <strong class="tabular">{{ (discounts.value() ?? []).length }}</strong>
+            {{ (discounts.value() ?? []).length === 1 ? 'ajuste' : 'ajustes' }}
+          </p>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -617,11 +781,17 @@ export class MonthlyFeesPage {
                   <td>{{ d.createdAt | date: 'd MMM y' }}</td>
                   <td>{{ d.playerName }}</td>
                   <td>{{ d.label }}</td>
-                  <td>{{ d.type === 'BECA' ? 'Beca' : 'Descuento' }}</td>
-                  <td>{{ d.reason }}</td>
+                  <td>
+                    <span class="tag" [class.ok]="d.type === 'BECA'">
+                      {{ d.type === 'BECA' ? 'Beca' : 'Descuento' }}
+                    </span>
+                  </td>
+                  <td class="wrap">{{ d.reason }}</td>
                   <td class="num">{{ d.originalAmountCents | money }}</td>
                   <td class="num">{{ d.adjustmentCents | money }}</td>
-                  <td class="num">{{ d.finalAmountCents | money }}</td>
+                  <td class="num">
+                    <strong>{{ d.finalAmountCents | money }}</strong>
+                  </td>
                   <td>{{ d.authorizedByEmail ?? '—' }}</td>
                 </tr>
               }

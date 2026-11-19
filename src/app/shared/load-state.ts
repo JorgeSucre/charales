@@ -1,4 +1,12 @@
-import { Component, ResourceRef, TemplateRef, computed, contentChild, input } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ResourceRef,
+  TemplateRef,
+  computed,
+  contentChild,
+  input,
+} from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 
 /**
@@ -12,17 +20,24 @@ import { NgTemplateOutlet } from '@angular/common';
  */
 @Component({
   selector: 'app-load-state',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NgTemplateOutlet],
   template: `
     @if (res().error()) {
       <p class="alert error" role="alert">
-        No se pudo cargar la información: {{ message() }}
-        <button type="button" class="link" (click)="res().reload()">Reintentar</button>
+        <span>No se pudo cargar la información: {{ message() }}</span>
+        <button type="button" class="secondary sm" (click)="res().reload()">Reintentar</button>
       </p>
     } @else if (!res().hasValue()) {
-      <p class="muted" role="status">Cargando…</p>
+      <div class="load-skeleton" role="status" aria-label="Cargando">
+        <div class="skeleton-line head" aria-hidden="true"></div>
+        <div class="skeleton-line" aria-hidden="true"></div>
+        <div class="skeleton-line short" aria-hidden="true"></div>
+        <span class="sr-only">Cargando…</span>
+      </div>
     } @else if (isEmpty()) {
       <p class="muted empty">{{ emptyText() }}</p>
+      <div class="empty-action"><ng-content select="[empty-action]" /></div>
     } @else {
       <ng-container [ngTemplateOutlet]="content()" />
     }

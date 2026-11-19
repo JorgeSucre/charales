@@ -1,5 +1,15 @@
-import { Component, computed, effect, inject, resource, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  resource,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { Id, UniformOrderStatus } from '../../core/models';
 import { PlayerService } from '../../core/services/player.service';
@@ -9,6 +19,8 @@ import { FormPanel } from '../../shared/form-panel';
 import { focusFirstInvalid } from '../../shared/focus';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
+import { PromptDialog } from '../../shared/prompt-dialog';
+import { CHARGE_TONE, ORDER_TONE } from '../../shared/status-tone';
 import { Submission } from '../../shared/submission';
 import { SubmissionAlert, centsFromInput } from '../../shared/ui';
 import { BillingService, CHARGE_STATUS_LABELS } from '../billing/billing.service';
@@ -17,10 +29,16 @@ import { ORDER_STATUS_LABELS, OrderView, UniformService, VariantView } from './u
 /** HU-052: products and their sizes/prices, editable; used items are deactivated, never deleted. */
 @Component({
   selector: 'app-uniform-catalog-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, FieldError, FieldA11y, LoadState, MoneyPipe, SubmissionAlert],
   template: `
     <div class="page-head">
-      <h1>Catálogo de uniformes</h1>
+      <div>
+        <h1>Catálogo de uniformes</h1>
+        <p class="page-subtitle">
+          Prendas, tallas y precios vigentes; los pedidos previos conservan su precio histórico.
+        </p>
+      </div>
       @if (auth.can('uniformes.crear')) {
         <div class="actions">
           <button
@@ -44,6 +62,7 @@ import { ORDER_STATUS_LABELS, OrderView, UniformService, VariantView } from './u
       }
     </div>
     <app-submission-alert [submission]="submission" />
+
     @if (productPanel.open()) {
       <form
         id="product-form"
@@ -54,15 +73,29 @@ import { ORDER_STATUS_LABELS, OrderView, UniformService, VariantView } from './u
         class="grid-form"
       >
         <h2>Nuevo producto</h2>
-        <label>Nombre <input formControlName="name" /></label>
-        <app-field-error [control]="productForm.controls.name" />
-        <label>Descripción <input formControlName="description" /></label>
+        <div>
+          <label
+            ><span
+              >Nombre <span class="req" aria-hidden="true">*</span
+              ><span class="sr-only"> (obligatorio)</span></span
+            >
+            <input formControlName="name" placeholder="Ej. Uniforme de juego o pants"
+          /></label>
+          <app-field-error [control]="productForm.controls.name" />
+        </div>
+        <label
+          >Descripción
+          <input formControlName="description" placeholder="Detalles opcionales del artículo"
+        /></label>
         <div class="actions">
-          <button type="submit" [disabled]="submission.busy()">Agregar producto</button>
+          <button type="submit" [disabled]="submission.busy()">
+            {{ submission.busy() ? 'Guardando…' : 'Agregar producto' }}
+          </button>
           <button type="button" class="secondary" (click)="cancelProduct()">Cancelar</button>
         </div>
       </form>
     }
+
     @if (variantPanel.open()) {
       <form
         id="variant-form"
@@ -73,34 +106,63 @@ import { ORDER_STATUS_LABELS, OrderView, UniformService, VariantView } from './u
         class="grid-form"
       >
         <h2>{{ editingVariant() ? 'Editar talla' : 'Nueva talla' }}</h2>
-        <label
-          >Producto
-          <select formControlName="productId">
-            <option [ngValue]="null" disabled>Selecciona…</option>
-            @for (p of products.value() ?? []; track p.id) {
-              <option [ngValue]="p.id">{{ p.name }}</option>
-            }
-          </select>
-        </label>
-        <app-field-error [control]="variantForm.controls.productId" />
-        <label>Talla <input formControlName="size" placeholder="CH, M, G, 10…" /></label>
-        <app-field-error [control]="variantForm.controls.size" />
-        <label
-          >Precio (MXN)
-          <input type="number" min="0" step="0.01" inputmode="decimal" formControlName="price"
-        /></label>
-        <app-field-error [control]="variantForm.controls.price" />
-        <p class="muted">
+        <div>
+          <label
+            ><span
+              >Producto <span class="req" aria-hidden="true">*</span
+              ><span class="sr-only"> (obligatorio)</span></span
+            >
+            <select formControlName="productId">
+              <option [ngValue]="null" disabled>Selecciona…</option>
+              @for (p of products.value() ?? []; track p.id) {
+                <option [ngValue]="p.id">{{ p.name }}</option>
+              }
+            </select>
+          </label>
+          <app-field-error [control]="variantForm.controls.productId" />
+        </div>
+        <div class="two-col">
+          <div>
+            <label
+              ><span
+                >Talla <span class="req" aria-hidden="true">*</span
+                ><span class="sr-only"> (obligatorio)</span></span
+              >
+              <input formControlName="size" placeholder="CH, M, G, 10…"
+            /></label>
+            <app-field-error [control]="variantForm.controls.size" />
+          </div>
+          <div>
+            <label
+              ><span
+                >Precio (MXN) <span class="req" aria-hidden="true">*</span
+                ><span class="sr-only"> (obligatorio)</span></span
+              >
+              <input type="number" min="0" step="0.01" inputmode="decimal" formControlName="price"
+            /></label>
+            <app-field-error [control]="variantForm.controls.price" />
+          </div>
+        </div>
+        <p class="field-hint">
           Cambiar el precio no altera pedidos existentes: cada pedido guarda su precio.
         </p>
         <div class="actions">
-          <button type="submit" [disabled]="submission.busy()">Guardar talla</button>
+          <button type="submit" [disabled]="submission.busy()">
+            {{ submission.busy() ? 'Guardando…' : 'Guardar talla' }}
+          </button>
           <button type="button" class="secondary" (click)="cancelVariant()">Cancelar</button>
         </div>
       </form>
     }
-    <app-load-state [res]="variants"
+
+    <app-load-state [res]="variants" emptyText="Sin tallas registradas."
       ><ng-template>
+        <div class="list-meta">
+          <p class="muted">
+            Mostrando <strong class="tabular">{{ (variants.value() ?? []).length }}</strong> tallas
+            en catálogo
+          </p>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -110,18 +172,20 @@ import { ORDER_STATUS_LABELS, OrderView, UniformService, VariantView } from './u
                 <th class="num">Precio</th>
                 <th class="num">En pedidos</th>
                 <th>Estado</th>
-                <th></th>
+                <th><span class="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
               @for (v of variants.value() ?? []; track v.id) {
-                <tr>
-                  <td>{{ v.productName }}</td>
+                <tr [class.muted]="!v.active">
+                  <td>
+                    <strong>{{ v.productName }}</strong>
+                  </td>
                   <td>{{ v.size }}</td>
                   <td class="num">{{ v.priceCents | money }}</td>
                   <td class="num">{{ v.used }}</td>
                   <td>
-                    <span class="tag" [class.off]="!v.active">{{
+                    <span class="tag" [class.ok]="v.active" [class.off]="!v.active">{{
                       v.active ? 'Activo' : 'Inactivo'
                     }}</span>
                   </td>
@@ -140,11 +204,15 @@ import { ORDER_STATUS_LABELS, OrderView, UniformService, VariantView } from './u
         </div>
       </ng-template></app-load-state
     >
-    <h2>Productos</h2>
+
+    <h2>Productos registrados</h2>
     <ul class="chips">
       @for (p of products.value() ?? []; track p.id) {
         <li>
-          {{ p.name }}
+          <span>{{ p.name }}</span>
+          <span class="tag" [class.ok]="p.active" [class.off]="!p.active">
+            {{ p.active ? 'Activo' : 'Inactivo' }}
+          </span>
           @if (auth.can('uniformes.editar')) {
             <button type="button" class="link" (click)="toggleProduct(p.id, !p.active)">
               {{ p.active ? 'Desactivar' : 'Activar' }}
@@ -273,18 +341,26 @@ export class UniformCatalogPage {
 /** HU-053 (order with price at the time), HU-054 (linked charge, PAGADO from its balance), HU-055 (delivery), cancel. */
 @Component({
   selector: 'app-uniform-orders-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     ReactiveFormsModule,
     FormsModule,
+    RouterLink,
     FieldError,
     FieldA11y,
     LoadState,
     MoneyPipe,
     SubmissionAlert,
+    PromptDialog,
   ],
   template: `
     <div class="page-head">
-      <h1>Pedidos de uniforme</h1>
+      <div>
+        <h1>Pedidos de uniforme</h1>
+        <p class="page-subtitle">
+          Solicitudes por jugador, cobros vinculados en cobranza y control de entregas.
+        </p>
+      </div>
       @if (auth.can('uniformes.crear')) {
         <button
           type="button"
@@ -297,6 +373,7 @@ export class UniformCatalogPage {
       }
     </div>
     <app-submission-alert [submission]="submission" />
+
     @if (panel.open()) {
       <form
         id="order-form"
@@ -307,16 +384,22 @@ export class UniformCatalogPage {
         class="grid-form"
       >
         <h2>Nuevo pedido</h2>
-        <label
-          >Jugador
-          <select formControlName="playerId">
-            <option [ngValue]="null" disabled>Selecciona…</option>
-            @for (p of players.value() ?? []; track p.id) {
-              <option [ngValue]="p.id">{{ p.name }}</option>
-            }
-          </select>
-        </label>
-        <app-field-error [control]="form.controls.playerId" />
+        <p class="field-hint">
+          Agrega uno o más artículos y presiona <strong>Crear pedido y cargo</strong> para
+          registrarlo.
+        </p>
+        <div>
+          <label
+            >Jugador
+            <select formControlName="playerId">
+              <option [ngValue]="null" disabled>Selecciona…</option>
+              @for (p of players.value() ?? []; track p.id) {
+                <option [ngValue]="p.id">{{ p.name }}</option>
+              }
+            </select>
+          </label>
+          <app-field-error [control]="form.controls.playerId" />
+        </div>
         <div class="two-col">
           <div>
             <label
@@ -334,20 +417,25 @@ export class UniformCatalogPage {
           </div>
           <label>Cantidad <input type="number" min="1" formControlName="quantity" /></label>
         </div>
-        <button type="submit" class="secondary">Agregar artículo</button>
+        <div>
+          <button type="submit" class="secondary">Agregar artículo</button>
+        </div>
+
         @if (items().length) {
-          <ul>
+          <ul class="cards-list">
             @for (i of items(); track $index) {
-              <li>
-                {{ i.quantity }} × {{ labelOf(i.variantId) }}
+              <li class="card-row">
+                <span>
+                  <strong class="tabular">{{ i.quantity }} ×</strong> {{ labelOf(i.variantId) }}
+                </span>
                 <button type="button" class="link danger" (click)="removeItem($index)">
                   Quitar
                 </button>
               </li>
             }
           </ul>
-          <p>
-            <strong>Total: {{ total() | money }}</strong>
+          <p class="tabular">
+            <strong>Total del pedido: {{ total() | money }}</strong>
           </p>
           <label
             >Concepto del cargo
@@ -358,16 +446,18 @@ export class UniformCatalogPage {
             </select>
           </label>
         }
+
         <div class="actions">
           @if (items().length) {
             <button type="button" (click)="createOrder()" [disabled]="submission.busy()">
-              Crear pedido y cargo
+              {{ submission.busy() ? 'Creando…' : 'Crear pedido y cargo' }}
             </button>
           }
           <button type="button" class="secondary" (click)="closeForm()">Cancelar</button>
         </div>
       </form>
     }
+
     <div class="filters">
       <label
         >Estado
@@ -378,9 +468,19 @@ export class UniformCatalogPage {
           }
         </select>
       </label>
+      @if (status()) {
+        <button type="button" class="secondary sm" (click)="status.set('')">Limpiar filtro</button>
+      }
     </div>
+
     <app-load-state [res]="orders" emptyText="Sin pedidos registrados."
       ><ng-template>
+        <div class="list-meta">
+          <p class="muted">
+            Mostrando <strong class="tabular">{{ (orders.value() ?? []).length }}</strong>
+            {{ (orders.value() ?? []).length === 1 ? 'pedido' : 'pedidos' }}
+          </p>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -390,38 +490,45 @@ export class UniformCatalogPage {
                 <th>Artículos</th>
                 <th class="num">Total</th>
                 <th>Cobro</th>
-                <th>Estado</th>
-                <th></th>
+                <th>Entrega</th>
+                <th><span class="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
               @for (o of orders.value() ?? []; track o.id) {
-                <tr>
-                  <td>{{ o.requestedOn }}</td>
-                  <td>{{ o.playerName }}</td>
+                <tr [class.muted]="o.status === 'CANCELADO'">
+                  <td class="tabular">{{ o.requestedOn }}</td>
+                  <td>
+                    <a [routerLink]="['/admin/players', o.playerId]">{{ o.playerName }}</a>
+                  </td>
                   <td class="wrap">
                     @for (l of o.lines; track $index) {
-                      {{ l.quantity }} × {{ l.product }} {{ l.size }} ({{
-                        l.unitPriceCents | money
-                      }})<br />
+                      <div>
+                        <span class="tabular">{{ l.quantity }} ×</span> {{ l.product }}
+                        {{ l.size }}
+                        <span class="muted">({{ l.unitPriceCents | money }})</span>
+                      </div>
                     }
                   </td>
-                  <td class="num">{{ o.totalCents | money }}</td>
-                  <td>
-                    {{
-                      o.charge
-                        ? chargeLabels[o.charge.status] +
-                          ' · saldo ' +
-                          (o.charge.balanceCents | money)
-                        : 'Sin cargo'
-                    }}
+                  <td class="num">
+                    <strong>{{ o.totalCents | money }}</strong>
                   </td>
                   <td>
-                    <span class="tag" [class.off]="o.status === 'CANCELADO'">{{
-                      labels[o.status]
-                    }}</span>
+                    @if (o.charge) {
+                      <span class="tag {{ chargeTone[o.charge.status] }}">{{
+                        chargeLabels[o.charge.status]
+                      }}</span>
+                      <div class="cell-sub tabular">
+                        Saldo {{ o.charge.balanceCents | money }}
+                      </div>
+                    } @else {
+                      <span class="muted">Sin cargo</span>
+                    }
+                  </td>
+                  <td>
+                    <span class="tag {{ orderTone[o.status] }}">{{ labels[o.status] }}</span>
                     @if (o.status === 'ENTREGADO') {
-                      <br /><small>{{ o.deliveredOn }} a {{ o.receivedBy }}</small>
+                      <div class="cell-sub">{{ o.deliveredOn }} · {{ o.receivedBy }}</div>
                     }
                   </td>
                   <td class="row-actions">
@@ -442,15 +549,19 @@ export class UniformCatalogPage {
         </div>
       </ng-template></app-load-state
     >
+    <app-prompt-dialog #promptDialog />
   `,
 })
 export class UniformOrdersPage {
+  private promptDialog = viewChild.required<PromptDialog>('promptDialog');
   private service = inject(UniformService);
   private playerService = inject(PlayerService);
   private billing = inject(BillingService);
   protected auth = inject(AuthService);
   protected labels = ORDER_STATUS_LABELS;
+  protected orderTone = ORDER_TONE;
   protected chargeLabels = CHARGE_STATUS_LABELS;
+  protected chargeTone = CHARGE_TONE;
   protected statuses = Object.entries(ORDER_STATUS_LABELS) as [UniformOrderStatus, string][];
   protected players = resource({ loader: () => this.playerService.options(true) });
   protected variants = resource({ loader: () => this.service.variants(true) });
@@ -546,19 +657,42 @@ export class UniformOrdersPage {
   }
 
   async deliver(o: OrderView): Promise<void> {
-    const receivedBy = prompt(`¿Quién recibe el uniforme de ${o.playerName}?`)?.trim();
+    const receivedBy = await this.promptDialog().open({
+      title: 'Registrar entrega de uniforme',
+      message: `Pedido #${o.id} de ${o.playerName}.`,
+      label: 'Nombre de quien recibe',
+      placeholder: 'Ej. Teresa López (madre)',
+      confirmText: 'Registrar entrega',
+      tone: 'primary',
+      required: true,
+    });
     if (!receivedBy) return;
-    await this.submission.run(() => this.service.deliver(o.id, receivedBy), 'Entrega registrada.');
-    this.orders.reload();
+    if (
+      await this.submission.run(
+        () => this.service.deliver(o.id, receivedBy),
+        'Entrega registrada.',
+      )
+    )
+      this.orders.reload();
   }
 
   async cancel(o: OrderView): Promise<void> {
-    const reason = prompt(`Motivo para cancelar el pedido de ${o.playerName}:`)?.trim();
+    const reason = await this.promptDialog().open({
+      title: 'Cancelar pedido',
+      message: `Se cancelará el pedido de ${o.playerName} y su cargo asociado si aplica.`,
+      label: 'Motivo de la cancelación',
+      placeholder: 'Ej. cambio de talla o solicitud familiar',
+      confirmText: 'Cancelar pedido',
+      tone: 'danger',
+      required: true,
+    });
     if (!reason) return;
-    await this.submission.run(
-      () => this.service.cancelOrder(o.id, reason),
-      'Pedido cancelado; su cargo también.',
-    );
-    this.orders.reload();
+    if (
+      await this.submission.run(
+        () => this.service.cancelOrder(o.id, reason),
+        'Pedido cancelado; su cargo también.',
+      )
+    )
+      this.orders.reload();
   }
 }

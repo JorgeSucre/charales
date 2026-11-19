@@ -1,4 +1,5 @@
 import {
+  ChangeDetectionStrategy,
   Component,
   ElementRef,
   Injector,
@@ -45,6 +46,7 @@ export function activeNavPath(url: string, paths: readonly string[]): string | n
 
 @Component({
   selector: 'app-shell',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterOutlet, RouterLink],
   host: { '(document:click)': 'onDocumentClick($event)' },
   template: `
@@ -80,19 +82,26 @@ export function activeNavPath(url: string, paths: readonly string[]): string | n
         </button>
         <!-- Phones only: on wider screens the crest sits at the top of the side menu. -->
         <a [routerLink]="auth.homeUrl()" class="brand"
-          ><img src="brand/CHCH23logo.webp" alt="" width="32" height="32" />Charales</a
+          ><img src="brand/CHCH23logo.webp" alt="" width="30" height="30" /><span class="brand-name"
+            >Charales</span
+          ></a
         >
         <p class="context">
           <strong>Charales</strong>
           @if (context(); as c) {
             @if (c.section) {
-              <span class="sep" aria-hidden="true">/</span><span>{{ c.section }}</span>
+              <span class="sep" aria-hidden="true">/</span
+              ><span class="context-section">{{ c.section }}</span>
             }
             <span class="sep" aria-hidden="true">/</span><span class="page">{{ c.page }}</span>
           }
         </p>
-        <span class="demo-badge" title="Entorno de desarrollo con datos de demostración">DEMO</span>
         <div class="spacer"></div>
+        <span
+          class="env-indicator"
+          title="Entorno de demostración con datos locales de prueba (no es producción)"
+          >Entorno demo</span
+        >
         @if (auth.user(); as user) {
           <details #userMenu class="user-menu" (keydown.escape)="closeUserMenu(true)">
             <summary>
@@ -102,8 +111,7 @@ export function activeNavPath(url: string, paths: readonly string[]): string | n
             </summary>
             <div class="menu">
               <p class="menu-head">
-                <strong>{{ user.displayName }}</strong
-                ><small>{{ roles() }}</small>
+                <strong>{{ user.displayName }}</strong><small>{{ roles() }}</small>
               </p>
               <a routerLink="/account/password">Cambiar contraseña</a>
               <button type="button" class="link" (click)="logout()">Salir</button>
@@ -177,7 +185,7 @@ export function activeNavPath(url: string, paths: readonly string[]): string | n
         @if (notice.message(); as message) {
           <div class="alert info app-notice" role="status">
             <span>{{ message }}</span>
-            <button type="button" class="secondary" (click)="notice.clear()">Cerrar</button>
+            <button type="button" class="secondary sm" (click)="notice.clear()">Cerrar</button>
           </div>
         }
         <router-outlet />

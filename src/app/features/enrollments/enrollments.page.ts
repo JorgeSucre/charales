@@ -1,4 +1,13 @@
-import { Component, computed, effect, inject, resource, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  resource,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
@@ -10,6 +19,8 @@ import { focusFirstInvalid } from '../../shared/focus';
 import { FormPanel } from '../../shared/form-panel';
 import { LoadState } from '../../shared/load-state';
 import { MoneyPipe } from '../../shared/money.pipe';
+import { PromptDialog } from '../../shared/prompt-dialog';
+import { CHARGE_TONE, ENROLLMENT_TONE } from '../../shared/status-tone';
 import { Submission } from '../../shared/submission';
 import { SubmissionAlert, centsFromInput, idOrNull } from '../../shared/ui';
 import { BillingService, CHARGE_STATUS_LABELS } from '../billing/billing.service';
@@ -22,6 +33,7 @@ import { ENROLLMENT_LABELS, EnrollmentService, EnrollmentView } from './enrollme
  */
 @Component({
   selector: 'app-enrollments-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     ReactiveFormsModule,
     FormsModule,
@@ -31,10 +43,16 @@ import { ENROLLMENT_LABELS, EnrollmentService, EnrollmentView } from './enrollme
     LoadState,
     MoneyPipe,
     SubmissionAlert,
+    PromptDialog,
   ],
   template: `
     <div class="page-head">
-      <h1>Inscripción anual</h1>
+      <div>
+        <h1>Inscripción anual</h1>
+        <p class="page-subtitle">
+          Registro administrativo por temporada y generación opcional del cargo de inscripción.
+        </p>
+      </div>
       @if (auth.can('inscripciones.crear')) {
         <button
           type="button"
@@ -47,6 +65,7 @@ import { ENROLLMENT_LABELS, EnrollmentService, EnrollmentView } from './enrollme
       }
     </div>
     <app-submission-alert [submission]="submission" />
+
     @if (panel.open()) {
       <form
         id="enrollment-form"
@@ -57,16 +76,21 @@ import { ENROLLMENT_LABELS, EnrollmentService, EnrollmentView } from './enrollme
         class="grid-form"
       >
         <h2>Nueva inscripción</h2>
-        <label
-          >Jugador
-          <select formControlName="playerId">
-            <option [ngValue]="null" disabled>Selecciona…</option>
-            @for (p of players.value() ?? []; track p.id) {
-              <option [ngValue]="p.id">{{ p.name }}</option>
-            }
-          </select>
-        </label>
-        <app-field-error [control]="form.controls.playerId" />
+        <div>
+          <label
+            ><span
+              >Jugador <span class="req" aria-hidden="true">*</span
+              ><span class="sr-only"> (obligatorio)</span></span
+            >
+            <select formControlName="playerId">
+              <option [ngValue]="null" disabled>Selecciona…</option>
+              @for (p of players.value() ?? []; track p.id) {
+                <option [ngValue]="p.id">{{ p.name }}</option>
+              }
+            </select>
+          </label>
+          <app-field-error [control]="form.controls.playerId" />
+        </div>
         <label
           >Temporada
           <select formControlName="seasonId">
@@ -79,41 +103,55 @@ import { ENROLLMENT_LABELS, EnrollmentService, EnrollmentView } from './enrollme
           <label>Fecha <input type="date" formControlName="enrolledOn" /></label>
           <div>
             <label
-              >Monto (MXN)
+              ><span
+                >Monto (MXN) <span class="req" aria-hidden="true">*</span
+                ><span class="sr-only"> (obligatorio)</span></span
+              >
               <input type="number" min="0" step="0.01" inputmode="decimal" formControlName="amount"
             /></label>
             <app-field-error [control]="form.controls.amount" />
           </div>
         </div>
-        <label
-          >Estatus inicial
-          <select formControlName="status">
-            <option value="PENDIENTE">Pendiente</option>
-            <option value="ACTIVA">Activa</option>
-          </select>
-        </label>
-        <label
-          >Generar cargo con el concepto (opcional)
-          <select formControlName="conceptId">
-            <option [ngValue]="null">No generar cargo</option>
-            @for (c of concepts(); track c.id) {
-              <option [ngValue]="c.id">{{ c.name }}</option>
-            }
-          </select>
-        </label>
+        <div class="two-col">
+          <label
+            >Estatus inicial
+            <select formControlName="status">
+              <option value="PENDIENTE">Pendiente</option>
+              <option value="ACTIVA">Activa</option>
+            </select>
+          </label>
+          <label
+            >Generar cargo con el concepto (opcional)
+            <select formControlName="conceptId">
+              <option [ngValue]="null">No generar cargo</option>
+              @for (c of concepts(); track c.id) {
+                <option [ngValue]="c.id">{{ c.name }}</option>
+              }
+            </select>
+          </label>
+        </div>
         @if (form.controls.conceptId.value) {
           <label>Vence <input type="date" formControlName="dueDate" /></label>
         }
         <div class="actions">
-          <button type="submit" [disabled]="submission.busy()">Inscribir</button>
+          <button type="submit" [disabled]="submission.busy()">
+            {{ submission.busy() ? 'Inscribiendo…' : 'Inscribir' }}
+          </button>
           <button type="button" class="secondary" (click)="cancel()">Cancelar</button>
         </div>
       </form>
     }
+
     <div class="filters">
-      <label
-        >Buscar <input type="search" [ngModel]="query()" (ngModelChange)="query.set($event)"
-      /></label>
+      <label class="filter-grow"
+        >Buscar
+        <input
+          type="search"
+          placeholder="Buscar jugador…"
+          [ngModel]="query()"
+          (ngModelChange)="query.set($event)"
+        />
+      </label>
       <label
         >Temporada
         <select [ngModel]="seasonFilter()" (ngModelChange)="seasonFilter.set(idOrNull($event))">
@@ -132,9 +170,19 @@ import { ENROLLMENT_LABELS, EnrollmentService, EnrollmentView } from './enrollme
           }
         </select>
       </label>
+      @if (hasFilters()) {
+        <button type="button" class="secondary sm" (click)="clearFilters()">Limpiar filtros</button>
+      }
     </div>
-    <app-load-state [res]="enrollments"
+
+    <app-load-state [res]="enrollments" emptyText="Sin inscripciones con esos filtros."
       ><ng-template>
+        <div class="list-meta">
+          <p class="muted">
+            Mostrando <strong class="tabular">{{ (enrollments.value() ?? []).length }}</strong>
+            {{ (enrollments.value() ?? []).length === 1 ? 'inscripción' : 'inscripciones' }}
+          </p>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -145,31 +193,32 @@ import { ENROLLMENT_LABELS, EnrollmentService, EnrollmentView } from './enrollme
                 <th class="num">Monto</th>
                 <th>Cobro</th>
                 <th>Estatus</th>
-                <th></th>
+                <th><span class="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
               @for (e of enrollments.value() ?? []; track e.id) {
-                <tr>
+                <tr [class.muted]="e.status === 'CANCELADA'">
                   <td>
                     <a [routerLink]="['/admin/players', e.playerId]">{{ e.playerName }}</a>
                   </td>
                   <td>{{ e.seasonName }}</td>
-                  <td>{{ e.enrolledOn }}</td>
+                  <td class="tabular">{{ e.enrolledOn }}</td>
                   <td class="num">{{ e.amountCents | money }}</td>
                   <td>
-                    {{
-                      e.charge
-                        ? chargeLabels[e.charge.status] +
-                          ' · saldo ' +
-                          (e.charge.balanceCents | money)
-                        : '—'
-                    }}
+                    @if (e.charge) {
+                      <span class="tag {{ chargeTone[e.charge.status] }}">{{
+                        chargeLabels[e.charge.status]
+                      }}</span>
+                      <div class="cell-sub tabular">
+                        Saldo {{ e.charge.balanceCents | money }}
+                      </div>
+                    } @else {
+                      <span class="muted">—</span>
+                    }
                   </td>
                   <td>
-                    <span class="tag" [class.off]="e.status === 'CANCELADA'">{{
-                      labels[e.status]
-                    }}</span>
+                    <span class="tag {{ enrollmentTone[e.status] }}">{{ labels[e.status] }}</span>
                   </td>
                   <td class="row-actions">
                     @if (auth.can('inscripciones.editar')) {
@@ -202,9 +251,11 @@ import { ENROLLMENT_LABELS, EnrollmentService, EnrollmentView } from './enrollme
         </div>
       </ng-template></app-load-state
     >
+    <app-prompt-dialog #cancelDialog />
   `,
 })
 export class EnrollmentsPage {
+  private cancelDialog = viewChild.required<PromptDialog>('cancelDialog');
   private service = inject(EnrollmentService);
   private playerService = inject(PlayerService);
   private seasonService = inject(SeasonService);
@@ -212,7 +263,9 @@ export class EnrollmentsPage {
   protected auth = inject(AuthService);
   protected idOrNull = idOrNull;
   protected labels = ENROLLMENT_LABELS;
+  protected enrollmentTone = ENROLLMENT_TONE;
   protected chargeLabels = CHARGE_STATUS_LABELS;
+  protected chargeTone = CHARGE_TONE;
   protected statuses = Object.entries(ENROLLMENT_LABELS) as [EnrollmentStatus, string][];
   protected players = resource({ loader: () => this.playerService.options(true) });
   protected seasons = resource({ loader: () => this.seasonService.list() });
@@ -224,6 +277,9 @@ export class EnrollmentsPage {
   protected query = signal('');
   protected seasonFilter = signal<Id | null>(null);
   protected statusFilter = signal<EnrollmentStatus | ''>('');
+  protected hasFilters = computed(
+    () => !!this.query().trim() || this.seasonFilter() !== null || !!this.statusFilter(),
+  );
   protected enrollments = resource({
     params: () => ({
       query: this.query(),
@@ -254,6 +310,12 @@ export class EnrollmentsPage {
     });
   }
 
+  clearFilters(): void {
+    this.query.set('');
+    this.seasonFilter.set(null);
+    this.statusFilter.set('');
+  }
+
   /** Opens an empty form. */
   create(): void {
     if (!this.panel.close()) return;
@@ -262,12 +324,11 @@ export class EnrollmentsPage {
     this.panel.show();
   }
 
-  /** Closes the form without saving (asks first if it has unsaved changes). */
+  /** Back to the defaults: today, the current season, no player. */
   cancel(): void {
     if (this.panel.close()) this.reset();
   }
 
-  /** Back to the defaults: today, the current season, no player. */
   private reset(): void {
     this.form.reset();
     this.form.controls.seasonId.setValue(this.openSeasons().find((s) => s.isCurrent)?.id ?? null);
@@ -299,13 +360,24 @@ export class EnrollmentsPage {
   async set(e: EnrollmentView, status: EnrollmentStatus): Promise<void> {
     let reason = '';
     if (status === 'CANCELADA') {
-      reason = prompt(`Motivo para cancelar la inscripción de ${e.playerName}:`)?.trim() ?? '';
+      reason =
+        (await this.cancelDialog().open({
+          title: 'Cancelar inscripción',
+          message: `Se cancelará la inscripción de ${e.playerName} (${e.seasonName}).`,
+          label: 'Motivo de la cancelación',
+          placeholder: 'Ej. baja antes de iniciar temporada',
+          confirmText: 'Cancelar inscripción',
+          tone: 'danger',
+          required: true,
+        })) ?? '';
       if (!reason) return;
     }
-    await this.submission.run(
-      () => this.service.setStatus(e.id, status, reason),
-      'Inscripción actualizada.',
-    );
-    this.enrollments.reload();
+    if (
+      await this.submission.run(
+        () => this.service.setStatus(e.id, status, reason),
+        'Inscripción actualizada.',
+      )
+    )
+      this.enrollments.reload();
   }
 }
